@@ -55,7 +55,7 @@ const About = () => {
               return (
                 <div
                   key={pillar.title}
-                  className="glass-panel p-6 rounded-xl hover:glow-border transition-all duration-300 group cursor-pointer animate-fade-in-up"
+                  className="glass-panel-premium p-6 rounded-xl hover:glow-border-premium premium-hover group cursor-pointer animate-fade-in-up"
                   style={{ animationDelay: `${index * 0.1}s` }}
                 >
                   <div className="flex items-start gap-4">

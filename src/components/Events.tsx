@@ -92,7 +92,7 @@ const Events = () => {
           {filteredEvents.map((event, index) => (
             <div
               key={event.id}
-              className="glass-panel p-6 rounded-xl hover:glow-border transition-all duration-300 group cursor-pointer animate-fade-in-up"
+              className="glass-panel-premium p-6 rounded-xl hover:glow-border-premium premium-hover group cursor-pointer animate-fade-in-up"
               style={{ animationDelay: `${index * 0.1}s` }}
             >
               <div className="flex justify-between items-start mb-4">

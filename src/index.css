@@ -8,54 +8,61 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Cyber Dark Theme */
-    --background: 220 50% 6%;
-    --foreground: 200 100% 95%;
+    /* Premium Cyber Dark Theme */
+    --background: 220 50% 4%;
+    --foreground: 200 100% 98%;
 
-    --card: 220 45% 10%;
-    --card-foreground: 200 100% 95%;
+    --card: 220 45% 8%;
+    --card-foreground: 200 100% 98%;
 
-    --popover: 220 50% 8%;
-    --popover-foreground: 200 100% 95%;
+    --popover: 220 50% 6%;
+    --popover-foreground: 200 100% 98%;
 
-    /* Neon Cyan Primary */
-    --primary: 190 100% 50%;
-    --primary-foreground: 220 50% 6%;
+    /* Neon Cyan Primary - Enhanced */
+    --primary: 185 100% 55%;
+    --primary-glow: 185 100% 70%;
+    --primary-foreground: 220 50% 4%;
 
-    /* Electric Violet Secondary */
-    --secondary: 270 100% 65%;
-    --secondary-foreground: 220 50% 6%;
+    /* Electric Violet Secondary - Enhanced */
+    --secondary: 270 100% 70%;
+    --secondary-glow: 270 100% 85%;
+    --secondary-foreground: 220 50% 4%;
 
-    --muted: 220 40% 15%;
-    --muted-foreground: 200 20% 60%;
+    --muted: 220 40% 12%;
+    --muted-foreground: 200 20% 65%;
 
-    /* Hot Magenta Accent */
-    --accent: 320 100% 60%;
-    --accent-foreground: 220 50% 6%;
+    /* Hot Magenta Accent - Enhanced */
+    --accent: 320 100% 65%;
+    --accent-glow: 320 100% 80%;
+    --accent-foreground: 220 50% 4%;
 
     --destructive: 0 85% 55%;
-    --destructive-foreground: 200 100% 95%;
+    --destructive-foreground: 200 100% 98%;
 
-    --border: 220 40% 18%;
-    --input: 220 40% 15%;
-    --ring: 190 100% 50%;
+    --border: 220 40% 15%;
+    --input: 220 40% 12%;
+    --ring: 185 100% 55%;
 
     --radius: 0.75rem;
 
-    /* Cyber Gradients */
-    --gradient-cyber: linear-gradient(135deg, hsl(190 100% 50%), hsl(270 100% 65%), hsl(320 100% 60%));
-    --gradient-glow: linear-gradient(90deg, hsl(190 100% 50% / 0.3), hsl(270 100% 65% / 0.3));
-    --gradient-mesh: linear-gradient(180deg, hsl(220 50% 6%), hsl(220 45% 10%));
+    /* Premium Cyber Gradients */
+    --gradient-cyber: linear-gradient(135deg, hsl(185 100% 55%), hsl(270 100% 70%), hsl(320 100% 65%));
+    --gradient-cyber-alt: linear-gradient(90deg, hsl(185 100% 55%), hsl(270 100% 70%));
+    --gradient-glow: linear-gradient(90deg, hsl(185 100% 55% / 0.4), hsl(270 100% 70% / 0.4));
+    --gradient-mesh: linear-gradient(180deg, hsl(220 50% 4%), hsl(220 45% 8%));
+    --gradient-premium: radial-gradient(circle at 50% 0%, hsl(185 100% 55% / 0.15), transparent 70%);
     
-    /* Shadows & Glows */
-    --shadow-neon: 0 0 20px hsl(190 100% 50% / 0.5), 0 0 40px hsl(190 100% 50% / 0.3);
-    --shadow-violet: 0 0 20px hsl(270 100% 65% / 0.5), 0 0 40px hsl(270 100% 65% / 0.3);
-    --shadow-magenta: 0 0 20px hsl(320 100% 60% / 0.5), 0 0 40px hsl(320 100% 60% / 0.3);
-    --shadow-card: 0 10px 40px hsl(220 50% 4% / 0.8);
+    /* Enhanced Shadows & Glows */
+    --shadow-neon: 0 0 30px hsl(185 100% 55% / 0.6), 0 0 60px hsl(185 100% 55% / 0.3), 0 0 100px hsl(185 100% 55% / 0.1);
+    --shadow-violet: 0 0 30px hsl(270 100% 70% / 0.6), 0 0 60px hsl(270 100% 70% / 0.3), 0 0 100px hsl(270 100% 70% / 0.1);
+    --shadow-magenta: 0 0 30px hsl(320 100% 65% / 0.6), 0 0 60px hsl(320 100% 65% / 0.3), 0 0 100px hsl(320 100% 65% / 0.1);
+    --shadow-card: 0 10px 50px hsl(220 50% 2% / 0.9), 0 0 100px hsl(185 100% 55% / 0.05);
+    --shadow-premium: 0 20px 60px hsl(220 50% 2% / 0.8), 0 0 80px hsl(270 100% 70% / 0.1);
     
-    /* Animations */
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-glow: all 0.4s ease;
+    /* Premium Animations */
+    --transition-smooth: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-glow: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-premium: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 }
 
@@ -76,25 +83,48 @@ All colors MUST be HSL.
 
 @layer utilities {
   .glow-text {
-    text-shadow: 0 0 20px hsl(var(--primary) / 0.6), 0 0 40px hsl(var(--primary) / 0.4);
+    text-shadow: 0 0 30px hsl(var(--primary) / 0.8), 0 0 60px hsl(var(--primary) / 0.5), 0 0 100px hsl(var(--primary) / 0.2);
+  }
+
+  .glow-text-secondary {
+    text-shadow: 0 0 30px hsl(var(--secondary) / 0.8), 0 0 60px hsl(var(--secondary) / 0.5);
   }
 
   .glow-border {
-    border: 1px solid hsl(var(--primary) / 0.3);
-    box-shadow: 0 0 15px hsl(var(--primary) / 0.2), inset 0 0 15px hsl(var(--primary) / 0.1);
+    border: 1px solid hsl(var(--primary) / 0.4);
+    box-shadow: 0 0 25px hsl(var(--primary) / 0.3), inset 0 0 25px hsl(var(--primary) / 0.15);
+  }
+
+  .glow-border-premium {
+    border: 1px solid hsl(var(--primary) / 0.5);
+    box-shadow: var(--shadow-neon), inset 0 0 30px hsl(var(--primary) / 0.2);
   }
 
   .glass-panel {
-    background: hsl(var(--card) / 0.4);
-    backdrop-filter: blur(12px);
-    border: 1px solid hsl(var(--border) / 0.3);
+    background: hsl(var(--card) / 0.5);
+    backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid hsl(var(--border) / 0.4);
+    box-shadow: var(--shadow-card);
+  }
+
+  .glass-panel-premium {
+    background: linear-gradient(135deg, hsl(var(--card) / 0.6), hsl(var(--card) / 0.3));
+    backdrop-filter: blur(20px) saturate(200%);
+    border: 1px solid hsl(var(--border) / 0.5);
+    box-shadow: var(--shadow-premium);
   }
 
   .cyber-grid {
     background-image: 
-      linear-gradient(hsl(var(--primary) / 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--primary) / 0.05) 1px, transparent 1px);
-    background-size: 50px 50px;
+      linear-gradient(hsl(var(--primary) / 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--primary) / 0.08) 1px, transparent 1px);
+    background-size: 40px 40px;
+    animation: grid-flow 20s linear infinite;
+  }
+
+  @keyframes grid-flow {
+    0% { background-position: 0 0; }
+    100% { background-position: 40px 40px; }
   }
 
   .text-gradient {
@@ -102,5 +132,20 @@ All colors MUST be HSL.
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    animation: gradient-shift 3s ease infinite;
+  }
+
+  @keyframes gradient-shift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  .premium-hover {
+    transition: var(--transition-premium);
+  }
+
+  .premium-hover:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: var(--shadow-premium);
   }
 }

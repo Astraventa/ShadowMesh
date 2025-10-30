@@ -51,7 +51,7 @@ const Resources = () => {
             return (
               <div
                 key={pack.title}
-                className="glass-panel p-8 rounded-2xl hover:glow-border transition-all duration-300 group animate-fade-in-up"
+                className="glass-panel-premium p-8 rounded-2xl hover:glow-border-premium premium-hover group animate-fade-in-up"
                 style={{ animationDelay: `${index * 0.2}s` }}
               >
                 {/* Icon */}
@@ -91,7 +91,7 @@ const Resources = () => {
 
         {/* Learning Roadmap Section */}
         <div className="mt-16 text-center">
-          <div className="glass-panel p-8 rounded-2xl max-w-3xl mx-auto glow-border">
+          <div className="glass-panel-premium p-8 rounded-2xl max-w-3xl mx-auto glow-border-premium animate-glow-pulse">
             <h3 className="text-2xl font-bold mb-4">
               <span className="text-gradient">Learning Roadmap</span>
             </h3>
