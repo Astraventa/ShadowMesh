@@ -2,7 +2,6 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const JoinUs = () => {
   return (
@@ -25,14 +24,16 @@ const JoinUs = () => {
             <h2 className="text-4xl md:text-5xl font-bold mb-4">
               <span className="text-gradient">Join</span> ShadowMesh
             </h2>
-            <p className="text-muted-foreground text-lg mb-3">
-              Become a member and start your journey in Cyber & AI innovation.
+            <p className="text-muted-foreground text-lg">
+              Become a member and start your journey in cyber and AI innovation.
             </p>
-            <div className="flex justify-center gap-6 text-xl font-bold">
-              <span className="text-primary animate-float">Learn.</span>
-              <span className="text-secondary animate-float" style={{ animationDelay: "0.5s" }}>Build.</span>
-              <span className="text-accent animate-float" style={{ animationDelay: "1s" }}>Defend.</span>
-            </div>
+          </div>
+
+          {/* Floating Text Animation */}
+          <div className="flex justify-center gap-8 mb-12 text-2xl font-bold">
+            <span className="text-primary animate-float">Learn.</span>
+            <span className="text-secondary animate-float" style={{ animationDelay: "0.5s" }}>Build.</span>
+            <span className="text-accent animate-float" style={{ animationDelay: "1s" }}>Defend.</span>
           </div>
 
           {/* Form */}
@@ -43,7 +44,7 @@ const JoinUs = () => {
                   <label className="block text-sm font-medium mb-2">Full Name</label>
                   <Input 
                     placeholder="John Doe" 
-                    className="bg-background/50 border-border focus:border-primary focus:glow-border transition-all"
+                    className="bg-background/50 border-border focus:border-primary transition-colors"
                   />
                 </div>
                 <div>
@@ -51,60 +52,46 @@ const JoinUs = () => {
                   <Input 
                     type="email" 
                     placeholder="john@example.com" 
-                    className="bg-background/50 border-border focus:border-primary focus:glow-border transition-all"
+                    className="bg-background/50 border-border focus:border-primary transition-colors"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Institution / Affiliation <span className="text-muted-foreground text-xs">(optional)</span></label>
+                <label className="block text-sm font-medium mb-2">University Roll Number</label>
                 <Input 
-                  placeholder="e.g., Riphah International University, NUST, UET, or Independent" 
-                  className="bg-background/50 border-border focus:border-primary focus:glow-border transition-all"
+                  placeholder="RIUF-CS-2024-001" 
+                  className="bg-background/50 border-border focus:border-primary transition-colors"
                 />
               </div>
 
-              <div className="grid md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Area of Interest</label>
-                  <Select>
-                    <SelectTrigger className="bg-background/50 border-border focus:border-primary focus:glow-border transition-all">
-                      <SelectValue placeholder="Select your interest" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cybersecurity">Cybersecurity</SelectItem>
-                      <SelectItem value="ai-ml">AI/ML</SelectItem>
-                      <SelectItem value="both">Both</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Skill Level</label>
-                  <Select>
-                    <SelectTrigger className="bg-background/50 border-border focus:border-primary focus:glow-border transition-all">
-                      <SelectValue placeholder="Select your level" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="beginner">Beginner</SelectItem>
-                      <SelectItem value="intermediate">Intermediate</SelectItem>
-                      <SelectItem value="advanced">Advanced</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Area of Interest</label>
+                <Input 
+                  placeholder="Cybersecurity, AI/ML, Both" 
+                  className="bg-background/50 border-border focus:border-primary transition-colors"
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2">Why do you want to join?</label>
                 <Textarea 
-                  placeholder="Tell us about your passion for Cyber & AI, what you hope to learn, and how you want to contribute to the community..." 
+                  placeholder="Tell us about your passion for cyber and AI..." 
                   rows={4}
-                  className="bg-background/50 border-border focus:border-primary focus:glow-border transition-all resize-none"
+                  className="bg-background/50 border-border focus:border-primary transition-colors resize-none"
                 />
               </div>
 
-              <Button type="submit" size="lg" variant="cyber" className="w-full">
-                Submit Application
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button type="submit" size="lg" variant="cyber" className="flex-1">
+                  Submit Application
+                </Button>
+                <Button type="button" size="lg" variant="outline" className="flex-1" asChild>
+                  <a href="https://forms.google.com/shadowmesh-join" target="_blank" rel="noopener noreferrer">
+                    Fill Google Form
+                  </a>
+                </Button>
+              </div>
             </form>
           </div>
 

@@ -98,17 +98,9 @@ All colors MUST be HSL.
   }
 
   .text-gradient {
-    background: linear-gradient(90deg, hsl(190 100% 50%), hsl(270 100% 65%), hsl(320 100% 60%), hsl(190 100% 50%));
-    background-size: 200% auto;
+    background: var(--gradient-cyber);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    animation: shimmer 4s linear infinite;
-  }
-  
-  @keyframes shimmer {
-    to {
-      background-position: 200% center;
-    }
   }
 }
