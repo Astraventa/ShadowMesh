@@ -19,7 +19,8 @@ const NotFound = () => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      if (e.ctrlKey && (key === "k" || key === "a")) {
+      // Secret combo: Ctrl + Alt + B (reduced chance of browser collisions)
+      if (e.ctrlKey && e.altKey && key === "b") {
         e.preventDefault();
         setOpen(true);
       }
