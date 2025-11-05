@@ -346,35 +346,7 @@ const Admin = () => {
 					<DialogHeader>
 						<DialogTitle>Application Details</DialogTitle>
 					</DialogHeader>
-					{detail ? (
-						<div className="space-y-3">
-							<div className="grid grid-cols-2 gap-3">
-								<div><span className="text-sm text-muted-foreground">Name</span><div>{detail.full_name}</div></div>
-								<div><span className="text-sm text-muted-foreground">Email</span><div>{detail.email}</div></div>
-								<div><span className="text-sm text-muted-foreground">Affiliation</span><div className="capitalize">{detail.affiliation}</div></div>
-								<div><span className="text-sm text-muted-foreground">Phone</span><div>{detail.phone_e164 || detail.raw_phone || "-"}</div></div>
-								<div className="col-span-2"><span className="text-sm text-muted-foreground">Area of Interest</span><div>{detail.area_of_interest || "-"}</div></div>
-								{detail.affiliation === "student" && (
-									<div className="col-span-2 grid grid-cols-2 gap-3">
-										<div className="col-span-2"><span className="text-sm text-muted-foreground">University</span><div>{detail.university_name || "-"}</div></div>
-										<div><span className="text-sm text-muted-foreground">Department</span><div>{detail.department || "-"}</div></div>
-										<div><span className="text-sm text-muted-foreground">Roll #</span><div>{detail.roll_number || "-"}</div></div>
-									</div>
-								)}
-								{detail.affiliation !== "student" && (
-									<div className="col-span-2 grid grid-cols-2 gap-3">
-										<div><span className="text-sm text-muted-foreground">Organization</span><div>{detail.organization || "-"}</div></div>
-										<div><span className="text-sm text-muted-foreground">Role</span><div>{detail.role_title || "-"}</div></div>
-									</div>
-								)}
-								<div className="grid grid-cols-2 gap-3">
-									<div><span className="text-sm text-muted-foreground">Status</span><div>{detail.status}</div></div>
-									<div><span className="text-sm text-muted-foreground">Reviewed</span><div>{formatDate(detail.reviewed_at)}</div></div>
-									<div className="col-span-2"><span className="text-sm text-muted-foreground">Reason</span><div>{detail.decision_reason || "-"}</div></div>
-									<div className="col-span-2"><span className="text-sm text-muted-foreground">Verification Token</span><div className="break-all text-xs">{detail.verification_token || "-"}</div></div>
-								</div>
-						</div>
-					) : null}
+					<DetailView detail={detail} />
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setOpenDetail(false)}>Close</Button>
 						{detail && detail.status === "pending" && (
@@ -386,6 +358,39 @@ const Admin = () => {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+		</div>
+	);
+};
+
+const DetailView = ({ detail }: { detail: JoinRow | null }) => {
+	if (!detail) return null;
+	return (
+		<div className="space-y-3">
+			<div className="grid grid-cols-2 gap-3">
+				<div><span className="text-sm text-muted-foreground">Name</span><div>{detail.full_name}</div></div>
+				<div><span className="text-sm text-muted-foreground">Email</span><div>{detail.email}</div></div>
+				<div><span className="text-sm text-muted-foreground">Affiliation</span><div className="capitalize">{detail.affiliation}</div></div>
+				<div><span className="text-sm text-muted-foreground">Phone</span><div>{detail.phone_e164 || detail.raw_phone || "-"}</div></div>
+				<div className="col-span-2"><span className="text-sm text-muted-foreground">Area of Interest</span><div>{detail.area_of_interest || "-"}</div></div>
+			</div>
+			{detail.affiliation === "student" ? (
+				<div className="grid grid-cols-2 gap-3">
+					<div className="col-span-2"><span className="text-sm text-muted-foreground">University</span><div>{detail.university_name || "-"}</div></div>
+					<div><span className="text-sm text-muted-foreground">Department</span><div>{detail.department || "-"}</div></div>
+					<div><span className="text-sm text-muted-foreground">Roll #</span><div>{detail.roll_number || "-"}</div></div>
+				</div>
+			) : (
+				<div className="grid grid-cols-2 gap-3">
+					<div><span className="text-sm text-muted-foreground">Organization</span><div>{detail.organization || "-"}</div></div>
+					<div><span className="text-sm text-muted-foreground">Role</span><div>{detail.role_title || "-"}</div></div>
+				</div>
+			)}
+			<div className="grid grid-cols-2 gap-3">
+				<div><span className="text-sm text-muted-foreground">Status</span><div>{detail.status}</div></div>
+				<div><span className="text-sm text-muted-foreground">Reviewed</span><div>{formatDate(detail.reviewed_at)}</div></div>
+				<div className="col-span-2"><span className="text-sm text-muted-foreground">Reason</span><div>{detail.decision_reason || "-"}</div></div>
+				<div className="col-span-2"><span className="text-sm text-muted-foreground">Verification Token</span><div className="break-all text-xs">{detail.verification_token || "-"}</div></div>
+			</div>
 		</div>
 	);
 };
