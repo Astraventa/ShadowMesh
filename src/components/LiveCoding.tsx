@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Terminal, Code2, Cpu, Network } from "lucide-react";
+import { Terminal, Code2, Cpu, Network, Zap, Brain, Shield, Globe } from "lucide-react";
 
 const LiveCoding = () => {
   const [activeTab, setActiveTab] = useState(0);
@@ -128,7 +128,7 @@ const result = await queryAI({
   }, [codeSnippets.length]);
 
   return (
-    <section className="py-20 md:py-32 relative overflow-hidden">
+    <section className="py-24 md:py-32 relative overflow-hidden animate-fade-in-up">
       {/* Premium Background Effects */}
       <div className="absolute inset-0 bg-gradient-to-b from-background via-card/20 to-background"></div>
       <div className="absolute inset-0 cyber-grid opacity-20"></div>
@@ -144,7 +144,7 @@ const result = await queryAI({
               left: `${(i + 1) * 12}%`,
               height: "40%",
               animationDelay: `${i * 0.5}s`,
-              opacity: 0.3
+              opacity: 0.3,
             }}
           />
         ))}
@@ -153,16 +153,17 @@ const result = await queryAI({
       <div className="container mx-auto px-4 relative z-10">
         {/* Header */}
         <div className="text-center mb-12">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4 animate-fade-in-up">
-            <span className="text-gradient glow-text">Live Innovation</span> Stream
+          <h2 className="text-4xl md:text-5xl font-extrabold mb-4 text-gradient glow-text animate-fade-in-up">
+            Live Code. Real Innovation.
           </h2>
-          <p className="text-muted-foreground max-w-2xl mx-auto">
-            Real-time code demonstrations of AI and cybersecurity implementations.
+          <p className="text-muted-foreground max-w-2xl mx-auto text-lg animate-fade-in-up">
+            Watch cutting-edge AI and cybersecurity code come to life.
           </p>
         </div>
 
         {/* Code Display Section */}
         <div className="max-w-6xl mx-auto">
+
           {/* Tab Navigation */}
           <div className="flex flex-wrap gap-3 mb-6 justify-center">
             {codeSnippets.map((snippet, index) => {
@@ -188,8 +189,8 @@ const result = await queryAI({
             })}
           </div>
 
-          {/* Code Terminal */}
-          <div className="glass-panel-premium rounded-2xl overflow-hidden animate-fade-in-up">
+          {/* Terminal Glass Panel */}
+          <div className="glass-panel-premium glass-code-terminal rounded-2xl overflow-hidden animate-fade-in-up shadow-2xl">
             {/* Terminal Header */}
             <div className="bg-card/80 px-6 py-4 border-b border-border/50 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -265,20 +266,21 @@ const result = await queryAI({
         {/* Feature Pills */}
         <div className="flex flex-wrap justify-center gap-4 mt-12">
           {[
-            { label: "Real-time Execution", icon: "⚡" },
-            { label: "AI-Powered Analysis", icon: "🧠" },
-            { label: "Security Protocols", icon: "🔒" },
-            { label: "Cross-Platform", icon: "🌐" }
-          ].map((feature, i) => (
-            <div
-              key={i}
-              className="glass-panel px-6 py-3 rounded-full glow-border flex items-center gap-2 animate-fade-in-up"
-              style={{ animationDelay: `${i * 0.1}s` }}
-            >
-              <span className="text-xl">{feature.icon}</span>
-              <span className="text-sm font-medium">{feature.label}</span>
-            </div>
-          ))}
+            { label: "Real-time Execution", icon: Zap, orb: "from-cyan-400 to-blue-500" },
+            { label: "AI-Powered Analysis", icon: Brain, orb: "from-fuchsia-500 to-indigo-500" },
+            { label: "Security Protocols", icon: Shield, orb: "from-purple-500 to-pink-500" },
+            { label: "Cross-Platform", icon: Globe, orb: "from-teal-400 to-cyan-500" } 
+          ].map((feature, i) => {
+            const Icon = feature.icon;
+            return (
+              <div key={i} className="glass-panel px-6 py-3 rounded-full flex items-center gap-3 animate-fade-in-up" style={{ animationDelay: `${i * 0.1}s` }}>
+                <span className={`w-8 h-8 flex items-center justify-center rounded-full bg-gradient-to-br ${feature.orb} shadow-md mr-2`}>
+                  <Icon className="w-5 h-5 text-white drop-shadow-cyber" />
+                </span>
+                <span className="text-sm font-medium text-foreground/90">{feature.label}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

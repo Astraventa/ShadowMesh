@@ -33,11 +33,11 @@ const Hero = () => {
       </div>
 
       {/* Content */}
-      <div className="relative z-10 container mx-auto px-4 text-center">
-        <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold mb-6 animate-fade-in-up">
-          <span className="text-gradient glow-text">Where Hackers and Innovators</span>
+      <div className="relative z-10 container mx-auto px-4 text-center flex flex-col justify-center items-center min-h-[75vh] mt-12">
+        <h1 className="text-5xl md:text-7xl lg:text-8xl font-extrabold mb-6 hero-font hero-prism-text animate-fade-in-up tracking-tight">
+          Where Hackers and Innovators
           <br />
-          <span className="text-foreground">Mesh Minds.</span>
+          Mesh Minds.
         </h1>
         
         <p className="text-lg md:text-xl text-muted-foreground mb-12 max-w-2xl mx-auto animate-fade-in-up" style={{ animationDelay: "0.2s" }}>
@@ -45,20 +45,8 @@ const Hero = () => {
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center animate-fade-in-up" style={{ animationDelay: "0.4s" }}>
-          <Button size="lg" variant="cyber" asChild>
-            <a href="#join">Join the Network</a>
-          </Button>
-          <Button size="lg" variant="glow" asChild>
-            <a href="#events">Explore Events</a>
-          </Button>
-        </div>
-
-        {/* Scroll Indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-          <a href="#about" className="flex flex-col items-center text-muted-foreground hover:text-primary transition-colors">
-            <span className="text-sm mb-2">Scroll to explore</span>
-            <ChevronDown className="w-6 h-6 animate-pulse" />
-          </a>
+          <a href="#join" className="cyber-btn-gradient px-8 py-3 rounded-lg font-bold text-lg shadow-lg hover:scale-105 transition-transform">Join the Network</a>
+          <a href="#events" className="glass-btn-glow px-8 py-3 rounded-lg font-bold text-lg border-2 border-primary shadow-lg hover:border-accent hover:scale-105 transition-transform">Explore Events</a>
         </div>
       </div>
     </section>

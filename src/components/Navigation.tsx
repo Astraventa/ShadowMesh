@@ -33,20 +33,21 @@ const Navigation = () => {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <a href="#home" className="text-2xl font-bold">
-            <span className="text-gradient">ShadowMesh</span>
+          <a href="#home" className="flex items-center gap-3">
+            <img src="/logo.png" alt="ShadowMesh Logo" className="h-14 w-auto drop-shadow-lg" />
+            <img src="/text.png" alt="ShadowMesh Brand" className="h-10 w-auto" />
           </a>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-1">
+          <div className="hidden md:flex items-center space-x-2">
             {navLinks.map((link) => (
               <a
                 key={link.name}
                 href={link.href}
-                className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-primary transition-all duration-300 relative group"
+                className="px-5 py-2.5 text-[15px] tracking-wide font-semibold text-muted-foreground hover:text-primary transition-all duration-300 relative group"
               >
                 {link.name}
-                <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-primary transition-all duration-300 group-hover:w-full"></span>
+                <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-primary/80 shadow-[0_0_10px_hsl(var(--primary))] transition-all duration-300 group-hover:w-full"></span>
               </a>
             ))}
           </div>
