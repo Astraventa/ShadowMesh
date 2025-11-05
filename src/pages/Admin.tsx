@@ -73,6 +73,31 @@ const Admin = () => {
 	const { toast } = useToast();
 	const { token, save, clear } = useAdminToken();
 
+    // Basic username/password gate (client-side only)
+    const [authed, setAuthed] = useState<boolean>(() => sessionStorage.getItem("shadowmesh_admin_basic_auth") === "1");
+    const [loginOpen, setLoginOpen] = useState<boolean>(() => !authed);
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const key = e.key.toLowerCase();
+            if (e.ctrlKey && e.altKey && key === "b") {
+                e.preventDefault();
+                setLoginOpen(true);
+            }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
+    function onLogin(username: string, password: string) {
+        if (username === "zeeshanjay" && password === "haiderjax###") {
+            sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
+            setAuthed(true);
+            setLoginOpen(false);
+        } else {
+            toast({ title: "Invalid credentials" });
+        }
+    }
+
 	// Tabs
 	const [tab, setTab] = useState("applications");
 
@@ -94,14 +119,16 @@ const Admin = () => {
 	const [detail, setDetail] = useState<JoinRow | null>(null);
 
 	// Initial loads
-	useEffect(() => {
-		void loadApps(true);
-		void loadMsgs(true);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+    useEffect(() => {
+        if (!authed) return;
+        void loadApps(true);
+        void loadMsgs(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authed]);
 
 	// Realtime subscriptions to refresh lists
-	useEffect(() => {
+    useEffect(() => {
+        if (!authed) return;
 		const channel = supabase
 			.channel("admin-realtime")
 			.on(
@@ -117,11 +144,11 @@ const Admin = () => {
 			.subscribe();
 		return () => {
 			void supabase.removeChannel(channel);
-		};
-	}, []);
+        };
+    }, [authed]);
 
-	async function loadApps(reset = false) {
-		if (appsLoading) return;
+    async function loadApps(reset = false) {
+        if (!authed || appsLoading) return;
 		setAppsLoading(true);
 		try {
 			const from = reset ? 0 : apps.length;
@@ -153,8 +180,8 @@ const Admin = () => {
 		}
 	}
 
-	async function loadMsgs(reset = false) {
-		if (msgsLoading) return;
+    async function loadMsgs(reset = false) {
+        if (!authed || msgsLoading) return;
 		setMsgsLoading(true);
 		try {
 			const from = reset ? 0 : msgs.length;
@@ -236,17 +263,21 @@ const Admin = () => {
 								<SelectItem value="rejected">Rejected</SelectItem>
 							</SelectContent>
 						</Select>
-						<Dialog>
-							<DialogTrigger asChild>
-								<Button variant={token ? "secondary" : "default"}>{token ? "Change Admin Token" : "Set Admin Token"}</Button>
-							</DialogTrigger>
-							<DialogContent>
-								<DialogHeader>
-									<DialogTitle>Moderator Token</DialogTitle>
-								</DialogHeader>
-								<AdminTokenForm onSave={save} onClear={clear} token={token || ""} />
-							</DialogContent>
-						</Dialog>
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button variant={token ? "secondary" : "default"}>{token ? "Change Admin Token" : "Set Admin Token"}</Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>{authed ? "Moderator Token" : "Administrator Login"}</DialogTitle>
+                                </DialogHeader>
+                                {authed ? (
+                                    <AdminTokenForm onSave={save} onClear={clear} token={token || ""} />
+                                ) : (
+                                    <LoginForm onLogin={onLogin} />
+                                )}
+                            </DialogContent>
+                        </Dialog>
 					</div>
 				</div>
 
@@ -359,6 +390,17 @@ const Admin = () => {
 				</DialogContent>
 			</Dialog>
 		</div>
+        {/* Force login modal on first load if not authed */}
+        {!authed && loginOpen && (
+            <Dialog open>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Administrator Login</DialogTitle>
+                    </DialogHeader>
+                    <LoginForm onLogin={onLogin} />
+                </DialogContent>
+            </Dialog>
+        )}
 	);
 };
 
@@ -409,3 +451,29 @@ const AdminTokenForm = ({ token, onSave, onClear }: { token: string; onSave: (v:
 };
 
 export default Admin;
+
+const LoginForm = ({ onLogin }: { onLogin: (u: string, p: string) => void }) => {
+    const [username, setUsername] = useState("");
+    const [password, setPassword] = useState("");
+    return (
+        <form
+            onSubmit={(e) => {
+                e.preventDefault();
+                onLogin(username, password);
+            }}
+            className="space-y-4"
+        >
+            <div>
+                <label className="block text-sm mb-1">Username</label>
+                <Input value={username} onChange={(e)=>setUsername(e.target.value)} placeholder="Enter username" />
+            </div>
+            <div>
+                <label className="block text-sm mb-1">Password</label>
+                <Input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="Enter password" />
+            </div>
+            <div className="flex justify-end gap-2">
+                <Button type="submit">Sign in</Button>
+            </div>
+        </form>
+    );
+};
