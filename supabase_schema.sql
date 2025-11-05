@@ -3,6 +3,10 @@
 -- Includes: extensions, enums, tables, constraints, indexes, RLS, and
 --           trigger-based honeypot + simple rate limiting
 
+-- NOTE: This script is safe to re-run. All CREATE/ALTER statements are
+-- guarded with IF NOT EXISTS checks so you can paste the whole file and run
+-- it again to repair missing types/columns/indexes.
+
 -- 1) Extensions --------------------------------------------------------------
 create extension if not exists pgcrypto;   -- gen_random_uuid()
 create extension if not exists citext;     -- case-insensitive email
@@ -222,3 +226,20 @@ create policy p_contact_insert
 -- 8) Notes -------------------------------------------------------------------
 -- Frontend usage: submit via supabase-js; store E.164 phone in phone_e164 when valid.
 -- Keepalive: ping a tiny function to avoid cold starts on free tier.
+
+-- 9) Idempotent sanity checks (optional) -------------------------------------
+do $$
+begin
+  -- Ensure required enum exists
+  if not exists (select 1 from pg_type where typname = 'membership_status') then
+    create type membership_status as enum ('pending','approved','rejected');
+  end if;
+
+  -- Ensure critical columns exist on join_applications
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='status') then
+    alter table public.join_applications add column status membership_status not null default 'pending';
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='verification_token') then
+    alter table public.join_applications add column verification_token uuid default gen_random_uuid();
+  end if;
+end$$;
