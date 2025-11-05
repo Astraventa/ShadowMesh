@@ -17,7 +17,10 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
-          <Route path="/admin" element={<Admin />} />
+          {/* Secret admin route - obscured path */}
+          <Route path="/shadow-ops-portal" element={<Admin />} />
+          {/* Fake 404 decoy for /admin */}
+          <Route path="/admin" element={<NotFound />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
