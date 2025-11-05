@@ -186,11 +186,13 @@ begin
   return new;
 end$$;
 
--- Attach triggers
+-- Attach triggers (idempotent: drop if exists, then create)
+drop trigger if exists trg_join_rate_limit on public.join_applications;
 create trigger trg_join_rate_limit
 before insert on public.join_applications
 for each row execute function public.enforce_join_rate_limit();
 
+drop trigger if exists trg_contact_rate_limit on public.contact_messages;
 create trigger trg_contact_rate_limit
 before insert on public.contact_messages
 for each row execute function public.enforce_contact_rate_limit();
