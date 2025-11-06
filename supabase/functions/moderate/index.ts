@@ -1,10 +1,3 @@
-// Supabase Edge Function: moderate
-// Approve/Reject join applications securely with a simple shared token.
-// Env required:
-//   MODERATOR_TOKEN              - shared secret you set
-//   SM_SUPABASE_URL
-//   SM_SERVICE_ROLE_KEY
-
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 Deno.serve(async (req) => {

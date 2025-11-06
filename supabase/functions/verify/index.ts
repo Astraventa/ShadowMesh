@@ -1,9 +1,3 @@
-// Supabase Edge Function: verify
-// Returns application status by verification_token
-// Env required:
-//   SM_SUPABASE_URL
-//   SM_SERVICE_ROLE_KEY
-
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 Deno.serve(async (req) => {
