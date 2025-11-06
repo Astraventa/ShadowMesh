@@ -100,13 +100,15 @@ const Admin = () => {
 
 	// Tabs
 	const [tab, setTab] = useState("applications");
+	const [appStatusTab, setAppStatusTab] = useState("pending");
 
 	// Filters/search
 	const [search, setSearch] = useState("");
-	const [status, setStatus] = useState<string>("all");
 
-	// Data state
-	const [apps, setApps] = useState<JoinRow[]>([]);
+	// Data state - separate for each status
+	const [appsPending, setAppsPending] = useState<JoinRow[]>([]);
+	const [appsApproved, setAppsApproved] = useState<JoinRow[]>([]);
+	const [appsRejected, setAppsRejected] = useState<JoinRow[]>([]);
 	const [appsHasMore, setAppsHasMore] = useState(true);
 	const [appsLoading, setAppsLoading] = useState(false);
 
@@ -120,59 +122,40 @@ const Admin = () => {
 
 	// Initial loads
     useEffect(() => {
-        if (!authed) return;
-        void loadApps(true);
+        if (!authed || !token) return;
+        void loadApps("pending", true);
+        void loadApps("approved", true);
+        void loadApps("rejected", true);
         void loadMsgs(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [authed]);
+    }, [authed, token]);
 
-	// Realtime subscriptions to refresh lists
-    useEffect(() => {
-        if (!authed) return;
-		const channel = supabase
-			.channel("admin-realtime")
-			.on(
-				"postgres_changes",
-				{ event: "*", schema: "public", table: "join_applications" },
-				() => void loadApps(true)
-			)
-			.on(
-				"postgres_changes",
-				{ event: "*", schema: "public", table: "contact_messages" },
-				() => void loadMsgs(true)
-			)
-			.subscribe();
-		return () => {
-			void supabase.removeChannel(channel);
-        };
-    }, [authed]);
-
-    async function loadApps(reset = false) {
-        if (!authed || appsLoading) return;
+    async function loadApps(statusFilter: "pending" | "approved" | "rejected", reset = false) {
+        if (!authed || !token || appsLoading) return;
 		setAppsLoading(true);
 		try {
-			const from = reset ? 0 : apps.length;
-			const to = from + PAGE_SIZE - 1;
-			let query = supabase
-				.from("join_applications")
-				.select(
-					"id, created_at, status, full_name, email, affiliation, area_of_interest, university_name, department, roll_number, organization, role_title, phone_e164, raw_phone, verification_token, reviewed_at, reviewed_by, decision_reason",
-					{ count: "exact" }
-				)
-				.order("created_at", { ascending: false })
-				.range(from, to);
-			if (status !== "all") query = query.eq("status", status);
-			if (search.trim()) {
-				// Basic case-insensitive search over a few columns
-				const s = `%${search.trim()}%`;
-				query = query.or(
-					`full_name.ilike.${s},email.ilike.${s},university_name.ilike.${s},organization.ilike.${s},role_title.ilike.${s}`
-				);
-			}
-			const { data, error } = await query;
-			if (error) throw error;
-			setApps((prev) => (reset ? data ?? [] : [...prev, ...(data ?? [])]));
-			setAppsHasMore((data?.length ?? 0) === PAGE_SIZE);
+			const currentList = statusFilter === "pending" ? appsPending : statusFilter === "approved" ? appsApproved : appsRejected;
+			const page = reset ? 0 : Math.floor(currentList.length / PAGE_SIZE);
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-admin-token": token,
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					type: "applications",
+					status: statusFilter,
+					search: search.trim() || undefined,
+					page,
+					pageSize: PAGE_SIZE,
+				}),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			const { data, hasMore } = await res.json();
+			const setter = statusFilter === "pending" ? setAppsPending : statusFilter === "approved" ? setAppsApproved : setAppsRejected;
+			setter((prev) => (reset ? data ?? [] : [...prev, ...(data ?? [])]));
+			setAppsHasMore(hasMore);
 		} catch (e: any) {
 			toast({ title: "Failed to load applications", description: e.message || String(e) });
 		} finally {
@@ -181,28 +164,60 @@ const Admin = () => {
 	}
 
     async function loadMsgs(reset = false) {
-        if (!authed || msgsLoading) return;
+        if (!authed || !token || msgsLoading) return;
 		setMsgsLoading(true);
 		try {
-			const from = reset ? 0 : msgs.length;
-			const to = from + PAGE_SIZE - 1;
-			let query = supabase
-				.from("contact_messages")
-				.select("id, created_at, name, email, message, phone_e164, raw_phone, source_page, user_agent")
-				.order("created_at", { ascending: false })
-				.range(from, to);
-			if (search.trim()) {
-				const s = `%${search.trim()}%`;
-				query = query.or(`name.ilike.${s},email.ilike.${s},message.ilike.${s}`);
-			}
-			const { data, error } = await query;
-			if (error) throw error;
+			const page = reset ? 0 : Math.floor(msgs.length / PAGE_SIZE);
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-admin-token": token,
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					type: "messages",
+					search: search.trim() || undefined,
+					page,
+					pageSize: PAGE_SIZE,
+				}),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			const { data, hasMore } = await res.json();
 			setMsgs((prev) => (reset ? data ?? [] : [...prev, ...(data ?? [])]));
-			setMsgsHasMore((data?.length ?? 0) === PAGE_SIZE);
+			setMsgsHasMore(hasMore);
 		} catch (e: any) {
 			toast({ title: "Failed to load messages", description: e.message || String(e) });
 		} finally {
 			setMsgsLoading(false);
+		}
+	}
+
+	async function deleteItem(type: "application" | "message", id: string) {
+		if (!token) {
+			toast({ title: "Admin token required", description: "Set the moderator token to perform actions." });
+			return;
+		}
+		if (!confirm(`Are you sure you want to delete this ${type}?`)) return;
+		try {
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_delete`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-admin-token": token,
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({ type, id }),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			toast({ title: "Deleted successfully" });
+			// Reload all lists
+			void loadApps("pending", true);
+			void loadApps("approved", true);
+			void loadApps("rejected", true);
+			if (type === "message") void loadMsgs(true);
+		} catch (e: any) {
+			toast({ title: "Delete failed", description: e.message || String(e) });
 		}
 	}
 
@@ -223,14 +238,15 @@ const Admin = () => {
 			});
 			if (!res.ok) throw new Error(await res.text());
 			toast({ title: `Marked ${action}` });
-			void loadApps(true);
+			// Reload all status lists
+			void loadApps("pending", true);
+			void loadApps("approved", true);
+			void loadApps("rejected", true);
 		} catch (e: any) {
 			toast({ title: "Moderation failed", description: e.message || String(e) });
 		}
 	}
 
-	const filteredApps = useMemo(() => apps, [apps]);
-	const filteredMsgs = useMemo(() => msgs, [msgs]);
 
 	return (
 		<div className="min-h-screen bg-background text-foreground">
@@ -246,23 +262,14 @@ const Admin = () => {
 								// Debounced reload
 								clearTimeout((window as any)._adm_s);
 								(window as any)._adm_s = setTimeout(() => {
-									void loadApps(true);
+									void loadApps("pending", true);
+									void loadApps("approved", true);
+									void loadApps("rejected", true);
 									void loadMsgs(true);
 								}, 300);
 							}}
 							className="w-80"
 						/>
-						<Select value={status} onValueChange={(v) => { setStatus(v); void loadApps(true); }}>
-							<SelectTrigger className="w-40">
-								<SelectValue placeholder="Status" />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="all">All statuses</SelectItem>
-								<SelectItem value="pending">Pending</SelectItem>
-								<SelectItem value="approved">Approved</SelectItem>
-								<SelectItem value="rejected">Rejected</SelectItem>
-							</SelectContent>
-						</Select>
                         <Dialog>
                             <DialogTrigger asChild>
                                 <Button variant={token ? "secondary" : "default"}>{token ? "Change Admin Token" : "Set Admin Token"}</Button>
@@ -293,44 +300,114 @@ const Admin = () => {
 								<CardTitle>Applications</CardTitle>
 							</CardHeader>
 							<CardContent>
-								<Table>
-									<TableHeader>
-										<TableRow>
-											<TableHead>When</TableHead>
-											<TableHead>Name</TableHead>
-											<TableHead>Email</TableHead>
-											<TableHead>Affiliation</TableHead>
-											<TableHead>Status</TableHead>
-											<TableHead className="text-right">Actions</TableHead>
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{filteredApps.map((r) => (
-											<TableRow key={r.id} className="hover:bg-card/50">
-												<TableCell>{formatDate(r.created_at)}</TableCell>
-												<TableCell>{r.full_name}</TableCell>
-												<TableCell>{r.email}</TableCell>
-												<TableCell className="capitalize">{r.affiliation}</TableCell>
-												<TableCell>
-													<Badge variant={r.status === "approved" ? "secondary" : r.status === "rejected" ? "destructive" : "outline"}>{r.status}</Badge>
-												</TableCell>
-												<TableCell className="text-right space-x-2">
-													<Button size="sm" variant="outline" onClick={() => { setDetail(r); setOpenDetail(true); }}>View</Button>
-													<Button size="sm" variant="secondary" disabled={r.status !== "pending"} onClick={() => void moderate(r.id, "approve")}>Approve</Button>
-													<Button size="sm" variant="destructive" disabled={r.status !== "pending"} onClick={() => {
-														const reason = prompt("Reason for rejection? (optional)") || undefined;
-														void moderate(r.id, "reject", reason);
-													}}>Reject</Button>
-												</TableCell>
-											</TableRow>
-										))}
-									</TableBody>
-								</Table>
-								<div className="flex justify-center mt-4">
-									<Button variant="outline" disabled={!appsHasMore || appsLoading} onClick={() => void loadApps(false)}>
-										{appsLoading ? "Loading..." : appsHasMore ? "Load more" : "No more"}
-									</Button>
-								</div>
+								<Tabs value={appStatusTab} onValueChange={(v) => { setAppStatusTab(v as "pending" | "approved" | "rejected"); }}>
+									<TabsList className="mb-4">
+										<TabsTrigger value="pending">Pending ({appsPending.length})</TabsTrigger>
+										<TabsTrigger value="approved">Approved ({appsApproved.length})</TabsTrigger>
+										<TabsTrigger value="rejected">Rejected ({appsRejected.length})</TabsTrigger>
+									</TabsList>
+									<TabsContent value="pending">
+										<Table>
+											<TableHeader>
+												<TableRow>
+													<TableHead>When</TableHead>
+													<TableHead>Name</TableHead>
+													<TableHead>Email</TableHead>
+													<TableHead>Affiliation</TableHead>
+													<TableHead className="text-right">Actions</TableHead>
+												</TableRow>
+											</TableHeader>
+											<TableBody>
+												{appsPending.map((r) => (
+													<TableRow key={r.id} className="hover:bg-card/50">
+														<TableCell>{formatDate(r.created_at)}</TableCell>
+														<TableCell>{r.full_name}</TableCell>
+														<TableCell>{r.email}</TableCell>
+														<TableCell className="capitalize">{r.affiliation}</TableCell>
+														<TableCell className="text-right space-x-2">
+															<Button size="sm" variant="outline" onClick={() => { setDetail(r); setOpenDetail(true); }}>View</Button>
+															<Button size="sm" variant="secondary" onClick={() => void moderate(r.id, "approve")}>Approve</Button>
+															<Button size="sm" variant="destructive" onClick={() => {
+																const reason = prompt("Reason for rejection? (optional)") || undefined;
+																void moderate(r.id, "reject", reason);
+															}}>Reject</Button>
+															<Button size="sm" variant="ghost" onClick={() => void deleteItem("application", r.id)}>Delete</Button>
+														</TableCell>
+													</TableRow>
+												))}
+											</TableBody>
+										</Table>
+										<div className="flex justify-center mt-4">
+											<Button variant="outline" disabled={!appsHasMore || appsLoading} onClick={() => void loadApps("pending", false)}>
+												{appsLoading ? "Loading..." : appsHasMore ? "Load more" : "No more"}
+											</Button>
+										</div>
+									</TabsContent>
+									<TabsContent value="approved">
+										<Table>
+											<TableHeader>
+												<TableRow>
+													<TableHead>When</TableHead>
+													<TableHead>Name</TableHead>
+													<TableHead>Email</TableHead>
+													<TableHead>Affiliation</TableHead>
+													<TableHead className="text-right">Actions</TableHead>
+												</TableRow>
+											</TableHeader>
+											<TableBody>
+												{appsApproved.map((r) => (
+													<TableRow key={r.id} className="hover:bg-card/50">
+														<TableCell>{formatDate(r.created_at)}</TableCell>
+														<TableCell>{r.full_name}</TableCell>
+														<TableCell>{r.email}</TableCell>
+														<TableCell className="capitalize">{r.affiliation}</TableCell>
+														<TableCell className="text-right space-x-2">
+															<Button size="sm" variant="outline" onClick={() => { setDetail(r); setOpenDetail(true); }}>View</Button>
+															<Button size="sm" variant="ghost" onClick={() => void deleteItem("application", r.id)}>Delete</Button>
+														</TableCell>
+													</TableRow>
+												))}
+											</TableBody>
+										</Table>
+										<div className="flex justify-center mt-4">
+											<Button variant="outline" disabled={!appsHasMore || appsLoading} onClick={() => void loadApps("approved", false)}>
+												{appsLoading ? "Loading..." : appsHasMore ? "Load more" : "No more"}
+											</Button>
+										</div>
+									</TabsContent>
+									<TabsContent value="rejected">
+										<Table>
+											<TableHeader>
+												<TableRow>
+													<TableHead>When</TableHead>
+													<TableHead>Name</TableHead>
+													<TableHead>Email</TableHead>
+													<TableHead>Affiliation</TableHead>
+													<TableHead className="text-right">Actions</TableHead>
+												</TableRow>
+											</TableHeader>
+											<TableBody>
+												{appsRejected.map((r) => (
+													<TableRow key={r.id} className="hover:bg-card/50">
+														<TableCell>{formatDate(r.created_at)}</TableCell>
+														<TableCell>{r.full_name}</TableCell>
+														<TableCell>{r.email}</TableCell>
+														<TableCell className="capitalize">{r.affiliation}</TableCell>
+														<TableCell className="text-right space-x-2">
+															<Button size="sm" variant="outline" onClick={() => { setDetail(r); setOpenDetail(true); }}>View</Button>
+															<Button size="sm" variant="ghost" onClick={() => void deleteItem("application", r.id)}>Delete</Button>
+														</TableCell>
+													</TableRow>
+												))}
+											</TableBody>
+										</Table>
+										<div className="flex justify-center mt-4">
+											<Button variant="outline" disabled={!appsHasMore || appsLoading} onClick={() => void loadApps("rejected", false)}>
+												{appsLoading ? "Loading..." : appsHasMore ? "Load more" : "No more"}
+											</Button>
+										</div>
+									</TabsContent>
+								</Tabs>
 							</CardContent>
 						</Card>
 					</TabsContent>
@@ -348,15 +425,19 @@ const Admin = () => {
 											<TableHead>Name</TableHead>
 											<TableHead>Email</TableHead>
 											<TableHead>Message</TableHead>
+											<TableHead className="text-right">Actions</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
-										{filteredMsgs.map((m) => (
+										{msgs.map((m) => (
 											<TableRow key={m.id} className="hover:bg-card/50">
 												<TableCell>{formatDate(m.created_at)}</TableCell>
 												<TableCell>{m.name}</TableCell>
 												<TableCell>{m.email}</TableCell>
 												<TableCell className="max-w-[520px] truncate" title={m.message}>{m.message}</TableCell>
+												<TableCell className="text-right">
+													<Button size="sm" variant="ghost" onClick={() => void deleteItem("message", m.id)}>Delete</Button>
+												</TableCell>
 											</TableRow>
 										))}
 									</TableBody>
