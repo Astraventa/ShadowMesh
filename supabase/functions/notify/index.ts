@@ -1,9 +1,18 @@
 // Supabase Edge Function: notify (copied for CLI deploy)
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-admin-token, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
   try {
@@ -13,7 +22,7 @@ Deno.serve(async (req) => {
     const RESEND_TO = Deno.env.get('RESEND_TO');
 
     if (!RESEND_API_KEY || !RESEND_FROM || !RESEND_TO) {
-      return new Response('Missing email environment variables', { status: 500 });
+      return new Response('Missing email environment variables', { status: 500, headers: corsHeaders });
     }
 
     const subject = type === 'join'
@@ -45,11 +54,11 @@ Deno.serve(async (req) => {
 
     if (!res.ok) {
       const t = await res.text();
-      return new Response(`Resend error: ${t}`, { status: 502 });
+      return new Response(`Resend error: ${t}`, { status: 502, headers: corsHeaders });
     }
 
-    return new Response('ok', { status: 200 });
+    return new Response('ok', { status: 200, headers: corsHeaders });
   } catch (e) {
-    return new Response(`Error: ${e instanceof Error ? e.message : String(e)}`, { status: 400 });
+    return new Response(`Error: ${e instanceof Error ? e.message : String(e)}`, { status: 400, headers: corsHeaders });
   }
 });
