@@ -389,18 +389,18 @@ const Admin = () => {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+		{/* Force login modal on first load if not authed */}
+		{!authed && loginOpen && (
+			<Dialog open>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Administrator Login</DialogTitle>
+					</DialogHeader>
+					<LoginForm onLogin={onLogin} />
+				</DialogContent>
+			</Dialog>
+		)}
 		</div>
-        {/* Force login modal on first load if not authed */}
-        {!authed && loginOpen && (
-            <Dialog open>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Administrator Login</DialogTitle>
-                    </DialogHeader>
-                    <LoginForm onLogin={onLogin} />
-                </DialogContent>
-            </Dialog>
-        )}
 	);
 };
 
