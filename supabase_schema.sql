@@ -3,6 +3,10 @@
 -- Includes: extensions, enums, tables, constraints, indexes, RLS, and
 --           trigger-based honeypot + simple rate limiting
 
+-- NOTE: This script is safe to re-run. All CREATE/ALTER statements are
+-- guarded with IF NOT EXISTS checks so you can paste the whole file and run
+-- it again to repair missing types/columns/indexes.
+
 -- 1) Extensions --------------------------------------------------------------
 create extension if not exists pgcrypto;   -- gen_random_uuid()
 create extension if not exists citext;     -- case-insensitive email
@@ -77,6 +81,20 @@ create table if not exists public.join_applications (
       or (organization is not null and role_title is not null)
     )
 );
+
+-- Members (created when applications are approved)
+create table if not exists public.members (
+  id                 uuid primary key default gen_random_uuid(),
+  created_at         timestamptz not null default now(),
+  full_name          text not null,
+  email              citext not null,
+  source_application uuid references public.join_applications(id) on delete set null,
+  cohort             text,
+  status             text not null default 'active'
+);
+
+create index if not exists idx_members_created_at on public.members (created_at desc);
+create index if not exists idx_members_email on public.members (email);
 
 -- Apply status columns if table already existed
 do $$
@@ -182,11 +200,13 @@ begin
   return new;
 end$$;
 
--- Attach triggers
+-- Attach triggers (idempotent: drop if exists, then create)
+drop trigger if exists trg_join_rate_limit on public.join_applications;
 create trigger trg_join_rate_limit
 before insert on public.join_applications
 for each row execute function public.enforce_join_rate_limit();
 
+drop trigger if exists trg_contact_rate_limit on public.contact_messages;
 create trigger trg_contact_rate_limit
 before insert on public.contact_messages
 for each row execute function public.enforce_contact_rate_limit();
@@ -222,3 +242,20 @@ create policy p_contact_insert
 -- 8) Notes -------------------------------------------------------------------
 -- Frontend usage: submit via supabase-js; store E.164 phone in phone_e164 when valid.
 -- Keepalive: ping a tiny function to avoid cold starts on free tier.
+
+-- 9) Idempotent sanity checks (optional) -------------------------------------
+do $$
+begin
+  -- Ensure required enum exists
+  if not exists (select 1 from pg_type where typname = 'membership_status') then
+    create type membership_status as enum ('pending','approved','rejected');
+  end if;
+
+  -- Ensure critical columns exist on join_applications
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='status') then
+    alter table public.join_applications add column status membership_status not null default 'pending';
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='verification_token') then
+    alter table public.join_applications add column verification_token uuid default gen_random_uuid();
+  end if;
+end$$;

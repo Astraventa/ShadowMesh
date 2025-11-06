@@ -2,8 +2,8 @@
 // Approve/Reject join applications securely with a simple shared token.
 // Env required:
 //   MODERATOR_TOKEN              - shared secret you set
-//   SUPABASE_URL
-//   SUPABASE_SERVICE_ROLE_KEY
+//   SM_SUPABASE_URL
+//   SM_SERVICE_ROLE_KEY
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
@@ -17,8 +17,8 @@ Deno.serve(async (req) => {
     const { id, action, reason, reviewer } = await req.json();
     if (!id || !['approve','reject'].includes(action)) return new Response('Invalid payload', { status: 400 });
 
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-    const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const SUPABASE_URL = Deno.env.get('SM_SUPABASE_URL');
+    const SERVICE_KEY = Deno.env.get('SM_SERVICE_ROLE_KEY');
     if (!SUPABASE_URL || !SERVICE_KEY) return new Response('Missing env', { status: 500 });
 
     const body = {
