@@ -33,9 +33,23 @@ const Navigation = () => {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <a href="#home" className="flex items-center gap-3">
-            <img src="/logo.png" alt="ShadowMesh Logo" className="h-14 w-auto drop-shadow-lg" />
-            <img src="/text.png" alt="ShadowMesh Brand" className="h-10 w-auto" />
+          <a href="#home" aria-label="ShadowMesh home" className="flex items-center gap-3">
+            <img
+              src="/logo.png"
+              alt="ShadowMesh Logo"
+              className="h-12 md:h-14 w-auto object-contain drop-shadow-md select-none"
+              loading="eager"
+              decoding="async"
+              draggable="false"
+            />
+            <img
+              src="/text.png"
+              alt="ShadowMesh Wordmark"
+              className="h-8 md:h-10 w-auto object-contain opacity-95"
+              loading="eager"
+              decoding="async"
+              draggable="false"
+            />
           </a>
 
           {/* Desktop Navigation */}
