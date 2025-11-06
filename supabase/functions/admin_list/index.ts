@@ -79,6 +79,29 @@ Deno.serve(async (req) => {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    } else if (type === 'members') {
+      let url = `${SUPABASE_URL}/rest/v1/members?select=*&order=created_at.desc&limit=${pageSize}&offset=${from}`;
+      if (search && search.trim()) {
+        const s = encodeURIComponent(`%${search.trim()}%`);
+        url += `&or=(full_name.ilike.${s},email.ilike.${s},cohort.ilike.${s})`;
+      }
+
+      const res = await fetch(url, {
+        headers: {
+          'apikey': SERVICE_KEY,
+          'Authorization': `Bearer ${SERVICE_KEY}`,
+        },
+      });
+
+      if (!res.ok) {
+        return new Response(`error: ${await res.text()}`, { status: 502, headers: corsHeaders });
+      }
+
+      const data = await res.json();
+      return new Response(JSON.stringify({ data, hasMore: data.length === pageSize }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     } else {
       return new Response('Invalid type', { status: 400, headers: corsHeaders });
     }

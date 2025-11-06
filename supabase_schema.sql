@@ -82,6 +82,20 @@ create table if not exists public.join_applications (
     )
 );
 
+-- Members (created when applications are approved)
+create table if not exists public.members (
+  id                 uuid primary key default gen_random_uuid(),
+  created_at         timestamptz not null default now(),
+  full_name          text not null,
+  email              citext not null,
+  source_application uuid references public.join_applications(id) on delete set null,
+  cohort             text,
+  status             text not null default 'active'
+);
+
+create index if not exists idx_members_created_at on public.members (created_at desc);
+create index if not exists idx_members_email on public.members (email);
+
 -- Apply status columns if table already existed
 do $$
 begin

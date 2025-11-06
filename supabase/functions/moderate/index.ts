@@ -44,7 +44,60 @@ Deno.serve(async (req) => {
     if (!res.ok) return new Response(await res.text(), { status: res.status, headers: corsHeaders });
 
     const updated = await res.json();
-    return new Response(JSON.stringify(updated?.[0] || {}), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const row = updated?.[0];
+
+    // Fetch application to get email/name
+    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email`, {
+      headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+    });
+    const appRows = appRes.ok ? await appRes.json() : [];
+    const app = Array.isArray(appRows) && appRows[0] ? appRows[0] : null;
+
+    // On approve: insert member if not exists
+    if (action === 'approve' && app?.email) {
+      await fetch(`${SUPABASE_URL}/rest/v1/members?email=eq.${encodeURIComponent(app.email)}`, {
+        headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+      });
+      await fetch(`${SUPABASE_URL}/rest/v1/members`, {
+        method: 'POST',
+        headers: {
+          'apikey': SERVICE_KEY,
+          'Authorization': `Bearer ${SERVICE_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify([{ full_name: app.full_name, email: app.email, source_application: id }])
+      });
+    }
+
+    // Emails via Resend
+    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+    const RESEND_FROM = Deno.env.get('RESEND_FROM');
+    const COMMUNITY_WHATSAPP_LINK = Deno.env.get('COMMUNITY_WHATSAPP_LINK');
+    const LOGO_URL = 'https://shadowmesh-six.vercel.app/logo.png';
+    if (RESEND_API_KEY && RESEND_FROM && app?.email) {
+      const subject = action === 'approve' ? 'Welcome to ShadowMesh!' : 'ShadowMesh Application Update';
+      const html = action === 'approve'
+        ? `<div style="font-family:Inter,sans-serif;padding:16px;color:#0b1224">
+            <img src="${LOGO_URL}" alt="ShadowMesh" style="height:48px;margin-bottom:12px" />
+            <h2>Congratulations, ${app.full_name}!</h2>
+            <p>Your application has been <b>approved</b>. Welcome to ShadowMesh.</p>
+            ${COMMUNITY_WHATSAPP_LINK ? `<p>Join our community: <a href="${COMMUNITY_WHATSAPP_LINK}">${COMMUNITY_WHATSAPP_LINK}</a></p>` : ''}
+          </div>`
+        : `<div style="font-family:Inter,sans-serif;padding:16px;color:#0b1224">
+            <img src="${LOGO_URL}" alt="ShadowMesh" style="height:48px;margin-bottom:12px" />
+            <h2>Hello ${app.full_name},</h2>
+            <p>Thanks for applying. After review, we’re not able to proceed at this time.</p>
+            ${reason ? `<p><i>Reason:</i> ${reason}</p>` : ''}
+            <p>You’re welcome to re-apply in the future.</p>
+          </div>`;
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: RESEND_FROM, to: [app.email], subject, html })
+      });
+    }
+
+    return new Response(JSON.stringify(row || {}), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
     return new Response(`Error: ${e instanceof Error ? e.message : String(e)}`, { status: 400, headers: corsHeaders });
   }
