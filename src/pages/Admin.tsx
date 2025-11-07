@@ -3,6 +3,7 @@ import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -116,9 +117,16 @@ const Admin = () => {
 	const [msgsHasMore, setMsgsHasMore] = useState(true);
 	const [msgsLoading, setMsgsLoading] = useState(false);
 
+	const [members, setMembers] = useState<any[]>([]);
+	const [membersHasMore, setMembersHasMore] = useState(true);
+	const [membersLoading, setMembersLoading] = useState(false);
+
 	// Detail dialog
 	const [openDetail, setOpenDetail] = useState(false);
 	const [detail, setDetail] = useState<JoinRow | null>(null);
+	const [rejectOpen, setRejectOpen] = useState(false);
+	const [rejectReason, setRejectReason] = useState("");
+	const [rejectingId, setRejectingId] = useState<string | null>(null);
 
 	// Initial loads
     useEffect(() => {
@@ -127,6 +135,7 @@ const Admin = () => {
         void loadApps("approved", true);
         void loadApps("rejected", true);
         void loadMsgs(true);
+        void loadMembers(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authed, token]);
 
@@ -193,6 +202,36 @@ const Admin = () => {
 		}
 	}
 
+	async function loadMembers(reset = false) {
+        if (!authed || !token || membersLoading) return;
+		setMembersLoading(true);
+		try {
+			const page = reset ? 0 : Math.floor(members.length / PAGE_SIZE);
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-admin-token": token,
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					type: "members",
+					search: search.trim() || undefined,
+					page,
+					pageSize: PAGE_SIZE,
+				}),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			const { data, hasMore } = await res.json();
+			setMembers((prev) => (reset ? data ?? [] : [...prev, ...(data ?? [])]));
+			setMembersHasMore(hasMore);
+		} catch (e: any) {
+			toast({ title: "Failed to load members", description: e.message || String(e) });
+		} finally {
+			setMembersLoading(false);
+		}
+	}
+
 	async function deleteItem(type: "application" | "message", id: string) {
 		if (!token) {
 			toast({ title: "Admin token required", description: "Set the moderator token to perform actions." });
@@ -242,6 +281,7 @@ const Admin = () => {
 			void loadApps("pending", true);
 			void loadApps("approved", true);
 			void loadApps("rejected", true);
+			if (action === "approve") void loadMembers(true);
 		} catch (e: any) {
 			toast({ title: "Moderation failed", description: e.message || String(e) });
 		}
@@ -266,6 +306,7 @@ const Admin = () => {
 									void loadApps("approved", true);
 									void loadApps("rejected", true);
 									void loadMsgs(true);
+									void loadMembers(true);
 								}, 300);
 							}}
 							className="w-80"
@@ -289,9 +330,10 @@ const Admin = () => {
 				</div>
 
 				<Tabs value={tab} onValueChange={setTab}>
-					<TabsList>
+                    <TabsList>
 						<TabsTrigger value="applications">Join Applications</TabsTrigger>
 						<TabsTrigger value="messages">Contact Messages</TabsTrigger>
+                        <TabsTrigger value="members">Members</TabsTrigger>
 					</TabsList>
 
 					<TabsContent value="applications">
@@ -327,10 +369,7 @@ const Admin = () => {
 														<TableCell className="text-right space-x-2">
 															<Button size="sm" variant="outline" onClick={() => { setDetail(r); setOpenDetail(true); }}>View</Button>
 															<Button size="sm" variant="secondary" onClick={() => void moderate(r.id, "approve")}>Approve</Button>
-															<Button size="sm" variant="destructive" onClick={() => {
-																const reason = prompt("Reason for rejection? (optional)") || undefined;
-																void moderate(r.id, "reject", reason);
-															}}>Reject</Button>
+													<Button size="sm" variant="destructive" onClick={() => { setRejectingId(r.id); setRejectOpen(true); }}>Reject</Button>
 															<Button size="sm" variant="ghost" onClick={() => void deleteItem("application", r.id)}>Delete</Button>
 														</TableCell>
 													</TableRow>
@@ -408,6 +447,48 @@ const Admin = () => {
 										</div>
 									</TabsContent>
 								</Tabs>
+                {/* Members Tab */}
+					<TabsContent value="members">
+						<Card>
+							<CardHeader>
+								<CardTitle>Verified Members ({members.length})</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Joined</TableHead>
+											<TableHead>Name</TableHead>
+											<TableHead>Email</TableHead>
+											<TableHead>Cohort</TableHead>
+											<TableHead>Status</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{members.length === 0 && !membersLoading ? (
+											<TableRow>
+												<TableCell colSpan={5} className="text-center text-muted-foreground">No members yet</TableCell>
+											</TableRow>
+										) : (
+											members.map((m) => (
+												<TableRow key={m.id} className="hover:bg-card/50">
+													<TableCell>{formatDate(m.created_at)}</TableCell>
+													<TableCell>{m.full_name}</TableCell>
+													<TableCell>{m.email}</TableCell>
+													<TableCell>{m.cohort || "-"}</TableCell>
+													<TableCell>
+														<Badge variant="secondary">{m.status || "active"}</Badge>
+													</TableCell>
+												</TableRow>
+											))
+										)}
+									</TableBody>
+								</Table>
+								<div className="flex justify-center mt-4">
+									<Button variant="outline" disabled={!membersHasMore || membersLoading} onClick={() => void loadMembers(false)}>
+										{membersLoading ? "Loading..." : membersHasMore ? "Load more" : "No more"}
+									</Button>
+								</div>
 							</CardContent>
 						</Card>
 					</TabsContent>
@@ -464,9 +545,58 @@ const Admin = () => {
 						{detail && detail.status === "pending" && (
 							<>
 								<Button variant="secondary" onClick={() => { void moderate(detail.id, "approve"); }}>Approve</Button>
-								<Button variant="destructive" onClick={() => { const reason = prompt("Reason for rejection? (optional)") || undefined; void moderate(detail.id, "reject", reason); }}>Reject</Button>
+								<Button variant="destructive" onClick={() => { setRejectingId(detail.id); setRejectOpen(true); }}>Reject</Button>
 							</>
 						)}
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Reject Reason Modal */}
+			<Dialog open={rejectOpen} onOpenChange={(open) => {
+				if (!open) {
+					setRejectOpen(false);
+					setRejectReason("");
+					setRejectingId(null);
+				}
+			}}>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Reject Application</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-4 py-4">
+						<div>
+							<label className="block text-sm font-medium mb-2">Reason for rejection <span className="text-muted-foreground">(required)</span></label>
+							<Textarea
+								value={rejectReason}
+								onChange={(e) => setRejectReason(e.target.value)}
+								placeholder="e.g., Application lacks required details. Please re-apply with more information."
+								rows={4}
+								className="bg-background/50 border-border focus:border-destructive"
+							/>
+							<p className="text-xs text-muted-foreground mt-1">This reason will be sent to the applicant via email.</p>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => {
+							setRejectOpen(false);
+							setRejectReason("");
+							setRejectingId(null);
+						}}>Cancel</Button>
+						<Button
+							variant="destructive"
+							disabled={!rejectReason.trim() || !rejectingId}
+							onClick={() => {
+								if (rejectingId && rejectReason.trim()) {
+									void moderate(rejectingId, "reject", rejectReason.trim());
+									setRejectOpen(false);
+									setRejectReason("");
+									setRejectingId(null);
+								}
+							}}
+						>
+							Reject Application
+						</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>

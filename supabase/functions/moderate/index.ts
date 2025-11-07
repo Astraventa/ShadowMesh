@@ -55,18 +55,22 @@ Deno.serve(async (req) => {
 
     // On approve: insert member if not exists
     if (action === 'approve' && app?.email) {
-      await fetch(`${SUPABASE_URL}/rest/v1/members?email=eq.${encodeURIComponent(app.email)}`, {
+      const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/members?email=eq.${encodeURIComponent(app.email)}&select=id`, {
         headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
       });
-      await fetch(`${SUPABASE_URL}/rest/v1/members`, {
-        method: 'POST',
-        headers: {
-          'apikey': SERVICE_KEY,
-          'Authorization': `Bearer ${SERVICE_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify([{ full_name: app.full_name, email: app.email, source_application: id }])
-      });
+      const existing = checkRes.ok ? await checkRes.json() : [];
+      if (!Array.isArray(existing) || existing.length === 0) {
+        await fetch(`${SUPABASE_URL}/rest/v1/members`, {
+          method: 'POST',
+          headers: {
+            'apikey': SERVICE_KEY,
+            'Authorization': `Bearer ${SERVICE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({ full_name: app.full_name, email: app.email, source_application: id })
+        });
+      }
     }
 
     // Emails via Resend
