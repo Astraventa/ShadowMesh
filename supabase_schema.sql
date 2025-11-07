@@ -125,6 +125,18 @@ create table if not exists public.event_registrations (
   unique (event_id, member_id) -- One registration per member per event
 );
 
+-- Attendance check-ins (QR / manual)
+create table if not exists public.event_checkins (
+  id            uuid primary key default gen_random_uuid(),
+  created_at    timestamptz not null default now(),
+  event_id      uuid references public.events(id) on delete cascade,
+  member_id     uuid references public.members(id) on delete cascade,
+  method        text not null default 'qr',
+  recorded_by   text,
+  metadata      jsonb,
+  unique (event_id, member_id)
+);
+
 -- Private content/resources for members
 create table if not exists public.member_resources (
   id                uuid primary key default gen_random_uuid(),
@@ -143,9 +155,11 @@ create index if not exists idx_events_start_date on public.events (start_date de
 create index if not exists idx_events_is_active on public.events (is_active);
 create index if not exists idx_event_registrations_event_id on public.event_registrations (event_id);
 create index if not exists idx_event_registrations_member_id on public.event_registrations (member_id);
+create index if not exists idx_event_checkins_event_id on public.event_checkins (event_id);
+create index if not exists idx_event_checkins_member_id on public.event_checkins (member_id);
+create index if not exists idx_event_checkins_method on public.event_checkins (method);
 create index if not exists idx_member_resources_is_active on public.member_resources (is_active);
 
--- Helper function to generate short, unique ShadowMesh codes (e.g., SMAB12CD)
 create or replace function public.generate_secret_code()
 returns text
 language plpgsql
@@ -157,10 +171,12 @@ declare
   v_exists boolean := false;
 begin
   loop
-    v_code := 'SM' || replace(replace(replace(upper(substr(encode(gen_random_bytes(4), 'base64'), 1, 6)), '/', 'X'), '+', 'Y'), '=', 'Z');
+    -- SM plus 6 uppercase characters derived from md5(random + timestamp)
+    v_code := 'SM' || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
     begin
       execute 'select exists(select 1 from public.join_applications where secret_code = $1)' into v_exists using v_code;
     exception when undefined_column then
+      -- First run: column may not exist yet
       v_exists := false;
     end;
     exit when not v_exists;
