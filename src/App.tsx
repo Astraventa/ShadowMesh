@@ -8,6 +8,7 @@ import ResourcesCategory from "./pages/ResourcesCategory";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 import MemberPortal from "./pages/MemberPortal";
+import AttendanceCheckin from "./pages/AttendanceCheckin";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,8 @@ const App = () => (
           <Route path="/shadow-ops-portal" element={<Admin />} />
           {/* Member portal - requires token */}
           <Route path="/member-portal" element={<MemberPortal />} />
+          {/* Attendance check-in - separate secure page */}
+          <Route path="/attendance-checkin" element={<AttendanceCheckin />} />
           {/* Fake 404 decoy for /admin */}
           <Route path="/admin" element={<NotFound />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

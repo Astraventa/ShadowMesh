@@ -117,24 +117,12 @@ const Admin = () => {
 
     // Basic username/password gate (client-side only)
     const [authed, setAuthed] = useState<boolean>(() => sessionStorage.getItem("shadowmesh_admin_basic_auth") === "1");
-    const [loginOpen, setLoginOpen] = useState<boolean>(() => !authed);
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            const key = e.key.toLowerCase();
-            if (e.ctrlKey && e.altKey && key === "b") {
-                e.preventDefault();
-                setLoginOpen(true);
-            }
-        };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, []);
+    // Keyboard shortcut removed - login now shows directly when not authenticated
 
     function onLogin(username: string, password: string) {
         if (username === "zeeshanjay" && password === "haiderjax###") {
             sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
             setAuthed(true);
-            setLoginOpen(false);
         } else {
             toast({ title: "Invalid credentials" });
         }
@@ -701,6 +689,23 @@ const scannerLockRef = useRef(false);
 	}
 
 
+	// Show login screen if not authenticated
+	if (!authed) {
+		return (
+			<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">
+				<Card className="w-full max-w-md">
+					<CardHeader>
+						<CardTitle>Administrator Login</CardTitle>
+						<CardDescription>Enter your credentials to access the admin dashboard</CardDescription>
+					</CardHeader>
+					<CardContent>
+						<LoginForm onLogin={onLogin} />
+					</CardContent>
+				</Card>
+			</div>
+		);
+	}
+
 	return (
 		<div className="min-h-screen bg-background text-foreground">
 			<div className="container mx-auto px-4 py-8">
@@ -732,13 +737,9 @@ const scannerLockRef = useRef(false);
                             </DialogTrigger>
                             <DialogContent>
                                 <DialogHeader>
-                                    <DialogTitle>{authed ? "Moderator Token" : "Administrator Login"}</DialogTitle>
+                                    <DialogTitle>Moderator Token</DialogTitle>
                                 </DialogHeader>
-                                {authed ? (
-                                    <AdminTokenForm onSave={save} onClear={clear} token={token || ""} />
-                                ) : (
-                                    <LoginForm onLogin={onLogin} />
-                                )}
+                                <AdminTokenForm onSave={save} onClear={clear} token={token || ""} />
                             </DialogContent>
                         </Dialog>
 					</div>
@@ -955,7 +956,7 @@ const scannerLockRef = useRef(false);
 														{event.title}
 													</SelectItem>
 												))}
-												{!events.length && !eventsLoading && <SelectItem value="" disabled>No events found</SelectItem>}
+												{!events.length && !eventsLoading && <div className="px-2 py-1.5 text-sm text-muted-foreground">No events found</div>}
 											</SelectContent>
 										</Select>
 									</div>
@@ -1470,17 +1471,6 @@ const scannerLockRef = useRef(false);
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
-		{/* Force login modal on first load if not authed */}
-		{!authed && loginOpen && (
-			<Dialog open>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Administrator Login</DialogTitle>
-					</DialogHeader>
-					<LoginForm onLogin={onLogin} />
-				</DialogContent>
-			</Dialog>
-		)}
 		</div>
 	);
 };
