@@ -121,6 +121,16 @@ const Admin = () => {
 	const [membersHasMore, setMembersHasMore] = useState(true);
 	const [membersLoading, setMembersLoading] = useState(false);
 
+	const [hackathonRegs, setHackathonRegs] = useState<any[]>([]);
+	const [hackRegsHasMore, setHackRegsHasMore] = useState(true);
+	const [hackRegsLoading, setHackRegsLoading] = useState(false);
+
+	const [memberDetails, setMemberDetails] = useState<any>(null);
+	const [showMemberDetails, setShowMemberDetails] = useState(false);
+	const [deleteMemberOpen, setDeleteMemberOpen] = useState(false);
+	const [deleteMemberId, setDeleteMemberId] = useState<string | null>(null);
+	const [deleteMemberReason, setDeleteMemberReason] = useState("");
+
 	// Detail dialog
 	const [openDetail, setOpenDetail] = useState(false);
 	const [detail, setDetail] = useState<JoinRow | null>(null);
@@ -136,6 +146,7 @@ const Admin = () => {
         void loadApps("rejected", true);
         void loadMsgs(true);
         void loadMembers(true);
+        void loadHackathonRegs(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authed, token]);
 
@@ -232,6 +243,107 @@ const Admin = () => {
 		}
 	}
 
+	async function loadHackathonRegs(reset = false) {
+        if (!authed || !token || hackRegsLoading) return;
+		setHackRegsLoading(true);
+		try {
+			const page = reset ? 0 : Math.floor(hackathonRegs.length / PAGE_SIZE);
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-admin-token": token,
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					type: "hackathon_registrations",
+					status: "all",
+					search: search.trim() || undefined,
+					page,
+					pageSize: PAGE_SIZE,
+				}),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			const { data, hasMore } = await res.json();
+			setHackathonRegs((prev) => (reset ? data ?? [] : [...prev, ...(data ?? [])]));
+			setHackRegsHasMore(hasMore);
+		} catch (e: any) {
+			toast({ title: "Failed to load hackathon registrations", description: e.message || String(e) });
+		} finally {
+			setHackRegsLoading(false);
+		}
+	}
+
+	async function loadMemberDetails(memberId: string) {
+        if (!authed || !token) return;
+		try {
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-admin-token": token,
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					type: "member_details",
+					member_id: memberId,
+				}),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			const data = await res.json();
+			setMemberDetails(data);
+			setShowMemberDetails(true);
+		} catch (e: any) {
+			toast({ title: "Failed to load member details", description: e.message || String(e) });
+		}
+	}
+
+	async function deleteMember() {
+        if (!token || !deleteMemberId) return;
+		try {
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_delete_member`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-admin-token": token,
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					member_id: deleteMemberId,
+					reason: deleteMemberReason.trim() || undefined,
+				}),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			toast({ title: "Member deleted", description: "Member has been deleted and notified via email." });
+			setDeleteMemberOpen(false);
+			setDeleteMemberId(null);
+			setDeleteMemberReason("");
+			void loadMembers(true);
+		} catch (e: any) {
+			toast({ title: "Failed to delete member", description: e.message || String(e) });
+		}
+	}
+
+	async function moderateHackathon(id: string, action: "approve" | "reject", reason?: string) {
+        if (!token) return;
+		try {
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/moderate_hackathon`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"x-admin-token": token,
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({ id, action, reason }),
+			});
+			if (!res.ok) throw new Error(await res.text());
+			toast({ title: `Hackathon registration ${action}d` });
+			void loadHackathonRegs(true);
+		} catch (e: any) {
+			toast({ title: "Moderation failed", description: e.message || String(e) });
+		}
+	}
+
 	async function deleteItem(type: "application" | "message", id: string) {
 		if (!token) {
 			toast({ title: "Admin token required", description: "Set the moderator token to perform actions." });
@@ -307,6 +419,7 @@ const Admin = () => {
 									void loadApps("rejected", true);
 									void loadMsgs(true);
 									void loadMembers(true);
+									void loadHackathonRegs(true);
 								}, 300);
 							}}
 							className="w-80"
@@ -334,6 +447,7 @@ const Admin = () => {
 						<TabsTrigger value="applications">Join Applications</TabsTrigger>
 						<TabsTrigger value="messages">Contact Messages</TabsTrigger>
                         <TabsTrigger value="members">Members</TabsTrigger>
+                        <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
 					</TabsList>
 
 					<TabsContent value="applications">
@@ -462,12 +576,13 @@ const Admin = () => {
 											<TableHead>Email</TableHead>
 											<TableHead>Cohort</TableHead>
 											<TableHead>Status</TableHead>
+											<TableHead className="text-right">Actions</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
 										{members.length === 0 && !membersLoading ? (
 											<TableRow>
-												<TableCell colSpan={5} className="text-center text-muted-foreground">No members yet</TableCell>
+												<TableCell colSpan={6} className="text-center text-muted-foreground">No members yet</TableCell>
 											</TableRow>
 										) : (
 											members.map((m) => (
@@ -479,6 +594,10 @@ const Admin = () => {
 													<TableCell>
 														<Badge variant="secondary">{m.status || "active"}</Badge>
 													</TableCell>
+													<TableCell className="text-right space-x-2">
+														<Button size="sm" variant="outline" onClick={() => void loadMemberDetails(m.id)}>View Details</Button>
+														<Button size="sm" variant="destructive" onClick={() => { setDeleteMemberId(m.id); setDeleteMemberOpen(true); }}>Delete</Button>
+													</TableCell>
 												</TableRow>
 											))
 										)}
@@ -487,6 +606,81 @@ const Admin = () => {
 								<div className="flex justify-center mt-4">
 									<Button variant="outline" disabled={!membersHasMore || membersLoading} onClick={() => void loadMembers(false)}>
 										{membersLoading ? "Loading..." : membersHasMore ? "Load more" : "No more"}
+									</Button>
+								</div>
+							</CardContent>
+						</Card>
+					</TabsContent>
+
+					<TabsContent value="hackathons">
+						<Card>
+							<CardHeader>
+								<CardTitle>Hackathon Registrations ({hackathonRegs.length})</CardTitle>
+							</CardHeader>
+							<CardContent>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>When</TableHead>
+											<TableHead>Member</TableHead>
+											<TableHead>Hackathon</TableHead>
+											<TableHead>Payment</TableHead>
+											<TableHead>Status</TableHead>
+											<TableHead className="text-right">Actions</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{hackathonRegs.length === 0 && !hackRegsLoading ? (
+											<TableRow>
+												<TableCell colSpan={6} className="text-center text-muted-foreground">No hackathon registrations yet</TableCell>
+											</TableRow>
+										) : (
+											hackathonRegs.map((reg) => (
+												<TableRow key={reg.id} className="hover:bg-card/50">
+													<TableCell>{formatDate(reg.created_at)}</TableCell>
+													<TableCell>
+														<div>
+															<p className="font-medium">{reg.members?.full_name || "-"}</p>
+															<p className="text-xs text-muted-foreground">{reg.members?.email || "-"}</p>
+														</div>
+													</TableCell>
+													<TableCell>{reg.events?.title || "-"}</TableCell>
+													<TableCell>
+														<div className="text-sm">
+															<p>{reg.payment_method || "-"}</p>
+															{reg.payment_amount && <p className="text-xs text-muted-foreground">PKR {reg.payment_amount}</p>}
+															{reg.transaction_id && <p className="text-xs text-muted-foreground">Txn: {reg.transaction_id}</p>}
+														</div>
+													</TableCell>
+													<TableCell>
+														<Badge variant={reg.status === "approved" ? "secondary" : reg.status === "rejected" ? "destructive" : "outline"}>
+															{reg.status}
+														</Badge>
+													</TableCell>
+													<TableCell className="text-right space-x-2">
+														{reg.status === "pending" && (
+															<>
+																<Button size="sm" variant="secondary" onClick={() => void moderateHackathon(reg.id, "approve")}>Approve</Button>
+																<Button size="sm" variant="destructive" onClick={() => { 
+																	const reason = prompt("Reason for rejection? (optional)") || undefined;
+																	if (reason !== null) void moderateHackathon(reg.id, "reject", reason);
+																}}>Reject</Button>
+															</>
+														)}
+														{reg.payment_proof_url && (
+															<Button size="sm" variant="outline" asChild>
+																<a href={reg.payment_proof_url} target="_blank" rel="noopener noreferrer">View Proof</a>
+															</Button>
+														)}
+													</TableCell>
+												</TableRow>
+											))
+										)}
+									</TableBody>
+								</Table>
+								<div className="flex justify-center mt-4">
+									<Button variant="outline" disabled={!hackRegsHasMore || hackRegsLoading} onClick={() => void loadHackathonRegs(false)}>
+										{hackRegsLoading ? "Loading..." : hackRegsHasMore ? "Load more" : "No more"}
 									</Button>
 								</div>
 							</CardContent>
@@ -596,6 +790,156 @@ const Admin = () => {
 							}}
 						>
 							Reject Application
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Member Details Dialog */}
+			<Dialog open={showMemberDetails} onOpenChange={setShowMemberDetails}>
+				<DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>Member Details</DialogTitle>
+					</DialogHeader>
+					{memberDetails && (
+						<div className="space-y-6">
+							<div>
+								<h3 className="font-semibold mb-2">Basic Info</h3>
+								<div className="grid grid-cols-2 gap-4">
+									<div>
+										<label className="text-sm text-muted-foreground">Name</label>
+										<p className="font-medium">{memberDetails.member.full_name}</p>
+									</div>
+									<div>
+										<label className="text-sm text-muted-foreground">Email</label>
+										<p className="font-medium">{memberDetails.member.email}</p>
+									</div>
+									<div>
+										<label className="text-sm text-muted-foreground">Member Since</label>
+										<p>{formatDate(memberDetails.member.created_at)}</p>
+									</div>
+									{memberDetails.member.cohort && (
+										<div>
+											<label className="text-sm text-muted-foreground">Cohort</label>
+											<p>{memberDetails.member.cohort}</p>
+										</div>
+									)}
+								</div>
+							</div>
+
+							<div>
+								<h3 className="font-semibold mb-2">Event Registrations ({memberDetails.events?.length || 0})</h3>
+								{memberDetails.events?.length > 0 ? (
+									<div className="space-y-2">
+										{memberDetails.events.map((e: any) => (
+											<div key={e.id} className="p-2 bg-muted rounded">
+												<p className="font-medium">{e.events?.title || "-"}</p>
+												<p className="text-xs text-muted-foreground">{e.events?.event_type} • {formatDate(e.events?.start_date || e.created_at)}</p>
+											</div>
+										))}
+									</div>
+								) : (
+									<p className="text-sm text-muted-foreground">No event registrations</p>
+								)}
+							</div>
+
+							<div>
+								<h3 className="font-semibold mb-2">Hackathon Registrations ({memberDetails.hackathons?.length || 0})</h3>
+								{memberDetails.hackathons?.length > 0 ? (
+									<div className="space-y-2">
+										{memberDetails.hackathons.map((h: any) => (
+											<div key={h.id} className="p-2 bg-muted rounded">
+												<div className="flex items-center justify-between">
+													<div>
+														<p className="font-medium">{h.events?.title || "-"}</p>
+														<p className="text-xs text-muted-foreground">Status: {h.status} • {formatDate(h.created_at)}</p>
+													</div>
+													<Badge variant={h.status === "approved" ? "secondary" : h.status === "rejected" ? "destructive" : "outline"}>
+														{h.status}
+													</Badge>
+												</div>
+											</div>
+										))}
+									</div>
+								) : (
+									<p className="text-sm text-muted-foreground">No hackathon registrations</p>
+								)}
+							</div>
+
+							<div>
+								<h3 className="font-semibold mb-2">Teams ({memberDetails.teams?.length || 0})</h3>
+								{memberDetails.teams?.length > 0 ? (
+									<div className="space-y-2">
+										{memberDetails.teams.map((t: any) => (
+											<div key={t.id} className="p-2 bg-muted rounded">
+												<p className="font-medium">{t.team_name}</p>
+												<p className="text-xs text-muted-foreground">Members: {t.team_members?.length || 0}/4 • Status: {t.status}</p>
+											</div>
+										))}
+									</div>
+								) : (
+									<p className="text-sm text-muted-foreground">No teams</p>
+								)}
+							</div>
+
+							<div>
+								<h3 className="font-semibold mb-2">Recent Activity ({memberDetails.activity?.length || 0})</h3>
+								{memberDetails.activity?.length > 0 ? (
+									<div className="space-y-1">
+										{memberDetails.activity.slice(0, 10).map((a: any) => (
+											<div key={a.id} className="text-sm p-2 bg-muted rounded">
+												<p className="capitalize">{a.activity_type.replace(/_/g, " ")}</p>
+												<p className="text-xs text-muted-foreground">{formatDate(a.created_at)}</p>
+											</div>
+										))}
+									</div>
+								) : (
+									<p className="text-sm text-muted-foreground">No activity</p>
+								)}
+							</div>
+						</div>
+					)}
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setShowMemberDetails(false)}>Close</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Delete Member Dialog */}
+			<Dialog open={deleteMemberOpen} onOpenChange={(open) => {
+				if (!open) {
+					setDeleteMemberOpen(false);
+					setDeleteMemberReason("");
+					setDeleteMemberId(null);
+				}
+			}}>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete Member</DialogTitle>
+						<DialogDescription>This action cannot be undone. The member will be notified via email.</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4 py-4">
+						<div>
+							<label className="block text-sm font-medium mb-2">Reason for deletion (optional)</label>
+							<Textarea
+								value={deleteMemberReason}
+								onChange={(e) => setDeleteMemberReason(e.target.value)}
+								placeholder="e.g., Violation of community guidelines"
+								rows={3}
+							/>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => {
+							setDeleteMemberOpen(false);
+							setDeleteMemberReason("");
+							setDeleteMemberId(null);
+						}}>Cancel</Button>
+						<Button
+							variant="destructive"
+							onClick={() => void deleteMember()}
+						>
+							Delete Member
 						</Button>
 					</DialogFooter>
 				</DialogContent>
