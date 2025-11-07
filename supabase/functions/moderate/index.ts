@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     const row = updated?.[0];
 
     // Fetch application to get email/name
-    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email`, {
+    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,secret_code`, {
       headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
     });
     const appRows = appRes.ok ? await appRes.json() : [];
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
             'Prefer': 'return=minimal'
           },
-          body: JSON.stringify({ full_name: app.full_name, email: app.email, source_application: id })
+          body: JSON.stringify({ full_name: app.full_name, email: app.email, source_application: id, secret_code: app.secret_code })
         });
       }
     }
@@ -85,6 +85,7 @@ Deno.serve(async (req) => {
             <img src="${LOGO_URL}" alt="ShadowMesh" style="height:48px;margin-bottom:12px" />
             <h2>Congratulations, ${app.full_name}!</h2>
             <p>Your application has been <b>approved</b>. Welcome to ShadowMesh.</p>
+            <p>Your ShadowMesh access code: <strong>${app.secret_code}</strong></p>
             ${COMMUNITY_WHATSAPP_LINK ? `<p>Join our community: <a href="${COMMUNITY_WHATSAPP_LINK}">${COMMUNITY_WHATSAPP_LINK}</a></p>` : ''}
           </div>`
         : `<div style="font-family:Inter,sans-serif;padding:16px;color:#0b1224">

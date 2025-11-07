@@ -38,12 +38,12 @@ export default function HackathonRegistration({
       const filePath = `hackathon-payments/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
-        .from("public")
+        .from("Payment-Proofs")
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from("public").getPublicUrl(filePath);
+      const { data } = supabase.storage.from("Payment-Proofs").getPublicUrl(filePath);
       return data.publicUrl;
     } catch (e: any) {
       toast({ title: "Upload failed", description: e.message });

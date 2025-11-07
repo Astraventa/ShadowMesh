@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           member_id: reg.member_id,
-          activity_type: action === 'approve' ? 'hackathon_approved' : 'hackathon_registered',
+          activity_type: action === 'approve' ? 'hackathon_approved' : 'hackathon_rejected',
           activity_data: { hackathon_id: reg.hackathon_id, hackathon_title: reg.events?.title, status: body.status },
           related_id: reg.hackathon_id
         })

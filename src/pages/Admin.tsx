@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -51,6 +51,7 @@ type JoinRow = {
 	phone_e164: string | null;
 	raw_phone: string | null;
 	verification_token: string | null;
+	secret_code: string | null;
 	reviewed_at: string | null;
 	reviewed_by: string | null;
 	decision_reason: string | null;
@@ -558,11 +559,15 @@ const Admin = () => {
 											<Button variant="outline" disabled={!appsHasMore || appsLoading} onClick={() => void loadApps("rejected", false)}>
 												{appsLoading ? "Loading..." : appsHasMore ? "Load more" : "No more"}
 											</Button>
-										</div>
-									</TabsContent>
-								</Tabs>
-                {/* Members Tab */}
-					<TabsContent value="members">
+						</div>
+					</TabsContent>
+				</Tabs>
+			</CardContent>
+		</Card>
+	</TabsContent>
+
+					{/* Members Tab */}
+		<TabsContent value="members">
 						<Card>
 							<CardHeader>
 								<CardTitle>Verified Members ({members.length})</CardTitle>
@@ -575,6 +580,7 @@ const Admin = () => {
 											<TableHead>Name</TableHead>
 											<TableHead>Email</TableHead>
 											<TableHead>Cohort</TableHead>
+											<TableHead>Code</TableHead>
 											<TableHead>Status</TableHead>
 											<TableHead className="text-right">Actions</TableHead>
 										</TableRow>
@@ -582,7 +588,7 @@ const Admin = () => {
 									<TableBody>
 										{members.length === 0 && !membersLoading ? (
 											<TableRow>
-												<TableCell colSpan={6} className="text-center text-muted-foreground">No members yet</TableCell>
+												<TableCell colSpan={7} className="text-center text-muted-foreground">No members yet</TableCell>
 											</TableRow>
 										) : (
 											members.map((m) => (
@@ -590,8 +596,24 @@ const Admin = () => {
 													<TableCell>{formatDate(m.created_at)}</TableCell>
 													<TableCell>{m.full_name}</TableCell>
 													<TableCell>{m.email}</TableCell>
-													<TableCell>{m.cohort || "-"}</TableCell>
-													<TableCell>
+											<TableCell>{m.cohort || "-"}</TableCell>
+										<TableCell>
+											{m.secret_code ? (
+												<Button size="sm" variant="outline" onClick={() => {
+													if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+														navigator.clipboard.writeText(m.secret_code);
+														toast({ title: "Code copied", description: m.secret_code });
+													} else {
+														toast({ title: "Copy unavailable", description: m.secret_code });
+													}
+												}}>
+													<span className="font-mono text-xs">{m.secret_code}</span>
+												</Button>
+											) : (
+												<span className="text-muted-foreground">-</span>
+											)}
+										</TableCell>
+											<TableCell>
 														<Badge variant="secondary">{m.status || "active"}</Badge>
 													</TableCell>
 													<TableCell className="text-right space-x-2">
@@ -815,6 +837,10 @@ const Admin = () => {
 										<p className="font-medium">{memberDetails.member.email}</p>
 									</div>
 									<div>
+										<label className="text-sm text-muted-foreground">ShadowMesh Code</label>
+										<p className="font-mono text-sm">{memberDetails.member.secret_code}</p>
+									</div>
+									<div>
 										<label className="text-sm text-muted-foreground">Member Since</label>
 										<p>{formatDate(memberDetails.member.created_at)}</p>
 									</div>
@@ -982,12 +1008,12 @@ const DetailView = ({ detail }: { detail: JoinRow | null }) => {
 					<div><span className="text-sm text-muted-foreground">Role</span><div>{detail.role_title || "-"}</div></div>
 				</div>
 			)}
-			<div className="grid grid-cols-2 gap-3">
-				<div><span className="text-sm text-muted-foreground">Status</span><div>{detail.status}</div></div>
-				<div><span className="text-sm text-muted-foreground">Reviewed</span><div>{formatDate(detail.reviewed_at)}</div></div>
-				<div className="col-span-2"><span className="text-sm text-muted-foreground">Reason</span><div>{detail.decision_reason || "-"}</div></div>
-				<div className="col-span-2"><span className="text-sm text-muted-foreground">Verification Token</span><div className="break-all text-xs">{detail.verification_token || "-"}</div></div>
-			</div>
+		<div className="grid grid-cols-2 gap-3">
+			<div><span className="text-sm text-muted-foreground">Status</span><div>{detail.status}</div></div>
+			<div><span className="text-sm text-muted-foreground">Reviewed</span><div>{formatDate(detail.reviewed_at)}</div></div>
+			<div className="col-span-2"><span className="text-sm text-muted-foreground">Reason</span><div>{detail.decision_reason || "-"}</div></div>
+			<div className="col-span-2"><span className="text-sm text-muted-foreground">ShadowMesh Code</span><div className="font-mono text-xs">{detail.secret_code || "-"}</div></div>
+		</div>
 		</div>
 	);
 };

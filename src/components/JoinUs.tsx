@@ -19,8 +19,8 @@ const JoinUs = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [applicationId, setApplicationId] = useState<string | null>(null);
-  const [verificationToken, setVerificationToken] = useState<string | null>(null);
-  const [statusInfo, setStatusInfo] = useState<{ status: string; reviewed_at?: string; decision_reason?: string } | null>(null);
+  const [secretCode, setSecretCode] = useState<string | null>(null);
+  const [statusInfo, setStatusInfo] = useState<{ status: string; reviewed_at?: string; decision_reason?: string; secret_code?: string } | null>(null);
 
   // Controlled inputs
   const [fullName, setFullName] = useState("");
@@ -40,7 +40,7 @@ const JoinUs = () => {
   // Status check
   const [checkToken, setCheckToken] = useState("");
   const [checkingStatus, setCheckingStatus] = useState(false);
-  const [checkResult, setCheckResult] = useState<{ status: string; reviewed_at?: string; decision_reason?: string } | null>(null);
+  const [checkResult, setCheckResult] = useState<{ status: string; reviewed_at?: string; decision_reason?: string; secret_code?: string } | null>(null);
 
   // Honeypot
   const [honeypot, setHoneypot] = useState("");
@@ -89,7 +89,11 @@ const JoinUs = () => {
         const s = JSON.parse(saved);
         if (s && s.id) {
           setApplicationId(s.id as string);
-          setVerificationToken(s.token || null);
+          const storedCode = (s.code || s.token) ? String(s.code || s.token).toUpperCase() : null;
+          if (storedCode) {
+            setSecretCode(storedCode);
+            setCheckToken(storedCode);
+          }
           setSuccess(true);
         }
       } catch {}
@@ -112,19 +116,24 @@ const JoinUs = () => {
 
   async function checkStatus() {
     if (!checkToken.trim()) {
-      toast({ title: "Enter verification token", description: "Please enter the token you received after registration." });
+      toast({ title: "Enter your ShadowMesh code", description: "Use the code shown after submission or in your email." });
       return;
     }
     setCheckingStatus(true);
     setCheckResult(null);
     try {
+      const payloadKey = checkToken.includes("-") ? "verification_token" : "code";
       const res = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verification_token: checkToken.trim() }),
+        body: JSON.stringify({ [payloadKey]: checkToken.trim() }),
       });
       if (res.ok) {
         const info = await res.json();
+        if (info.secret_code) {
+          info.secret_code = String(info.secret_code).toUpperCase();
+          setSecretCode(info.secret_code);
+        }
         setCheckResult(info);
       } else {
         const text = await res.text();
@@ -192,14 +201,17 @@ const JoinUs = () => {
           ip_addr: null,
           honeypot,
         }])
-        .select('id, verification_token')
+        .select('id, verification_token, secret_code')
         .single();
 
       if (error) throw error;
 
       setApplicationId(data?.id || null);
-      setVerificationToken(data?.verification_token || null);
-      localStorage.setItem('shadowmesh_join_submission', JSON.stringify({ id: data?.id, token: data?.verification_token, ts: Date.now() }));
+      const rawCode = data?.secret_code || data?.verification_token || null;
+      const normalizedCode = rawCode ? String(rawCode).toUpperCase() : null;
+      setSecretCode(normalizedCode);
+      setCheckToken(normalizedCode || "");
+      localStorage.setItem('shadowmesh_join_submission', JSON.stringify({ id: data?.id, code: normalizedCode, token: data?.verification_token, ts: Date.now() }));
 
       try {
         await fetch(`${SUPABASE_URL}/functions/v1/notify`, {
@@ -217,7 +229,6 @@ const JoinUs = () => {
       setSuccess(true);
       toast({ title: "Application submitted", description: "Verification in process. You'll be notified soon." });
       setActiveTab("status");
-      setCheckToken(verificationToken || "");
       // Clear form
       setFullName(""); setEmail(""); setAreaOfInterest(""); setMotivation("");
       setUniversityName(""); setDepartment(""); setRollNumber("");
@@ -269,18 +280,31 @@ const JoinUs = () => {
                 <h3 className="text-2xl font-bold mb-2">Application submitted</h3>
                 {applicationId && <p className="text-xs text-muted-foreground mb-2">Application ID: <span className="text-foreground">{applicationId}</span></p>}
                 <p className="text-muted-foreground mb-4">Verification in process — you’ll be notified soon.</p>
+                {secretCode && (
+                  <Card className="max-w-sm mx-auto mb-6 bg-primary/5 border-primary/20">
+                    <CardContent className="py-4 text-center">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Your ShadowMesh Code</p>
+                      <p className="text-2xl font-mono mt-2 text-foreground">{secretCode}</p>
+                      <p className="text-xs text-muted-foreground mt-2">Keep this code safe – use it for status checks, event access, and verification.</p>
+                    </CardContent>
+                  </Card>
+                )}
                 <div className="flex gap-3 justify-center">
-                  <Button size="sm" variant="outline" onClick={() => { localStorage.removeItem('shadowmesh_join_submission'); setSuccess(false); setApplicationId(null); setVerificationToken(null); setStatusInfo(null); }}>New Application</Button>
-                  {verificationToken && (
+                  <Button size="sm" variant="outline" onClick={() => { localStorage.removeItem('shadowmesh_join_submission'); setSuccess(false); setApplicationId(null); setSecretCode(null); setStatusInfo(null); }}>New Application</Button>
+                  {secretCode && (
                     <Button size="sm" variant="glow" onClick={async () => {
                       try {
                         const res = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ verification_token: verificationToken })
+                          body: JSON.stringify({ code: secretCode })
                         });
                         if (res.ok) {
                           const info = await res.json();
+                          if (info.secret_code) {
+                            info.secret_code = String(info.secret_code).toUpperCase();
+                            setSecretCode(info.secret_code);
+                          }
                           setStatusInfo(info);
                         } else {
                           setStatusInfo({ status: 'pending' });
@@ -294,6 +318,7 @@ const JoinUs = () => {
                 {statusInfo && (
                   <div className="mt-4 text-sm text-muted-foreground">
                     <p>Status: <span className="text-foreground font-medium">{statusInfo.status}</span></p>
+                    {statusInfo.secret_code && <p>Code: <span className="font-mono text-xs">{statusInfo.secret_code}</span></p>}
                     {statusInfo.decision_reason && <p>Notes: {statusInfo.decision_reason}</p>}
                   </div>
                 )}
@@ -388,14 +413,14 @@ const JoinUs = () => {
               <TabsContent value="status">
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Verification Token</label>
+                    <label className="block text-sm font-medium mb-2">ShadowMesh Code</label>
                     <Input
                       value={checkToken}
-                      onChange={(e) => setCheckToken(e.target.value)}
-                      placeholder="Enter your verification token"
+                      onChange={(e) => setCheckToken(e.target.value.toUpperCase())}
+                      placeholder="e.g., SMAB12CD"
                       className="bg-background/50 border-border focus:border-primary transition-colors"
                     />
-                    <p className="text-xs text-muted-foreground mt-1">Enter the token you received after submitting your application.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Use the code shown after registration (also emailed). This code unlocks status checks and event access.</p>
                   </div>
                   <Button type="button" size="lg" variant="cyber" className="w-full" onClick={checkStatus} disabled={checkingStatus}>
                     {checkingStatus ? "Checking..." : "Check Status"}
@@ -404,15 +429,27 @@ const JoinUs = () => {
                     <Card className="p-6 mt-4">
                       {checkResult.status === "not_found" ? (
                         <div className="text-center">
-                          <p className="text-destructive font-medium">Token not found</p>
-                          <p className="text-sm text-muted-foreground mt-2">Please verify your token or register first.</p>
+                          <p className="text-destructive font-medium">Code not found</p>
+                          <p className="text-sm text-muted-foreground mt-2">Double-check your code or register first.</p>
                         </div>
                       ) : checkResult.status === "approved" ? (
                         <div className="text-center space-y-3">
                           <Badge variant="secondary" className="text-base px-4 py-2">✓ Approved</Badge>
                           <p className="text-foreground font-medium">Congratulations! You're now a member of ShadowMesh.</p>
+                          {checkResult.secret_code && (
+                            <p className="text-sm font-mono bg-muted inline-block px-3 py-1 rounded">Code: {checkResult.secret_code}</p>
+                          )}
                           <p className="text-sm text-muted-foreground">Check your email for the community link and next steps.</p>
-                          <Button variant="glow" className="mt-4" onClick={() => window.location.href = "/member-portal"}>Access Member Portal</Button>
+                          <Button
+                            variant="glow"
+                            className="mt-4"
+                            onClick={() => {
+                              const code = checkResult.secret_code || checkToken;
+                              window.location.href = code ? `/member-portal?code=${encodeURIComponent(code)}` : "/member-portal";
+                            }}
+                          >
+                            Access Member Portal
+                          </Button>
                         </div>
                       ) : checkResult.status === "rejected" ? (
                         <div className="text-center space-y-3">

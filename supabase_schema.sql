@@ -145,6 +145,30 @@ create index if not exists idx_event_registrations_event_id on public.event_regi
 create index if not exists idx_event_registrations_member_id on public.event_registrations (member_id);
 create index if not exists idx_member_resources_is_active on public.member_resources (is_active);
 
+-- Helper function to generate short, unique ShadowMesh codes (e.g., SMAB12CD)
+create or replace function public.generate_secret_code()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text;
+  v_exists boolean := false;
+begin
+  loop
+    v_code := 'SM' || replace(replace(replace(upper(substr(encode(gen_random_bytes(4), 'base64'), 1, 6)), '/', 'X'), '+', 'Y'), '=', 'Z');
+    begin
+      execute 'select exists(select 1 from public.join_applications where secret_code = $1)' into v_exists using v_code;
+    exception when undefined_column then
+      v_exists := false;
+    end;
+    exit when not v_exists;
+  end loop;
+  return v_code;
+end;
+$$;
+
 -- Hackathon registrations (separate from regular events, includes payment)
 create table if not exists public.hackathon_registrations (
   id                uuid primary key default gen_random_uuid(),
@@ -206,7 +230,7 @@ create table if not exists public.member_activity (
   id                uuid primary key default gen_random_uuid(),
   created_at        timestamptz not null default now(),
   member_id         uuid references public.members(id) on delete cascade,
-  activity_type     text        not null check (activity_type in ('event_registered', 'event_attended', 'resource_accessed', 'team_joined', 'team_created', 'hackathon_registered', 'hackathon_approved')),
+  activity_type     text        not null check (activity_type in ('event_registered', 'event_attended', 'resource_accessed', 'team_joined', 'team_created', 'hackathon_registered', 'hackathon_approved', 'hackathon_rejected')),
   activity_data     jsonb, -- Flexible JSON for activity details
   related_id        uuid -- ID of related event/resource/team/etc
 );
@@ -241,7 +265,27 @@ begin
   if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='verification_token') then
     alter table public.join_applications add column verification_token uuid default gen_random_uuid();
   end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='secret_code') then
+    alter table public.join_applications add column secret_code text not null default public.generate_secret_code();
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='secret_code') then
+    alter table public.members add column secret_code text;
+    update public.members m
+      set secret_code = ja.secret_code
+      from public.join_applications ja
+      where m.source_application = ja.id and m.secret_code is null;
+    update public.members set secret_code = public.generate_secret_code() where secret_code is null;
+    alter table public.members alter column secret_code set not null;
+  end if;
 end$$;
+
+create unique index if not exists idx_join_applications_secret_code on public.join_applications (secret_code);
+create unique index if not exists idx_members_secret_code on public.members (secret_code);
+
+alter table public.member_activity drop constraint if exists member_activity_activity_type_check;
+alter table public.member_activity
+  add constraint member_activity_activity_type_check
+  check (activity_type in ('event_registered', 'event_attended', 'resource_accessed', 'team_joined', 'team_created', 'hackathon_registered', 'hackathon_approved', 'hackathon_rejected'));
 
 -- Contact messages
 create table if not exists public.contact_messages (

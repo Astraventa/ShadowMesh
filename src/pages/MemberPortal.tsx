@@ -18,6 +18,7 @@ interface Member {
   email: string;
   created_at: string;
   cohort?: string;
+  secret_code?: string;
 }
 
 interface Event {
@@ -100,8 +101,9 @@ export default function MemberPortal() {
 
   useEffect(() => {
     // Check if user has verification token
-    const token = new URLSearchParams(window.location.search).get("token") || 
-                  localStorage.getItem("shadowmesh_member_token");
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get("code") || params.get("token");
+    const token = tokenParam || localStorage.getItem("shadowmesh_member_token");
     
     if (!token) {
       toast({ title: "Access Denied", description: "Please use your verification token to access the member portal." });
@@ -109,17 +111,18 @@ export default function MemberPortal() {
       return;
     }
 
-    loadMemberData(token);
+    loadMemberData(token.trim().toUpperCase());
   }, []);
 
   async function loadMemberData(token: string) {
     setLoading(true);
     try {
       // Verify token and get member info
+      const payloadKey = token.includes("-") ? "verification_token" : "code";
       const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ verification_token: token }),
+        body: JSON.stringify({ [payloadKey]: token }),
       });
 
       if (!verifyRes.ok) {
@@ -143,7 +146,8 @@ export default function MemberPortal() {
       }
 
       setMember(memberData);
-      localStorage.setItem("shadowmesh_member_token", token);
+      const storedCode = (verifyData.secret_code || token).toUpperCase();
+      localStorage.setItem("shadowmesh_member_token", storedCode);
 
       // Load events
       const { data: eventsData } = await supabase
@@ -716,6 +720,10 @@ export default function MemberPortal() {
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">Email</label>
                   <p className="text-lg">{member.email}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground">ShadowMesh Code</label>
+                  <p className="font-mono text-sm">{member.secret_code}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">Member Since</label>
