@@ -20,7 +20,12 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { type, status, search, page = 0, pageSize = 50 } = await req.json();
+    const payload = await req.json();
+    const type = payload?.type as string | undefined;
+    const status = payload?.status as string | undefined;
+    const search = payload?.search as string | undefined;
+    const page = typeof payload?.page === 'number' ? payload.page : 0;
+    const pageSize = typeof payload?.pageSize === 'number' ? payload.pageSize : 50;
     const SUPABASE_URL = Deno.env.get('SM_SUPABASE_URL');
     const SERVICE_KEY = Deno.env.get('SM_SERVICE_ROLE_KEY');
     if (!SUPABASE_URL || !SERVICE_KEY) {
@@ -129,7 +134,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } else if (type === 'member_details') {
-      const { member_id } = await req.json();
+      const { member_id } = payload;
       if (!member_id) return new Response('Missing member_id', { status: 400, headers: corsHeaders });
 
       // Get member with all related data
@@ -169,7 +174,8 @@ Deno.serve(async (req) => {
       
       let memberTeams: any[] = [];
       if (teamIds.length > 0) {
-        const memberTeamsRes2 = await fetch(`${SUPABASE_URL}/rest/v1/hackathon_teams?id=in.(${teamIds.join(',')})&select=*,team_members(member_id,role,members(full_name,email))`, {
+        const idList = teamIds.map((id: string) => `"${id}"`).join(',');
+        const memberTeamsRes2 = await fetch(`${SUPABASE_URL}/rest/v1/hackathon_teams?id=in.(${idList})&select=*,team_members(member_id,role,members(full_name,email))`, {
           headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
         });
         memberTeams = memberTeamsRes2.ok ? await memberTeamsRes2.json() : [];
@@ -194,7 +200,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } else if (type === 'participants') {
-      const { hackathon_id } = await req.json();
+      const { hackathon_id } = payload;
       let url = `${SUPABASE_URL}/rest/v1/hackathon_registrations?select=*,members(full_name,email,created_at)&order=created_at.desc&limit=${pageSize}&offset=${from}`;
       if (hackathon_id) {
         url += `&hackathon_id=eq.${hackathon_id}`;
@@ -216,6 +222,49 @@ Deno.serve(async (req) => {
 
       const data = await res.json();
       return new Response(JSON.stringify({ data, hasMore: data.length === pageSize }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'events') {
+      let url = `${SUPABASE_URL}/rest/v1/events?select=id,title,start_date,event_type,is_member_only,location,event_registrations(count),event_checkins(count)&order=start_date.desc`;
+      if (search && search.trim()) {
+        const s = encodeURIComponent(`%${search.trim()}%`);
+        url += `&title.ilike.${s}`;
+      }
+
+      const res = await fetch(url, {
+        headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+      });
+      if (!res.ok) {
+        return new Response(`error: ${await res.text()}`, { status: 502, headers: corsHeaders });
+      }
+      const data = await res.json();
+      return new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } else if (type === 'attendance_details') {
+      const { event_id } = payload;
+      if (!event_id) return new Response('Missing event_id', { status: 400, headers: corsHeaders });
+
+      const eventRes = await fetch(`${SUPABASE_URL}/rest/v1/events?id=eq.${event_id}&select=id,title,start_date,event_type,is_member_only,location,description`, {
+        headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+      });
+      const eventRows = eventRes.ok ? await eventRes.json() : [];
+      const event = Array.isArray(eventRows) && eventRows[0] ? eventRows[0] : null;
+      if (!event) return new Response('Event not found', { status: 404, headers: corsHeaders });
+
+      const registrationsRes = await fetch(`${SUPABASE_URL}/rest/v1/event_registrations?event_id=eq.${event_id}&select=*,members(full_name,email,secret_code,status)&order=created_at.asc`, {
+        headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+      });
+      const registrations = registrationsRes.ok ? await registrationsRes.json() : [];
+
+      const checkinsRes = await fetch(`${SUPABASE_URL}/rest/v1/event_checkins?event_id=eq.${event_id}&select=*,members(full_name,email,secret_code)&order=created_at.desc`, {
+        headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+      });
+      const checkins = checkinsRes.ok ? await checkinsRes.json() : [];
+
+      return new Response(JSON.stringify({ event, registrations, checkins }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

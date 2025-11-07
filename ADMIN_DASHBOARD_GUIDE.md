@@ -24,12 +24,18 @@
   - Reject: Member gets email with reason
 - **View Payment Proof**: Click "View Proof" to see uploaded receipts
 
-### 3. **Application Management** (Existing)
+### 3. **Attendance Management**
+- **Attendance Tab**: Pick any event and see registrations vs. check-ins with live metrics
+- **Manual Check-In**: Enter a ShadowMesh code to mark attendance instantly
+- **QR Scanner**: Built-in scanner (Ctrl+Alt+B → login → Attendance → Open QR Scanner) to validate passes
+- **Recent Activity**: View the latest check-ins, method, and staff member who recorded them
+
+### 4. **Application Management** (Existing)
 - Pending/Approved/Rejected tabs
 - Approve/Reject with reasons
 - Delete applications
 
-### 4. **Contact Messages** (Existing)
+### 5. **Contact Messages** (Existing)
 - View all contact form submissions
 - Delete messages
 
@@ -94,6 +100,12 @@
 4. **Check Contact Messages** (Contact Messages tab)
    - Respond to inquiries
    - Delete spam/old messages
+
+5. **Manage Attendance** (Attendance tab)
+   - Choose the active event
+   - Review registrations vs. check-ins before sessions start
+   - Use manual check-in for on-site adjustments
+   - Launch the QR scanner to validate attendee passes in real time
 
 ---
 
@@ -165,6 +177,20 @@ When you click "View Details" on a member, you see:
 
 ---
 
+## Attendance & Check-In Flow
+
+1. **Prepare**: Create the event in Supabase (`events` table) and allow members to RSVP from the site or portal.
+2. **Before the session**: Open the **Attendance** tab to review registrations and confirm staffing needs.
+3. **Check-in options**:
+   - **QR Scanner**: Launch the scanner dialog, scan attendee passes, and the system verifies the ShadowMesh code + event in one step.
+   - **Manual Entry**: Type the ShadowMesh code to handle edge cases or device issues.
+4. **Real-time updates**: Successful check-ins instantly update `event_checkins`, mark the registration as `attended`, and refresh the dashboard widgets.
+5. **Audit trail**: Every scan records the method (`qr` or `manual`) plus the staff member who handled it (`recorded_by`).
+
+> **Next step**: hook the registration confirmation email to attach the event QR, so attendees always arrive with the right code in hand.
+
+---
+
 ## Best Practices
 
 ### **For Hackathon Management**
@@ -192,6 +218,7 @@ When you click "View Details" on a member, you see:
 ✅ **Complete Admin Dashboard** with:
 - Member management (view, details, delete)
 - Hackathon management (approve/reject with payment verification)
+- Attendance dashboard (manual check-in + QR scanner + live metrics)
 - Application management
 - Contact message management
 - Deep member data views

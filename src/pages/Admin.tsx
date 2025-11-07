@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
+import { QrScanner } from "@yudiel/react-qr-scanner";
 
 // Simple token gate using a shared moderator token stored in sessionStorage
 function useAdminToken() {
@@ -34,6 +35,45 @@ function formatDate(iso?: string | null) {
 		return iso as string;
 	}
 }
+
+function parseScanPayload(raw: string): { eventId?: string | null; code?: string | null } {
+	if (!raw) return { eventId: null, code: null };
+	const trimmed = raw.trim();
+	let eventId: string | null | undefined;
+	let code: string | null | undefined;
+
+	// Try JSON payload
+	try {
+		const parsed = JSON.parse(trimmed);
+		if (typeof parsed === "object" && parsed) {
+			eventId = parsed.event_id ?? parsed.eventId ?? eventId;
+			code = parsed.code ?? parsed.secret_code ?? parsed.secretCode ?? code;
+		}
+	} catch {}
+
+	// Try query-string style
+	if (!eventId || !code) {
+		const queryString = trimmed.includes("?") ? trimmed.split("?")[1] : trimmed;
+		try {
+			const params = new URLSearchParams(queryString);
+			eventId = eventId ?? params.get("event_id") ?? params.get("eventId") ?? params.get("event") ?? undefined;
+			code = code ?? params.get("code") ?? params.get("secret_code") ?? params.get("key") ?? undefined;
+		} catch {
+			// ignore
+		}
+	}
+
+	// Try delimiter-based (event|code)
+	if ((!eventId || !code) && trimmed.includes("|")) {
+		const [maybeEvent, maybeCode] = trimmed.split("|").map((part) => part.trim());
+		eventId = eventId ?? maybeEvent;
+		code = code ?? maybeCode;
+	}
+
+	return { eventId: eventId ?? null, code: code ?? null };
+}
+
+type CheckInOutcome = { status: string; message: string };
 
 type JoinRow = {
 	id: string;
@@ -126,6 +166,18 @@ const Admin = () => {
 	const [hackRegsHasMore, setHackRegsHasMore] = useState(true);
 	const [hackRegsLoading, setHackRegsLoading] = useState(false);
 
+const [events, setEvents] = useState<any[]>([]);
+const [eventsLoading, setEventsLoading] = useState(false);
+const [attendanceEventId, setAttendanceEventId] = useState<string | null>(null);
+const [attendanceData, setAttendanceData] = useState<any>(null);
+const [attendanceLoading, setAttendanceLoading] = useState(false);
+const [checkinCode, setCheckinCode] = useState("");
+const [checkinLoading, setCheckinLoading] = useState(false);
+const [scannerOpen, setScannerOpen] = useState(false);
+const [scannerPaused, setScannerPaused] = useState(false);
+const [checkinResult, setCheckinResult] = useState<string | null>(null);
+const scannerLockRef = useRef(false);
+
 	const [memberDetails, setMemberDetails] = useState<any>(null);
 	const [showMemberDetails, setShowMemberDetails] = useState(false);
 	const [deleteMemberOpen, setDeleteMemberOpen] = useState(false);
@@ -148,8 +200,19 @@ const Admin = () => {
         void loadMsgs(true);
         void loadMembers(true);
         void loadHackathonRegs(true);
+        void loadEvents(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authed, token]);
+
+    useEffect(() => {
+        if (!authed || !token) return;
+        if (!attendanceEventId) {
+            setAttendanceData(null);
+            return;
+        }
+        void loadAttendance(attendanceEventId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [authed, token, attendanceEventId]);
 
     async function loadApps(statusFilter: "pending" | "approved" | "rejected", reset = false) {
         if (!authed || !token || appsLoading) return;
@@ -275,6 +338,158 @@ const Admin = () => {
 		}
 	}
 
+	async function loadAttendance(eventId: string, force = false) {
+        if (!authed || !token) return;
+        const current = eventId;
+        setAttendanceLoading(true);
+        try {
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-admin-token": token,
+                    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                },
+                body: JSON.stringify({
+                    type: "attendance_details",
+                    event_id: eventId,
+                }),
+            });
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(errText || "Failed to load attendance");
+            }
+            const data = await res.json();
+            if (force || attendanceEventId === current) {
+                setAttendanceData(data);
+            }
+        } catch (e: any) {
+            if (force || attendanceEventId === current) {
+                toast({ title: "Failed to load attendance", description: e.message || String(e) });
+            }
+        } finally {
+            if (force || attendanceEventId === current) {
+                setAttendanceLoading(false);
+            }
+        }
+    }
+
+	async function loadEvents(reset = false) {
+        if (!authed || !token) return;
+        setEventsLoading(true);
+        try {
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-admin-token": token,
+                    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                },
+                body: JSON.stringify({
+                    type: "events",
+                    search: search.trim() || undefined,
+                }),
+            });
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(errText || "Failed to load events");
+            }
+            const { data } = await res.json();
+            const list = Array.isArray(data) ? data : [];
+            setEvents(list);
+
+            if (list.length === 0) {
+                setAttendanceEventId(null);
+                if (reset) {
+                    setAttendanceData(null);
+                }
+                return;
+            }
+
+            const currentId = attendanceEventId;
+            const containsCurrent = currentId ? list.some((evt: any) => evt.id === currentId) : false;
+
+            if (!currentId || !containsCurrent) {
+                const newId = list[0]?.id as string | undefined;
+                if (newId !== currentId) {
+                    setAttendanceEventId(newId ?? null);
+                } else if (reset && newId) {
+                    await loadAttendance(newId, true);
+                }
+            } else if (reset && currentId) {
+                await loadAttendance(currentId, true);
+            }
+        } catch (e: any) {
+            toast({ title: "Failed to load events", description: e.message || String(e) });
+        } finally {
+            setEventsLoading(false);
+        }
+    }
+
+	async function performCheckIn(eventId: string, code: string, method: "qr" | "manual" = "manual") {
+        if (!authed || !token) {
+            return { status: "error", message: "Not authorized." };
+        }
+
+        try {
+            const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_attendance_checkin`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-admin-token": token,
+                    "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                },
+                body: JSON.stringify({
+                    event_id: eventId,
+                    code: code.trim().toUpperCase(),
+                    method,
+                    recorded_by: "admin-dashboard",
+                }),
+            });
+
+            const text = await res.text();
+            let data: any = {};
+            if (text) {
+                try {
+                    data = JSON.parse(text);
+                } catch {
+                    data = { raw: text };
+                }
+            }
+
+            const statusValue = data?.status ?? (res.ok ? "ok" : "error");
+
+            if (statusValue === "checked_in") {
+                await loadAttendance(eventId, true);
+                const memberName = data?.member?.full_name ?? "Member";
+                return { status: "checked_in", message: `${memberName} checked in successfully.` };
+            }
+
+            if (statusValue === "already_checked_in") {
+                await loadAttendance(eventId, true);
+                const time = data?.checkin?.created_at ? formatDate(data.checkin.created_at) : "earlier";
+                return { status: "already_checked_in", message: `Already checked in (${time}).` };
+            }
+
+            if (statusValue === "not_registered") {
+                return { status: "not_registered", message: "Member is not registered for this event." };
+            }
+
+            if (statusValue === "code_not_found") {
+                return { status: "code_not_found", message: "No member found for that code." };
+            }
+
+            if (!res.ok) {
+                const message = data?.message || data?.error || (typeof data?.raw === "string" ? data.raw : text) || "Check-in failed";
+                throw new Error(message);
+            }
+
+            return { status: statusValue, message: data?.message || "Check-in response received." };
+        } catch (e: any) {
+            return { status: "error", message: e.message || String(e) };
+        }
+    }
+
 	async function loadMemberDetails(memberId: string) {
         if (!authed || !token) return;
 		try {
@@ -298,6 +513,78 @@ const Admin = () => {
 			toast({ title: "Failed to load member details", description: e.message || String(e) });
 		}
 	}
+
+	async function handleManualCheckIn(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        if (!attendanceEventId) {
+            toast({ title: "Select event", description: "Choose an event before checking in." });
+            return;
+        }
+        if (!checkinCode.trim()) {
+            toast({ title: "Enter a code", description: "ShadowMesh code is required." });
+            return;
+        }
+        setCheckinLoading(true);
+        const outcome = await performCheckIn(attendanceEventId, checkinCode, "manual");
+        setCheckinLoading(false);
+        setCheckinResult(outcome.message);
+        if (outcome.status === "checked_in") {
+            toast({ title: "Checked in", description: outcome.message });
+            setCheckinCode("");
+        } else if (outcome.status === "already_checked_in") {
+            toast({ title: "Already checked in", description: outcome.message });
+        } else if (outcome.status === "not_registered") {
+            toast({ title: "Not registered", description: outcome.message });
+        } else if (outcome.status === "code_not_found") {
+            toast({ title: "Code not found", description: outcome.message });
+        } else if (outcome.status === "error") {
+            toast({ title: "Check-in failed", description: outcome.message });
+        }
+    }
+
+	async function handleScannerDecode(value: string) {
+        if (!value || scannerLockRef.current) return;
+        scannerLockRef.current = true;
+        setScannerPaused(true);
+        try {
+            const { eventId, code } = parseScanPayload(value);
+            if (!code) {
+                setCheckinResult("QR code missing member code.");
+                toast({ title: "Scan error", description: "QR code missing member code." });
+                return;
+            }
+
+            let targetEventId = attendanceEventId;
+            if (eventId && eventId !== attendanceEventId) {
+                setAttendanceEventId(eventId);
+                targetEventId = eventId;
+            }
+
+            if (!targetEventId) {
+                setCheckinResult("Select an event before scanning.");
+                toast({ title: "Select event", description: "Choose an event before scanning." });
+                return;
+            }
+
+            const outcome = await performCheckIn(targetEventId, code, "qr");
+            setCheckinResult(outcome.message);
+
+            if (outcome.status === "checked_in") {
+                toast({ title: "Checked in", description: outcome.message });
+            } else if (outcome.status === "already_checked_in") {
+                toast({ title: "Already checked in", description: outcome.message });
+            } else if (outcome.status === "not_registered" || outcome.status === "code_not_found") {
+                toast({ title: "Not registered", description: outcome.message });
+            } else if (outcome.status === "error") {
+                toast({ title: "Check-in failed", description: outcome.message });
+            }
+        } finally {
+            setTimeout(() => {
+                scannerLockRef.current = false;
+                setScannerPaused(false);
+            }, 1200);
+        }
+    }
 
 	async function deleteMember() {
         if (!token || !deleteMemberId) return;
@@ -324,6 +611,19 @@ const Admin = () => {
 			toast({ title: "Failed to delete member", description: e.message || String(e) });
 		}
 	}
+
+	const registrations = useMemo(() => attendanceData?.registrations ?? [], [attendanceData]);
+	const checkins = useMemo(() => attendanceData?.checkins ?? [], [attendanceData]);
+	const checkedMemberIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const entry of checkins) {
+			if (entry?.member_id) ids.add(entry.member_id);
+		}
+		return ids;
+	}, [checkins]);
+	const totalRegistered = registrations.length;
+	const totalCheckedIn = checkedMemberIds.size;
+	const attendanceRate = totalRegistered ? Math.round((totalCheckedIn / totalRegistered) * 100) : 0;
 
 	async function moderateHackathon(id: string, action: "approve" | "reject", reason?: string) {
         if (!token) return;
@@ -421,6 +721,7 @@ const Admin = () => {
 									void loadMsgs(true);
 									void loadMembers(true);
 									void loadHackathonRegs(true);
+                                void loadEvents(true);
 								}, 300);
 							}}
 							className="w-80"
@@ -448,6 +749,7 @@ const Admin = () => {
 						<TabsTrigger value="applications">Join Applications</TabsTrigger>
 						<TabsTrigger value="messages">Contact Messages</TabsTrigger>
                         <TabsTrigger value="members">Members</TabsTrigger>
+                        <TabsTrigger value="attendance">Attendance</TabsTrigger>
                         <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
 					</TabsList>
 
@@ -632,6 +934,204 @@ const Admin = () => {
 								</div>
 							</CardContent>
 						</Card>
+					</TabsContent>
+
+					<TabsContent value="attendance">
+						<Card>
+							<CardHeader>
+								<CardTitle>Attendance Management</CardTitle>
+								<CardDescription>Track registrations and check-ins for events in real time.</CardDescription>
+							</CardHeader>
+							<CardContent className="space-y-6">
+								<div className="flex flex-wrap items-center gap-3">
+									<div className="min-w-[220px]">
+										<Select value={attendanceEventId ?? ""} onValueChange={(value) => setAttendanceEventId(value)} disabled={eventsLoading || events.length === 0}>
+											<SelectTrigger>
+												<SelectValue placeholder={eventsLoading ? "Loading events..." : "Select event"} />
+											</SelectTrigger>
+											<SelectContent>
+												{events.map((event) => (
+													<SelectItem key={event.id} value={event.id}>
+														{event.title}
+													</SelectItem>
+												))}
+												{!events.length && !eventsLoading && <SelectItem value="" disabled>No events found</SelectItem>}
+											</SelectContent>
+										</Select>
+									</div>
+									<Button variant="outline" onClick={() => void loadEvents(true)} disabled={eventsLoading}>
+										{eventsLoading ? "Refreshing..." : "Refresh Events"}
+									</Button>
+									<Button variant="outline" onClick={() => { setScannerOpen(true); setScannerPaused(false); setCheckinResult(null); }} disabled={!attendanceEventId || attendanceLoading}>
+										Open QR Scanner
+									</Button>
+								</div>
+
+								{attendanceLoading ? (
+									<p className="text-sm text-muted-foreground">Loading attendance...</p>
+								) : attendanceData && attendanceEventId ? (
+									<>
+										<div className="grid gap-4 sm:grid-cols-3">
+											<Card>
+												<CardHeader className="py-4">
+													<CardTitle className="text-sm font-medium">Registered</CardTitle>
+													<CardDescription className="text-2xl font-semibold text-foreground">{totalRegistered}</CardDescription>
+												</CardHeader>
+											</Card>
+											<Card>
+												<CardHeader className="py-4">
+													<CardTitle className="text-sm font-medium">Checked-in</CardTitle>
+													<CardDescription className="text-2xl font-semibold text-foreground">{totalCheckedIn}</CardDescription>
+												</CardHeader>
+											</Card>
+											<Card>
+												<CardHeader className="py-4">
+													<CardTitle className="text-sm font-medium">Check-in Rate</CardTitle>
+													<CardDescription className="text-2xl font-semibold text-foreground">{attendanceRate}%</CardDescription>
+												</CardHeader>
+											</Card>
+										</div>
+
+										<Card>
+											<CardHeader>
+												<CardTitle>Manual Check-In</CardTitle>
+												<CardDescription>Enter a ShadowMesh code to mark attendance without scanning.</CardDescription>
+											</CardHeader>
+											<CardContent className="space-y-3">
+												<form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleManualCheckIn}>
+													<Input value={checkinCode} onChange={(e) => setCheckinCode(e.target.value.toUpperCase())} placeholder="SMXXXXXX" className="sm:w-64" maxLength={8} disabled={checkinLoading} />
+													<Button type="submit" disabled={checkinLoading}>
+														{checkinLoading ? "Checking..." : "Check In"}
+													</Button>
+												</form>
+												{checkinResult && !scannerOpen && (
+													<p className="text-xs text-muted-foreground">{checkinResult}</p>
+												)}
+											</CardContent>
+										</Card>
+
+										<div className="grid gap-6 lg:grid-cols-2">
+											<Card>
+												<CardHeader>
+													<CardTitle>Registered Members ({registrations.length})</CardTitle>
+													<CardDescription>RSVPs and approvals for this event.</CardDescription>
+												</CardHeader>
+												<CardContent>
+													{registrations.length ? (
+														<Table>
+															<TableHeader>
+																<TableRow>
+																	<TableHead>Name</TableHead>
+																	<TableHead>Email</TableHead>
+																	<TableHead>Code</TableHead>
+																	<TableHead>Registered</TableHead>
+																	<TableHead>Status</TableHead>
+																</TableRow>
+															</TableHeader>
+															<TableBody>
+																{registrations.map((reg: any) => {
+																	const attended = checkedMemberIds.has(reg.member_id);
+																	return (
+																		<TableRow key={reg.id} className={attended ? "bg-muted/50" : undefined}>
+																		<TableCell>{reg.members?.full_name || "-"}</TableCell>
+																		<TableCell>{reg.members?.email || "-"}</TableCell>
+																		<TableCell><span className="font-mono text-xs">{reg.members?.secret_code || "-"}</span></TableCell>
+																		<TableCell>{formatDate(reg.created_at)}</TableCell>
+																		<TableCell>
+																			<Badge variant={attended ? "secondary" : "outline"}>{attended ? "Checked-in" : reg.status}</Badge>
+																		</TableCell>
+																	</TableRow>
+																);
+															})}
+															</TableBody>
+														</Table>
+													) : (
+														<p className="text-sm text-muted-foreground">No registrations yet.</p>
+													)}
+												</CardContent>
+											</Card>
+											<Card>
+												<CardHeader>
+													<CardTitle>Recent Check-ins ({checkins.length})</CardTitle>
+												</CardHeader>
+												<CardContent>
+													{checkins.length ? (
+														<Table>
+															<TableHeader>
+																<TableRow>
+																	<TableHead>When</TableHead>
+																	<TableHead>Member</TableHead>
+																	<TableHead>Method</TableHead>
+																	<TableHead>Recorded By</TableHead>
+																</TableRow>
+															</TableHeader>
+															<TableBody>
+																{checkins.map((entry: any) => (
+																	<TableRow key={entry.id}>
+																		<TableCell>{formatDate(entry.created_at)}</TableCell>
+																		<TableCell>
+																			<div>{entry.members?.full_name || "-"}</div>
+																			<div className="text-xs text-muted-foreground">{entry.members?.email || "-"}</div>
+																		</TableCell>
+																		<TableCell className="capitalize">{entry.method || "-"}</TableCell>
+																		<TableCell>{entry.recorded_by || "-"}</TableCell>
+																	</TableRow>
+																))}
+															</TableBody>
+														</Table>
+													) : (
+														<p className="text-sm text-muted-foreground">No check-ins yet.</p>
+													)}
+												</CardContent>
+											</Card>
+										</div>
+									</>
+								) : (
+									<p className="text-sm text-muted-foreground">Select an event to manage attendance.</p>
+								)}
+							</CardContent>
+						</Card>
+
+						<Dialog open={scannerOpen} onOpenChange={(open) => {
+							setScannerOpen(open);
+							if (!open) {
+								scannerLockRef.current = false;
+								setScannerPaused(false);
+								setCheckinResult(null);
+							}
+						}}>
+							<DialogContent className="max-w-xl">
+								<DialogHeader>
+									<DialogTitle>QR Check-In</DialogTitle>
+									<DialogDescription>Scan ShadowMesh passes to mark attendance instantly.</DialogDescription>
+								</DialogHeader>
+								<div className="space-y-4">
+									{attendanceEventId ? (
+										<div className="space-y-3">
+											<QrScanner
+												key={attendanceEventId}
+												onDecode={(value) => {
+													if (!value || scannerPaused) return;
+													void handleScannerDecode(value);
+												}}
+												onError={(error) => console.error(error)}
+												constraints={{ facingMode: "environment" }}
+												containerStyle={{ width: "100%" }}
+												videoStyle={{ width: "100%" }}
+											/>
+											<Button variant="outline" onClick={() => { scannerLockRef.current = false; setScannerPaused(false); }} disabled={!scannerPaused}>
+												Resume scanner
+											</Button>
+										</div>
+									) : (
+										<p className="text-sm text-muted-foreground">Select an event before scanning.</p>
+									)}
+									{checkinResult && (
+										<p className="text-xs text-muted-foreground">{checkinResult}</p>
+									)}
+								</div>
+							</DialogContent>
+						</Dialog>
 					</TabsContent>
 
 					<TabsContent value="hackathons">
