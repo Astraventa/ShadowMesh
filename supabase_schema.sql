@@ -96,6 +96,55 @@ create table if not exists public.members (
 create index if not exists idx_members_created_at on public.members (created_at desc);
 create index if not exists idx_members_email on public.members (email);
 
+-- Events table for workshops, hackathons, etc.
+create table if not exists public.events (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  title             text        not null,
+  description       text,
+  event_type        text        not null check (event_type in ('workshop', 'hackathon', 'meetup', 'webinar', 'other')),
+  start_date        timestamptz not null,
+  end_date          timestamptz,
+  location          text, -- Can be physical or online
+  registration_link text,
+  max_participants  integer,
+  is_active         boolean      not null default true,
+  is_member_only    boolean      not null default true, -- Only members can register
+  created_by        text         default 'admin'
+);
+
+-- Event registrations (members register for events)
+create table if not exists public.event_registrations (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  event_id          uuid references public.events(id) on delete cascade,
+  member_id         uuid references public.members(id) on delete cascade,
+  status            text        not null default 'registered' check (status in ('registered', 'attended', 'cancelled')),
+  notes             text,
+  unique (event_id, member_id) -- One registration per member per event
+);
+
+-- Private content/resources for members
+create table if not exists public.member_resources (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  title             text        not null,
+  description       text,
+  resource_type     text        not null check (resource_type in ('document', 'link', 'video', 'download', 'other')),
+  content_url       text,
+  access_level      text        not null default 'member' check (access_level in ('member', 'premium')),
+  is_active         boolean      not null default true,
+  created_by        text         default 'admin'
+);
+
+create index if not exists idx_events_start_date on public.events (start_date desc);
+create index if not exists idx_events_is_active on public.events (is_active);
+create index if not exists idx_event_registrations_event_id on public.event_registrations (event_id);
+create index if not exists idx_event_registrations_member_id on public.event_registrations (member_id);
+create index if not exists idx_member_resources_is_active on public.member_resources (is_active);
+
 -- Apply status columns if table already existed
 do $$
 begin

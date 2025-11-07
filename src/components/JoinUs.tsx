@@ -4,11 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient";
 import { useToast } from "@/components/ui/use-toast";
 
 const JoinUs = () => {
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<"register" | "status">("register");
   const [affiliation, setAffiliation] = useState<string>("student");
   const [phone, setPhone] = useState<string>("");
   const [phoneError, setPhoneError] = useState<string>("");
@@ -32,6 +36,11 @@ const JoinUs = () => {
   // Professional/Other
   const [organization, setOrganization] = useState("");
   const [roleTitle, setRoleTitle] = useState("");
+
+  // Status check
+  const [checkToken, setCheckToken] = useState("");
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [checkResult, setCheckResult] = useState<{ status: string; reviewed_at?: string; decision_reason?: string } | null>(null);
 
   // Honeypot
   const [honeypot, setHoneypot] = useState("");
@@ -98,6 +107,37 @@ const JoinUs = () => {
     if (!trimmed) return;
     if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
       setPhoneError("Enter a valid phone (e.g., +923001234567)");
+    }
+  }
+
+  async function checkStatus() {
+    if (!checkToken.trim()) {
+      toast({ title: "Enter verification token", description: "Please enter the token you received after registration." });
+      return;
+    }
+    setCheckingStatus(true);
+    setCheckResult(null);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verification_token: checkToken.trim() }),
+      });
+      if (res.ok) {
+        const info = await res.json();
+        setCheckResult(info);
+      } else {
+        const text = await res.text();
+        if (text === "not_found") {
+          setCheckResult({ status: "not_found" });
+        } else {
+          throw new Error(text);
+        }
+      }
+    } catch (e: any) {
+      toast({ title: "Check failed", description: e.message || "Please try again." });
+    } finally {
+      setCheckingStatus(false);
     }
   }
 
@@ -175,7 +215,9 @@ const JoinUs = () => {
       }
 
       setSuccess(true);
-      toast({ title: "Application submitted", description: "Verification in process. You’ll be notified soon." });
+      toast({ title: "Application submitted", description: "Verification in process. You'll be notified soon." });
+      setActiveTab("status");
+      setCheckToken(verificationToken || "");
       // Clear form
       setFullName(""); setEmail(""); setAreaOfInterest(""); setMotivation("");
       setUniversityName(""); setDepartment(""); setRollNumber("");
@@ -212,7 +254,14 @@ const JoinUs = () => {
         <div className="grid md:grid-cols-2 gap-10 items-start">
           {/* Form (Left) */}
           <div className="glass-panel p-8 rounded-2xl glow-border left-glow-edge">
-            {success ? (
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "register" | "status")}>
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="register">Register</TabsTrigger>
+                <TabsTrigger value="status">Check Status</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="register">
+                {success ? (
               <div className="text-center py-12">
                 <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
@@ -331,9 +380,64 @@ const JoinUs = () => {
                     <a href="#events">View Upcoming Events</a>
                 </Button>
               </div>
-                <p className="text-xs text-muted-foreground mt-3">Your data will be securely stored and used only for ShadowMesh community and event purposes.</p>
-            </form>
-            )}
+                    <p className="text-xs text-muted-foreground mt-3">Your data will be securely stored and used only for ShadowMesh community and event purposes.</p>
+                  </form>
+                )}
+              </TabsContent>
+
+              <TabsContent value="status">
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Verification Token</label>
+                    <Input
+                      value={checkToken}
+                      onChange={(e) => setCheckToken(e.target.value)}
+                      placeholder="Enter your verification token"
+                      className="bg-background/50 border-border focus:border-primary transition-colors"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Enter the token you received after submitting your application.</p>
+                  </div>
+                  <Button type="button" size="lg" variant="cyber" className="w-full" onClick={checkStatus} disabled={checkingStatus}>
+                    {checkingStatus ? "Checking..." : "Check Status"}
+                  </Button>
+                  {checkResult && (
+                    <Card className="p-6 mt-4">
+                      {checkResult.status === "not_found" ? (
+                        <div className="text-center">
+                          <p className="text-destructive font-medium">Token not found</p>
+                          <p className="text-sm text-muted-foreground mt-2">Please verify your token or register first.</p>
+                        </div>
+                      ) : checkResult.status === "approved" ? (
+                        <div className="text-center space-y-3">
+                          <Badge variant="secondary" className="text-base px-4 py-2">✓ Approved</Badge>
+                          <p className="text-foreground font-medium">Congratulations! You're now a member of ShadowMesh.</p>
+                          <p className="text-sm text-muted-foreground">Check your email for the community link and next steps.</p>
+                          <Button variant="glow" className="mt-4" onClick={() => window.location.href = "/member-portal"}>Access Member Portal</Button>
+                        </div>
+                      ) : checkResult.status === "rejected" ? (
+                        <div className="text-center space-y-3">
+                          <Badge variant="destructive" className="text-base px-4 py-2">Rejected</Badge>
+                          <p className="text-foreground">Your application was not approved at this time.</p>
+                          {checkResult.decision_reason && (
+                            <Card className="p-4 bg-destructive/10 border-destructive/20 mt-3">
+                              <p className="text-sm font-medium mb-1">Reason:</p>
+                              <p className="text-sm text-muted-foreground">{checkResult.decision_reason}</p>
+                            </Card>
+                          )}
+                          <p className="text-sm text-muted-foreground mt-3">You're welcome to re-apply in the future.</p>
+                        </div>
+                      ) : (
+                        <div className="text-center space-y-3">
+                          <Badge variant="outline" className="text-base px-4 py-2">Pending</Badge>
+                          <p className="text-foreground">Your application is under review.</p>
+                          <p className="text-sm text-muted-foreground">We'll notify you via email once a decision is made.</p>
+                        </div>
+                      )}
+                    </Card>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
 
           {/* Animated Right (Typewriter Panel) */}
