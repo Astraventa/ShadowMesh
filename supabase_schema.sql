@@ -145,6 +145,84 @@ create index if not exists idx_event_registrations_event_id on public.event_regi
 create index if not exists idx_event_registrations_member_id on public.event_registrations (member_id);
 create index if not exists idx_member_resources_is_active on public.member_resources (is_active);
 
+-- Hackathon registrations (separate from regular events, includes payment)
+create table if not exists public.hackathon_registrations (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  member_id         uuid references public.members(id) on delete cascade,
+  hackathon_id      uuid references public.events(id) on delete cascade,
+  status            text        not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'cancelled')),
+  payment_method    text, -- e.g., 'bank_transfer', 'easypaisa', 'jazzcash', 'other'
+  payment_proof_url text, -- URL to payment screenshot/receipt
+  transaction_id    text, -- Transaction reference number
+  payment_amount    numeric(10,2),
+  payment_date      timestamptz,
+  reviewed_at       timestamptz,
+  reviewed_by       text,
+  rejection_reason  text,
+  notes             text,
+  unique (member_id, hackathon_id) -- One registration per member per hackathon
+);
+
+-- Hackathon teams (max 4 members per team)
+create table if not exists public.hackathon_teams (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  hackathon_id      uuid references public.events(id) on delete cascade,
+  team_name         text        not null,
+  team_leader_id    uuid references public.members(id) on delete cascade,
+  status            text        not null default 'forming' check (status in ('forming', 'complete', 'disbanded')),
+  max_members       integer     not null default 4,
+  check (max_members <= 4 and max_members >= 1)
+);
+
+-- Team members (many-to-many: teams <-> members)
+create table if not exists public.team_members (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  team_id           uuid references public.hackathon_teams(id) on delete cascade,
+  member_id         uuid references public.members(id) on delete cascade,
+  role              text        not null default 'member' check (role in ('leader', 'member')),
+  joined_at         timestamptz not null default now(),
+  unique (team_id, member_id) -- One membership per team per member
+);
+
+-- Team requests (invitations to join teams)
+create table if not exists public.team_requests (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  team_id           uuid references public.hackathon_teams(id) on delete cascade,
+  from_member_id    uuid references public.members(id) on delete cascade, -- Who sent the request
+  to_member_id      uuid references public.members(id) on delete cascade, -- Who receives the request
+  status            text        not null default 'pending' check (status in ('pending', 'accepted', 'rejected', 'cancelled')),
+  message           text,
+  responded_at      timestamptz,
+  unique (team_id, to_member_id) -- One pending request per team per member
+);
+
+-- Member activity log (track what members do)
+create table if not exists public.member_activity (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  member_id         uuid references public.members(id) on delete cascade,
+  activity_type     text        not null check (activity_type in ('event_registered', 'event_attended', 'resource_accessed', 'team_joined', 'team_created', 'hackathon_registered', 'hackathon_approved')),
+  activity_data     jsonb, -- Flexible JSON for activity details
+  related_id        uuid -- ID of related event/resource/team/etc
+);
+
+create index if not exists idx_hackathon_registrations_member_id on public.hackathon_registrations (member_id);
+create index if not exists idx_hackathon_registrations_hackathon_id on public.hackathon_registrations (hackathon_id);
+create index if not exists idx_hackathon_registrations_status on public.hackathon_registrations (status);
+create index if not exists idx_hackathon_teams_hackathon_id on public.hackathon_teams (hackathon_id);
+create index if not exists idx_hackathon_teams_leader_id on public.hackathon_teams (team_leader_id);
+create index if not exists idx_team_members_team_id on public.team_members (team_id);
+create index if not exists idx_team_members_member_id on public.team_members (member_id);
+create index if not exists idx_team_requests_to_member_id on public.team_requests (to_member_id);
+create index if not exists idx_team_requests_status on public.team_requests (status);
+create index if not exists idx_member_activity_member_id on public.member_activity (member_id);
+create index if not exists idx_member_activity_type on public.member_activity (activity_type);
+
 -- Apply status columns if table already existed
 do $$
 begin
