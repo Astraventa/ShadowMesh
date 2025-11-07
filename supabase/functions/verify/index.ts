@@ -1,29 +1,60 @@
+// Supabase Edge Function: verify
+// Returns application status by verification_token or secret_code
+// Env required:
+//   SM_SUPABASE_URL
+//   SM_SERVICE_ROLE_KEY
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-admin-token, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 Deno.serve(async (req) => {
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { headers: CORS_HEADERS, status: 204 });
   }
+
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+    return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS });
   }
+
   try {
-    const { verification_token, code } = await req.json();
-    const lookup = code ?? verification_token;
-    if (!lookup) return new Response('code required', { status: 400 });
+    const body = await req.json();
+    const { verification_token, code } = body;
+    
+    // Support both verification_token and code (secret_code)
+    const lookupValue = code || verification_token;
+    if (!lookupValue) {
+      return new Response(JSON.stringify({ error: 'verification_token or code required' }), { 
+        status: 400, 
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } 
+      });
+    }
 
     const SUPABASE_URL = Deno.env.get('SM_SUPABASE_URL');
     const SERVICE_KEY = Deno.env.get('SM_SERVICE_ROLE_KEY');
-    if (!SUPABASE_URL || !SERVICE_KEY) return new Response('Missing service env', { status: 500, headers: corsHeaders });
+    if (!SUPABASE_URL || !SERVICE_KEY) {
+      return new Response(JSON.stringify({ error: 'Missing service env' }), { 
+        status: 500, 
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } 
+      });
+    }
 
-    const filter = code ? `secret_code=eq.${code}` : `verification_token=eq.${verification_token}`;
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?${filter}&select=status,reviewed_at,decision_reason,secret_code,verification_token,full_name,email`, {
+    // Try secret_code first (if it's a code), then verification_token
+    let queryParam = '';
+    if (code && !code.includes('-')) {
+      // Looks like a secret_code (e.g., SM400A3E)
+      queryParam = `secret_code=eq.${encodeURIComponent(lookupValue.toUpperCase())}`;
+    } else {
+      // Looks like a verification_token (UUID)
+      queryParam = `verification_token=eq.${encodeURIComponent(lookupValue)}`;
+    }
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?${queryParam}&select=status,reviewed_at,decision_reason,secret_code,verification_token`, {
       headers: {
         'apikey': SERVICE_KEY,
         'Authorization': `Bearer ${SERVICE_KEY}`,
@@ -31,14 +62,29 @@ Deno.serve(async (req) => {
     });
 
     if (!res.ok) {
-      return new Response(`error: ${await res.text()}`, { status: 502, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: await res.text() }), { 
+        status: 502, 
+        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } 
+      });
     }
+    
     const rows = await res.json();
     const row = Array.isArray(rows) && rows.length ? rows[0] : null;
-    if (!row) return new Response('not_found', { status: 404, headers: corsHeaders });
+    if (!row) {
+      return new Response('not_found', { 
+        status: 404, 
+        headers: { ...CORS_HEADERS, 'Content-Type': 'text/plain' } 
+      });
+    }
 
-    return new Response(JSON.stringify(row), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify(row), { 
+      status: 200, 
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } 
+    });
   } catch (e) {
-    return new Response(`Error: ${e instanceof Error ? e.message : String(e)}`, { status: 400, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), { 
+      status: 400, 
+      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } 
+    });
   }
 });

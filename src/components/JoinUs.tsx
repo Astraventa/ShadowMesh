@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { Sparkles, Copy, CheckCircle2, Shield, KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -44,6 +45,10 @@ const JoinUs = () => {
 
   // Honeypot
   const [honeypot, setHoneypot] = useState("");
+
+  // Success dialog
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   // Typewriter effect for the right panel
   const phrases = [
@@ -125,7 +130,10 @@ const JoinUs = () => {
       const payloadKey = checkToken.includes("-") ? "verification_token" : "code";
       const res = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+        },
         body: JSON.stringify({ [payloadKey]: checkToken.trim() }),
       });
       if (res.ok) {
@@ -227,8 +235,7 @@ const JoinUs = () => {
       }
 
       setSuccess(true);
-      toast({ title: "Application submitted", description: "Verification in process. You'll be notified soon." });
-      setActiveTab("status");
+      setShowSuccessDialog(true);
       // Clear form
       setFullName(""); setEmail(""); setAreaOfInterest(""); setMotivation("");
       setUniversityName(""); setDepartment(""); setRollNumber("");
@@ -497,6 +504,96 @@ const JoinUs = () => {
           {/* Info Text */}
         <p className="text-center text-sm text-muted-foreground mt-6">By joining, you'll get access to exclusive workshops, mentorship, and networking opportunities.</p>
       </div>
+
+      {/* Success Dialog */}
+      <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-primary" />
+            </div>
+            <DialogTitle className="text-2xl text-center">Application Submitted Successfully!</DialogTitle>
+            <DialogDescription className="text-center pt-2">
+              Your application is under review. We'll notify you via email once a decision is made.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {secretCode && (
+            <div className="space-y-4 py-4">
+              <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/30">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <KeyRound className="w-5 h-5 text-primary" />
+                    <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Your ShadowMesh Code</p>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 bg-background/50 rounded-lg p-3 border border-primary/20">
+                    <p className="text-3xl font-mono font-bold text-foreground tracking-wider">{secretCode}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(secretCode);
+                        setCodeCopied(true);
+                        setTimeout(() => setCodeCopied(false), 2000);
+                      }}
+                      className="shrink-0"
+                    >
+                      {codeCopied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="space-y-3 rounded-lg bg-muted/50 p-4 border border-border">
+                <div className="flex items-start gap-3">
+                  <Shield className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold mb-1">Why This Code Matters</p>
+                    <p className="text-xs text-muted-foreground">
+                      This unique code is your key to accessing ShadowMesh services. Keep it safe and secure.
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2 text-xs text-muted-foreground pl-8">
+                  <p>• Use it to check your application status</p>
+                  <p>• Required for event registration and attendance</p>
+                  <p>• Access your member portal after approval</p>
+                  <p>• Verify your identity for workshops and hackathons</p>
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                <p className="text-xs font-medium text-destructive mb-1">⚠️ Important Security Notice</p>
+                <p className="text-xs text-muted-foreground">
+                  Never share this code publicly. Store it securely - you won't be able to recover it if lost. 
+                  We recommend saving it in a password manager or writing it down in a safe place.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSuccessDialog(false);
+                setActiveTab("status");
+              }}
+            >
+              Check Status
+            </Button>
+            <Button
+              onClick={() => {
+                setShowSuccessDialog(false);
+                setActiveTab("status");
+              }}
+              className="flex-1"
+            >
+              Got it, thanks!
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 };

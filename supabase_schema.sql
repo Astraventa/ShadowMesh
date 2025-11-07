@@ -402,8 +402,8 @@ for each row execute function public.enforce_contact_rate_limit();
 alter table public.join_applications enable row level security;
 alter table public.contact_messages enable row level security;
 
--- Allow anonymous INSERTs only. No SELECT/UPDATE/DELETE.
--- (Supabase anon key can insert, but cannot read data.)
+-- Allow anonymous INSERTs and SELECT of their own row (for getting secret_code after insert)
+-- (Supabase anon key can insert, and can read back the row they just inserted)
 
 drop policy if exists p_join_insert on public.join_applications;
 create policy p_join_insert
@@ -411,6 +411,16 @@ create policy p_join_insert
   for insert
   to anon
   with check (true);
+
+-- Allow anonymous users to SELECT rows they just created (within 5 minutes)
+-- This allows the form to get the secret_code/verification_token after insert
+-- Status checks should use the verify edge function (which uses service role key)
+drop policy if exists p_join_select_recent on public.join_applications;
+create policy p_join_select_recent
+  on public.join_applications
+  for select
+  to anon
+  using (created_at >= now() - interval '5 minutes');
 
 drop policy if exists p_contact_insert on public.contact_messages;
 create policy p_contact_insert
