@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient";
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -107,26 +107,14 @@ export default function AttendanceCheckin() {
 
 		setEventsLoading(true);
 		try {
-			const res = await fetch(`${SUPABASE_URL}/functions/v1/attendance_list`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-					"x-attendance-token": `${ATTENDANCE_USERNAME}:${ATTENDANCE_PASSWORD}`,
-				},
-				body: JSON.stringify({ 
-					type: "events",
-					username: ATTENDANCE_USERNAME,
-					password: ATTENDANCE_PASSWORD,
-				}),
-			});
+			// Use Supabase client directly to fetch active events
+			const { data, error } = await supabase
+				.from("events")
+				.select("id,title,start_date,event_type,is_active")
+				.eq("is_active", true)
+				.order("start_date", { ascending: false });
 
-			if (!res.ok) {
-				const errText = await res.text();
-				throw new Error(errText || "Failed to load events");
-			}
-
-			const { data } = await res.json();
+			if (error) throw error;
 			setEvents(data || []);
 		} catch (e: any) {
 			console.error("Failed to load events:", e);
@@ -143,27 +131,37 @@ export default function AttendanceCheckin() {
 			const current = attendanceEventId;
 			setAttendanceLoading(true);
 			try {
-				const res = await fetch(`${SUPABASE_URL}/functions/v1/attendance_list`, {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-						"x-attendance-token": `${ATTENDANCE_USERNAME}:${ATTENDANCE_PASSWORD}`,
-					},
-					body: JSON.stringify({
-						type: "attendance_details",
-						event_id: eventId,
-						username: ATTENDANCE_USERNAME,
-						password: ATTENDANCE_PASSWORD,
-					}),
-				});
+				// Get event details
+				const { data: eventData, error: eventError } = await supabase
+					.from("events")
+					.select("id,title,start_date,event_type,is_member_only,location,description")
+					.eq("id", eventId)
+					.single();
 
-				if (!res.ok) {
-					const errText = await res.text();
-					throw new Error(errText || "Failed to load attendance");
-				}
+				if (eventError) throw eventError;
 
-				const { data } = await res.json();
+				// Get registrations
+				const { data: regData, error: regError } = await supabase
+					.from("event_registrations")
+					.select("id,member_id,status,created_at,members(id,full_name,email,secret_code)")
+					.eq("event_id", eventId);
+
+				if (regError) throw regError;
+
+				// Get check-ins
+				const { data: checkinData, error: checkinError } = await supabase
+					.from("event_checkins")
+					.select("id,member_id,method,created_at,recorded_by,members(id,full_name,email)")
+					.eq("event_id", eventId);
+
+				if (checkinError) throw checkinError;
+
+				const data = {
+					event: eventData,
+					registrations: regData || [],
+					checkins: checkinData || [],
+				};
+
 				if (force || attendanceEventId === current) {
 					setAttendanceData(data);
 				}

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import EventRegistration from "@/components/EventRegistration";
@@ -110,6 +110,9 @@ export default function MemberPortal() {
   const [showEventReg, setShowEventReg] = useState<string | null>(null);
   const [showTeamForm, setShowTeamForm] = useState<string | null>(null);
   const [showFindTeammates, setShowFindTeammates] = useState<string | null>(null);
+  const [hackathonRegisteredMembers, setHackathonRegisteredMembers] = useState<any[]>([]);
+  const [loadingHackathonMembers, setLoadingHackathonMembers] = useState(false);
+  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
   const [teamName, setTeamName] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
   const [showQRCode, setShowQRCode] = useState(false);
@@ -164,6 +167,9 @@ export default function MemberPortal() {
     setLoading(true);
     try {
       // Verify token and get member info
+      if (!token || typeof token !== 'string') {
+        throw new Error("Invalid token provided");
+      }
       const payloadKey = token.includes("-") ? "verification_token" : "code";
       const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
         method: "POST",
@@ -232,7 +238,7 @@ export default function MemberPortal() {
         .select("*")
         .eq("is_active", true)
         .neq("event_type", "hackathon")
-        .order("start_date", { ascending: true });
+        .order("created_at", { ascending: false });
 
       if (eventsError) {
         console.error("Error loading events:", eventsError);
@@ -281,13 +287,13 @@ export default function MemberPortal() {
       }
 
       // Load hackathons (events with event_type = 'hackathon')
-      // Show all active hackathons, not just future ones
+      // Show all active hackathons, order by created_at descending (newest first)
       const { data: hackathonsData } = await supabase
         .from("events")
         .select("*")
         .eq("event_type", "hackathon")
         .eq("is_active", true)
-        .order("start_date", { ascending: true });
+        .order("created_at", { ascending: false });
 
       if (hackathonsData) setHackathons(hackathonsData);
 
@@ -399,11 +405,16 @@ export default function MemberPortal() {
     }
   }
 
-  async function handleEventRegistrationSuccess(eventId: string) {
-    setRegisteredEvents((prev) => new Set([...prev, eventId]));
+  async function handleEventRegistrationSuccess(eventId?: string) {
+    if (eventId) {
+      setRegisteredEvents((prev) => new Set([...prev, eventId]));
+    }
     setShowEventReg(null);
     // Reload member data to refresh registrations
-    await loadMemberData();
+    const token = localStorage.getItem("shadowmesh_member_token");
+    if (token) {
+      await loadMemberData(token);
+    }
   }
 
   function getResourceIcon(type: string) {
@@ -459,10 +470,91 @@ export default function MemberPortal() {
     }
   }
 
+  async function loadHackathonRegisteredMembers(hackathonId: string) {
+    if (!member) return;
+    setLoadingHackathonMembers(true);
+    try {
+      // Get all approved registrations for this hackathon
+      const { data, error } = await supabase
+        .from("hackathon_registrations")
+        .select("member_id, members(id, full_name, email, area_of_interest, secret_code)")
+        .eq("hackathon_id", hackathonId)
+        .eq("status", "approved");
+
+      if (error) throw error;
+
+      // Filter out current member and members already in teams
+      const memberIds = new Set((data || []).map((r: any) => r.member_id));
+      
+      // Get all teams for this hackathon
+      const { data: teamsData } = await supabase
+        .from("hackathon_teams")
+        .select("id, team_members(member_id)")
+        .eq("hackathon_id", hackathonId);
+
+      const teamMemberIds = new Set<string>();
+      if (teamsData) {
+        teamsData.forEach((team: any) => {
+          if (team.team_members && Array.isArray(team.team_members)) {
+            team.team_members.forEach((tm: any) => {
+              if (tm.member_id) {
+                teamMemberIds.add(tm.member_id);
+              }
+            });
+          }
+        });
+      }
+
+      // Filter: exclude current member and members already in teams
+      const availableMembers = (data || [])
+        .filter((r: any) => r.member_id !== member.id && !teamMemberIds.has(r.member_id))
+        .map((r: any) => ({
+          id: r.member_id,
+          ...r.members,
+        }));
+
+      setHackathonRegisteredMembers(availableMembers);
+    } catch (e: any) {
+      console.error("Failed to load hackathon members:", e);
+      toast({ title: "Failed to load members", description: e.message });
+    } finally {
+      setLoadingHackathonMembers(false);
+    }
+  }
+
   async function sendTeamRequest(teamId: string, toMemberId: string) {
     if (!member) return;
 
     try {
+      // Check if team is full
+      const { data: teamData } = await supabase
+        .from("hackathon_teams")
+        .select("id, max_members, team_members(count)")
+        .eq("id", teamId)
+        .single();
+
+      if (teamData) {
+        const memberCount = Array.isArray(teamData.team_members) ? teamData.team_members.length : 0;
+        if (memberCount >= (teamData.max_members || 4)) {
+          toast({ title: "Team is full", description: "This team has reached the maximum number of members.", variant: "destructive" });
+          return;
+        }
+      }
+
+      // Check if request already exists
+      const { data: existingRequest } = await supabase
+        .from("team_requests")
+        .select("id, status")
+        .eq("team_id", teamId)
+        .eq("to_member_id", toMemberId)
+        .eq("status", "pending")
+        .single();
+
+      if (existingRequest) {
+        toast({ title: "Request already sent", description: "You've already sent an invitation to this member.", variant: "default" });
+        return;
+      }
+
       const { error } = await supabase.from("team_requests").insert({
         team_id: teamId,
         from_member_id: member.id,
@@ -473,11 +565,12 @@ export default function MemberPortal() {
 
       if (error) throw error;
 
-      toast({ title: "Request sent!", description: "The member will be notified." });
+      toast({ title: "Invitation sent!", description: "The member will be notified and can accept your invitation." });
       setRequestMessage("");
       void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
+      void loadHackathonRegisteredMembers(showFindTeammates || "");
     } catch (e: any) {
-      toast({ title: "Failed to send request", description: e.message });
+      toast({ title: "Failed to send invitation", description: e.message, variant: "destructive" });
     }
   }
 
@@ -934,69 +1027,185 @@ export default function MemberPortal() {
               </Card>
             ) : (
               <div className="grid gap-6 md:grid-cols-2">
-                {events.map((event) => (
-                  <Card key={event.id} className="bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10">
-                    <CardHeader>
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <CardTitle className="text-xl mb-2">{event.title}</CardTitle>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant="outline" className="bg-primary/10 border-primary/30 text-primary">
-                              {event.event_type}
-                            </Badge>
-                            <span className="text-sm text-muted-foreground">•</span>
-                            <span className="text-sm text-muted-foreground">{formatDate(event.start_date)}</span>
-                          </div>
+                {events.map((event) => {
+                  const isNew = new Date(event.created_at) > new Date(Date.now() - 24 * 60 * 60 * 1000);
+                  const isExpanded = expandedEvents.has(event.id);
+                  return (
+                    <Card 
+                      key={event.id} 
+                      className={`bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 relative overflow-hidden ${
+                        isNew ? 'animate-pulse' : ''
+                      }`}
+                    >
+                      {isNew && (
+                        <div className="absolute top-2 right-2 z-10">
+                          <Badge variant="destructive" className="animate-bounce">NEW</Badge>
                         </div>
-                        {registeredEvents.has(event.id) && (
-                          <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
-                            ✓ Registered
-                          </Badge>
-                        )}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {event.description && (
-                        <p className="text-sm text-muted-foreground leading-relaxed">{event.description}</p>
                       )}
-                      <div className="space-y-2 text-sm">
-                        {event.location && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">📍</span>
-                            <span>{event.location}</span>
+                      <CardHeader>
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <CardTitle className="text-xl mb-2">{event.title}</CardTitle>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="outline" className="bg-primary/10 border-primary/30 text-primary">
+                                {event.event_type}
+                              </Badge>
+                              <span className="text-sm text-muted-foreground">•</span>
+                              <span className="text-sm text-muted-foreground">{formatDate(event.start_date)}</span>
+                            </div>
+                          </div>
+                          {registeredEvents.has(event.id) && (
+                            <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
+                              ✓ Registered
+                            </Badge>
+                          )}
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {event.description && !isExpanded && (
+                          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">{event.description}</p>
+                        )}
+                        {isExpanded && (
+                          <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                            {event.description && (
+                              <div>
+                                <p className="text-sm font-medium mb-1">Description</p>
+                                <p className="text-sm text-muted-foreground leading-relaxed">{event.description}</p>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              {event.start_date && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">Start Date</p>
+                                  <p>{formatDate(event.start_date)}</p>
+                                </div>
+                              )}
+                              {event.end_date && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">End Date</p>
+                                  <p>{formatDate(event.end_date)}</p>
+                                </div>
+                              )}
+                              {event.location && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground mb-1">📍 Location</p>
+                                  <p>{event.location}</p>
+                                </div>
+                              )}
+                              {event.max_participants && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">Max Participants</p>
+                                  <p>{event.max_participants}</p>
+                                </div>
+                              )}
+                              {event.registration_deadline && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">Registration Deadline</p>
+                                  <p>{formatDate(event.registration_deadline)}</p>
+                                </div>
+                              )}
+                              {event.payment_required && event.fee_amount && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground mb-1">Fee</p>
+                                  <p className="font-semibold">{event.fee_amount} {event.fee_currency}</p>
+                                </div>
+                              )}
+                              {event.category && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">Category</p>
+                                  <Badge variant="outline" className="capitalize">{event.category}</Badge>
+                                </div>
+                              )}
+                              {event.tags && Array.isArray(event.tags) && event.tags.length > 0 && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground mb-1">Tags</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {event.tags.filter((tag: any) => tag && typeof tag === 'string').map((tag: string, idx: number) => (
+                                      <Badge key={idx} variant="secondary" className="text-xs">{tag}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {event.registration_link && (
+                              <div>
+                                <Button variant="outline" size="sm" asChild className="w-full">
+                                  <a href={event.registration_link} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="w-4 h-4 mr-2" />
+                                    External Registration Link
+                                  </a>
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         )}
-                        {event.max_participants && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">👥</span>
-                            <span>Max {event.max_participants} participants</span>
+                        {!isExpanded && (
+                          <div className="space-y-2 text-sm">
+                            {event.location && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">📍</span>
+                                <span>{event.location}</span>
+                              </div>
+                            )}
+                            {event.max_participants && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">👥</span>
+                                <span>Max {event.max_participants} participants</span>
+                              </div>
+                            )}
+                            {event.registration_deadline && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">📅</span>
+                                <span>Registration deadline: {formatDate(event.registration_deadline)}</span>
+                              </div>
+                            )}
                           </div>
                         )}
-                        {event.registration_deadline && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">📅</span>
-                            <span>Registration deadline: {formatDate(event.registration_deadline)}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex gap-2 pt-2">
-                        {registeredEvents.has(event.id) ? (
-                          <Button variant="secondary" className="flex-1" disabled>
-                            Already Registered
-                          </Button>
-                        ) : (
+                        <div className="flex gap-2 pt-2">
                           <Button
-                            variant="default"
-                            className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
-                            onClick={() => setShowEventReg(event.id)}
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const newExpanded = new Set(expandedEvents);
+                              if (isExpanded) {
+                                newExpanded.delete(event.id);
+                              } else {
+                                newExpanded.add(event.id);
+                              }
+                              setExpandedEvents(newExpanded);
+                            }}
+                            className="flex items-center gap-1"
                           >
-                            Register Now
+                            {isExpanded ? (
+                              <>
+                                <ChevronDown className="w-4 h-4" />
+                                Less
+                              </>
+                            ) : (
+                              <>
+                                <ChevronRight className="w-4 h-4" />
+                                More Details
+                              </>
+                            )}
                           </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                          {registeredEvents.has(event.id) ? (
+                            <Button variant="secondary" className="flex-1" disabled>
+                              Already Registered
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="default"
+                              className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                              onClick={() => setShowEventReg(event.id)}
+                            >
+                              Register Now
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </TabsContent>
@@ -1143,25 +1352,43 @@ export default function MemberPortal() {
                           <div className="space-y-3">
                             <Badge variant="secondary">✓ Approved for Hackathon</Badge>
                             {!userTeam ? (
-                              <div className="space-y-2">
-                                <p className="text-sm">Create or join a team to participate!</p>
-                                <div className="flex gap-2">
-                                  <Button onClick={() => setShowTeamForm(hackathon.id)}>Create Team</Button>
-                                  <Button variant="outline" onClick={() => setShowFindTeammates(hackathon.id)}>Find Teammates</Button>
+                              <div className="space-y-3">
+                                <p className="text-sm font-medium">Create or join a team to participate!</p>
+                                <div className="flex flex-col gap-2">
+                                  <Button onClick={() => setShowTeamForm(hackathon.id)} className="w-full">
+                                    <Users className="w-4 h-4 mr-2" />
+                                    Create Team
+                                  </Button>
+                                  <Button variant="outline" onClick={() => {
+                                    setShowFindTeammates(hackathon.id);
+                                    void loadHackathonRegisteredMembers(hackathon.id);
+                                  }} className="w-full">
+                                    <Users className="w-4 h-4 mr-2" />
+                                    Invite Someone / Find Teammates
+                                  </Button>
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-4 bg-muted rounded">
-                                <p className="font-medium mb-2">Your Team: {userTeam.team_name}</p>
-                                <div className="space-y-1">
-                                  {userTeam.members.map((m) => (
-                                    <p key={m.member_id} className="text-sm">
-                                      {m.full_name} {m.role === "leader" && "(Leader)"}
-                                    </p>
-                                  ))}
+                              <div className="p-4 bg-muted rounded space-y-3">
+                                <div>
+                                  <p className="font-medium mb-2">Your Team: {userTeam.team_name}</p>
+                                  <div className="space-y-1">
+                                    {userTeam.members.map((m) => (
+                                      <p key={m.member_id} className="text-sm">
+                                        {m.full_name} {m.role === "leader" && "(Leader)"}
+                                      </p>
+                                    ))}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    {userTeam.members.length}/4 members
+                                  </p>
                                 </div>
                                 {userTeam.members.length < 4 && (
-                                  <Button variant="outline" size="sm" className="mt-2" onClick={() => setShowFindTeammates(hackathon.id)}>
+                                  <Button variant="outline" size="sm" className="w-full" onClick={() => {
+                                    setShowFindTeammates(hackathon.id);
+                                    void loadHackathonRegisteredMembers(hackathon.id);
+                                  }}>
+                                    <Users className="w-4 h-4 mr-2" />
                                     Invite More Members
                                   </Button>
                                 )}
@@ -1436,58 +1663,167 @@ export default function MemberPortal() {
           </Dialog>
         )}
 
-        {/* Create Team Dialog */}
-        {showTeamForm && member && (
-          <Dialog open onOpenChange={() => setShowTeamForm(null)}>
-            <DialogContent>
+        {/* Find Teammates / Invite Dialog */}
+        {showFindTeammates && member && (
+          <Dialog open onOpenChange={() => {
+            setShowFindTeammates(null);
+            setHackathonRegisteredMembers([]);
+            setRequestMessage("");
+          }}>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Create Team</DialogTitle>
-                <DialogDescription>Create a team for this hackathon (max 4 members)</DialogDescription>
+                <DialogTitle>Invite Teammates</DialogTitle>
+                <DialogDescription>
+                  {showFindTeammates && hackathons.find(h => h.id === showFindTeammates) && (
+                    <p>Find and invite approved members for: <strong>{hackathons.find(h => h.id === showFindTeammates)?.title}</strong></p>
+                  )}
+                </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Team Name</label>
-                  <Input
-                    value={teamName}
-                    onChange={(e) => setTeamName(e.target.value)}
-                    placeholder="Enter team name"
-                  />
-                </div>
+              <div className="space-y-4 py-4">
+                {loadingHackathonMembers ? (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">Loading registered members...</p>
+                  </div>
+                ) : hackathonRegisteredMembers.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">No available members to invite.</p>
+                    <p className="text-sm text-muted-foreground mt-2">All approved members are already in teams or you need to create a team first.</p>
+                    {!teams.find(t => t.hackathon_id === showFindTeammates) && (
+                      <Button className="mt-4" onClick={() => {
+                        setShowFindTeammates(null);
+                        setShowTeamForm(showFindTeammates);
+                      }}>
+                        Create Team First
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="bg-muted/50 p-3 rounded-lg">
+                      <p className="text-sm font-medium mb-2">Invitation Message (optional)</p>
+                      <Textarea
+                        value={requestMessage}
+                        onChange={(e) => setRequestMessage(e.target.value)}
+                        placeholder="Hi! I'd like to invite you to join my hackathon team..."
+                        rows={3}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Available Members ({hackathonRegisteredMembers.length})</p>
+                      <div className="grid gap-3 max-h-[400px] overflow-y-auto">
+                        {hackathonRegisteredMembers.map((m: any) => {
+                          const userTeam = teams.find(t => t.hackathon_id === showFindTeammates);
+                          const hasPendingRequest = teamRequests.some(tr => 
+                            tr.to_member_id === m.id && 
+                            tr.team_id === userTeam?.id && 
+                            tr.status === "pending"
+                          );
+                          
+                          return (
+                            <Card key={m.id} className="p-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <p className="font-medium">{m.full_name}</p>
+                                  <p className="text-xs text-muted-foreground">{m.email}</p>
+                                  {m.area_of_interest && (
+                                    <Badge variant="outline" className="mt-1 text-xs">
+                                      {m.area_of_interest}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  {userTeam ? (
+                                    <Button
+                                      size="sm"
+                                      variant={hasPendingRequest ? "secondary" : "default"}
+                                      disabled={hasPendingRequest || userTeam.members.length >= 4}
+                                      onClick={() => {
+                                        if (userTeam && !hasPendingRequest) {
+                                          void sendTeamRequest(userTeam.id, m.id);
+                                        }
+                                      }}
+                                    >
+                                      {hasPendingRequest ? "Request Sent" : userTeam.members.length >= 4 ? "Team Full" : "Invite"}
+                                    </Button>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">Create a team first</p>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowTeamForm(null)}>Cancel</Button>
-                <Button onClick={() => createTeam(showTeamForm)}>Create Team</Button>
+                <Button variant="outline" onClick={() => {
+                  setShowFindTeammates(null);
+                  setHackathonRegisteredMembers([]);
+                  setRequestMessage("");
+                }}>
+                  Close
+                </Button>
+                {!teams.find(t => t.hackathon_id === showFindTeammates) && (
+                  <Button onClick={() => {
+                    setShowFindTeammates(null);
+                    setShowTeamForm(showFindTeammates);
+                  }}>
+                    Create Team First
+                  </Button>
+                )}
               </DialogFooter>
             </DialogContent>
           </Dialog>
         )}
 
-        {/* Find Teammates Dialog */}
-        {showFindTeammates && member && (
-          <Dialog open onOpenChange={() => setShowFindTeammates(null)}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* Create Team Dialog */}
+        {showTeamForm && member && (
+          <Dialog open onOpenChange={() => {
+            setShowTeamForm(null);
+            setTeamName("");
+          }}>
+            <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Find Teammates</DialogTitle>
-                <DialogDescription>Invite approved hackathon participants to join your team</DialogDescription>
+                <DialogTitle>Create Team</DialogTitle>
+                <DialogDescription>
+                  {showTeamForm && hackathons.find(h => h.id === showTeamForm) && (
+                    <p>Create a team for: <strong>{hackathons.find(h => h.id === showTeamForm)?.title}</strong></p>
+                  )}
+                </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
+              <div className="space-y-4 py-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Message (optional)</label>
-                  <Textarea
-                    value={requestMessage}
-                    onChange={(e) => setRequestMessage(e.target.value)}
-                    placeholder="Add a personal message..."
-                    rows={3}
+                  <label className="block text-sm font-medium mb-2">Team Name <span className="text-destructive">*</span></label>
+                  <Input
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    placeholder="Enter team name"
+                    maxLength={50}
                   />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Available Members:</p>
-                  {/* TODO: Load approved hackathon participants */}
-                  <p className="text-sm text-muted-foreground">Loading approved participants...</p>
+                  <p className="text-xs text-muted-foreground mt-1">Maximum 4 members per team</p>
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowFindTeammates(null)}>Close</Button>
+                <Button variant="outline" onClick={() => {
+                  setShowTeamForm(null);
+                  setTeamName("");
+                }}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (showTeamForm) {
+                      void createTeam(showTeamForm);
+                    }
+                  }}
+                  disabled={!teamName.trim()}
+                >
+                  Create Team
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

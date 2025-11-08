@@ -204,6 +204,11 @@ const scannerLockRef = useRef(false);
 	const [rejectOpen, setRejectOpen] = useState(false);
 	const [rejectReason, setRejectReason] = useState("");
 	const [rejectingId, setRejectingId] = useState<string | null>(null);
+	const [hackRejectOpen, setHackRejectOpen] = useState(false);
+	const [hackRejectReason, setHackRejectReason] = useState("");
+	const [hackRejectingId, setHackRejectingId] = useState<string | null>(null);
+	const [paymentProofViewer, setPaymentProofViewer] = useState<string | null>(null);
+	const [viewingHackathonReg, setViewingHackathonReg] = useState<any | null>(null);
 
 	// Initial loads
     useEffect(() => {
@@ -1274,7 +1279,7 @@ const scannerLockRef = useRef(false);
 											<TableHead>When</TableHead>
 											<TableHead>Member</TableHead>
 											<TableHead>Hackathon</TableHead>
-											<TableHead>Payment</TableHead>
+											<TableHead>Payment Details</TableHead>
 											<TableHead>Status</TableHead>
 											<TableHead className="text-right">Actions</TableHead>
 										</TableRow>
@@ -1285,46 +1290,99 @@ const scannerLockRef = useRef(false);
 												<TableCell colSpan={6} className="text-center text-muted-foreground">No hackathon registrations yet</TableCell>
 											</TableRow>
 										) : (
-											hackathonRegs.map((reg) => (
-												<TableRow key={reg.id} className="hover:bg-card/50">
-													<TableCell>{formatDate(reg.created_at)}</TableCell>
-													<TableCell>
-														<div>
-															<p className="font-medium">{reg.members?.full_name || "-"}</p>
-															<p className="text-xs text-muted-foreground">{reg.members?.email || "-"}</p>
-														</div>
-													</TableCell>
-													<TableCell>{reg.events?.title || "-"}</TableCell>
-													<TableCell>
-														<div className="text-sm">
-															<p>{reg.payment_method || "-"}</p>
-															{reg.payment_amount && <p className="text-xs text-muted-foreground">PKR {reg.payment_amount}</p>}
-															{reg.transaction_id && <p className="text-xs text-muted-foreground">Txn: {reg.transaction_id}</p>}
-														</div>
-													</TableCell>
-													<TableCell>
-														<Badge variant={reg.status === "approved" ? "secondary" : reg.status === "rejected" ? "destructive" : "outline"}>
-															{reg.status}
-														</Badge>
-													</TableCell>
-													<TableCell className="text-right space-x-2">
-														{reg.status === "pending" && (
-															<>
-																<Button size="sm" variant="secondary" onClick={() => void moderateHackathon(reg.id, "approve")}>Approve</Button>
-																<Button size="sm" variant="destructive" onClick={() => { 
-																	const reason = prompt("Reason for rejection? (optional)") || undefined;
-																	if (reason !== null) void moderateHackathon(reg.id, "reject", reason);
-																}}>Reject</Button>
-															</>
-														)}
-														{reg.payment_proof_url && (
-															<Button size="sm" variant="outline" asChild>
-																<a href={reg.payment_proof_url} target="_blank" rel="noopener noreferrer">View Proof</a>
-															</Button>
-														)}
-													</TableCell>
-												</TableRow>
-											))
+											hackathonRegs.map((reg) => {
+												const event = reg.events;
+												const paymentRequired = event?.payment_required;
+												return (
+													<TableRow key={reg.id} className="hover:bg-card/50">
+														<TableCell>{formatDate(reg.created_at)}</TableCell>
+														<TableCell>
+															<div>
+																<p className="font-medium">{reg.members?.full_name || "-"}</p>
+																<p className="text-xs text-muted-foreground">{reg.members?.email || "-"}</p>
+															</div>
+														</TableCell>
+														<TableCell>
+															<div>
+																<p className="font-medium">{event?.title || "-"}</p>
+																{paymentRequired && event?.fee_amount && (
+																	<p className="text-xs text-muted-foreground">Fee: {event.fee_amount} {event.fee_currency}</p>
+																)}
+															</div>
+														</TableCell>
+														<TableCell>
+															<div className="text-sm space-y-1">
+																{paymentRequired ? (
+																	<>
+																		{reg.payment_method && (
+																			<p><span className="font-medium">Method:</span> {reg.payment_method}</p>
+																		)}
+																		{reg.payment_amount && (
+																			<p><span className="font-medium">Amount:</span> PKR {reg.payment_amount}</p>
+																		)}
+																		{reg.transaction_id && (
+																			<p><span className="font-medium">Txn ID:</span> <span className="font-mono text-xs">{reg.transaction_id}</span></p>
+																		)}
+																		{reg.payment_date && (
+																			<p><span className="font-medium">Date:</span> {formatDate(reg.payment_date)}</p>
+																		)}
+																		{reg.payment_proof_url && (
+																			<Badge variant="outline" className="mt-1">Proof Available</Badge>
+																		)}
+																	</>
+																) : (
+																	<p className="text-muted-foreground">Free Event</p>
+																)}
+															</div>
+														</TableCell>
+														<TableCell>
+															<Badge variant={reg.status === "approved" ? "secondary" : reg.status === "rejected" ? "destructive" : "outline"}>
+																{reg.status}
+															</Badge>
+															{reg.rejection_reason && (
+																<p className="text-xs text-muted-foreground mt-1 max-w-[200px] truncate" title={reg.rejection_reason}>
+																	Reason: {reg.rejection_reason}
+																</p>
+															)}
+														</TableCell>
+														<TableCell className="text-right space-x-2">
+															{reg.status === "pending" && (
+																<>
+																	<Button size="sm" variant="secondary" onClick={() => void moderateHackathon(reg.id, "approve")}>Approve</Button>
+																	<Button size="sm" variant="destructive" onClick={() => {
+																		setHackRejectingId(reg.id);
+																		setHackRejectOpen(true);
+																	}}>Reject</Button>
+																</>
+															)}
+															{reg.payment_proof_url && (
+																<Button 
+																	size="sm" 
+																	variant="outline" 
+																	onClick={() => {
+																		setPaymentProofViewer(reg.payment_proof_url);
+																		setViewingHackathonReg(reg);
+																	}}
+																>
+																	View Proof
+																</Button>
+															)}
+															{paymentRequired && (
+																<Button 
+																	size="sm" 
+																	variant="ghost" 
+																	onClick={() => {
+																		setViewingHackathonReg({ ...reg, events: event });
+																	}}
+																	title="View IBAN Details"
+																>
+																	IBAN Info
+																</Button>
+															)}
+														</TableCell>
+													</TableRow>
+												);
+											})
 										)}
 									</TableBody>
 								</Table>
@@ -1549,6 +1607,155 @@ const scannerLockRef = useRef(false);
 						>
 							Reject Application
 						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Hackathon Reject Reason Modal */}
+			<Dialog open={hackRejectOpen} onOpenChange={(open) => {
+				if (!open) {
+					setHackRejectOpen(false);
+					setHackRejectReason("");
+					setHackRejectingId(null);
+				}
+			}}>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Reject Hackathon Registration</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-4 py-4">
+						<div>
+							<label className="block text-sm font-medium mb-2">Reason for rejection <span className="text-muted-foreground">(required)</span></label>
+							<Textarea
+								value={hackRejectReason}
+								onChange={(e) => setHackRejectReason(e.target.value)}
+								placeholder="e.g., Payment proof is unclear or transaction ID doesn't match. Please re-submit with correct payment details."
+								rows={4}
+								className="bg-background/50 border-border focus:border-destructive"
+							/>
+							<p className="text-xs text-muted-foreground mt-1">This reason will be sent to the member via email.</p>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => {
+							setHackRejectOpen(false);
+							setHackRejectReason("");
+							setHackRejectingId(null);
+						}}>Cancel</Button>
+						<Button
+							variant="destructive"
+							disabled={!hackRejectReason.trim() || !hackRejectingId}
+							onClick={() => {
+								if (hackRejectingId && hackRejectReason.trim()) {
+									void moderateHackathon(hackRejectingId, "reject", hackRejectReason.trim());
+									setHackRejectOpen(false);
+									setHackRejectReason("");
+									setHackRejectingId(null);
+								}
+							}}
+						>
+							Reject Registration
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Payment Proof Viewer Modal */}
+			<Dialog open={!!paymentProofViewer} onOpenChange={(open) => {
+				if (!open) {
+					setPaymentProofViewer(null);
+					setViewingHackathonReg(null);
+				}
+			}}>
+				<DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>Payment Proof</DialogTitle>
+						<DialogDescription>
+							{viewingHackathonReg && (
+								<div className="text-sm space-y-1 mt-2">
+									<p><span className="font-medium">Member:</span> {viewingHackathonReg.members?.full_name || "-"}</p>
+									<p><span className="font-medium">Hackathon:</span> {viewingHackathonReg.events?.title || "-"}</p>
+									{viewingHackathonReg.transaction_id && (
+										<p><span className="font-medium">Transaction ID:</span> <span className="font-mono">{viewingHackathonReg.transaction_id}</span></p>
+									)}
+								</div>
+							)}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4">
+						{paymentProofViewer && (
+							<div className="border rounded-lg overflow-hidden">
+								<img 
+									src={paymentProofViewer} 
+									alt="Payment Proof" 
+									className="w-full h-auto max-h-[600px] object-contain"
+									onError={(e) => {
+										(e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300'%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999'%3EImage not available%3C/text%3E%3C/svg%3E";
+									}}
+								/>
+							</div>
+						)}
+						{viewingHackathonReg && viewingHackathonReg.payment_proof_url && (
+							<div className="flex gap-2">
+								<Button variant="outline" asChild>
+									<a href={viewingHackathonReg.payment_proof_url} target="_blank" rel="noopener noreferrer">
+										Open in New Tab
+									</a>
+								</Button>
+							</div>
+						)}
+					</div>
+				</DialogContent>
+			</Dialog>
+
+			{/* IBAN Details Modal */}
+			<Dialog open={!!viewingHackathonReg && !paymentProofViewer && viewingHackathonReg.events?.payment_required} onOpenChange={(open) => {
+				if (!open) {
+					setViewingHackathonReg(null);
+				}
+			}}>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Bank Transfer Details</DialogTitle>
+						<DialogDescription>
+							{viewingHackathonReg?.events?.title && (
+								<p className="mt-2">Payment information for: {viewingHackathonReg.events.title}</p>
+							)}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4 py-4">
+						<div className="bg-muted/50 p-4 rounded-lg border space-y-2">
+							<div>
+								<p className="text-sm font-medium mb-1">Account Name</p>
+								<p className="text-lg font-semibold">Zeeshan</p>
+							</div>
+							<div>
+								<p className="text-sm font-medium mb-1">IBAN</p>
+								<p className="text-lg font-mono">PK08 MEZN 0000 3001 1288 7110</p>
+							</div>
+							<div>
+								<p className="text-sm font-medium mb-1">Account Number</p>
+								<p className="text-lg font-mono">0030 0112887110</p>
+							</div>
+							<div>
+								<p className="text-sm font-medium mb-1">Bank</p>
+								<p className="text-lg">Meezan Bank</p>
+							</div>
+							{viewingHackathonReg?.events?.fee_amount && (
+								<div className="pt-2 border-t">
+									<p className="text-sm font-medium mb-1">Required Amount</p>
+									<p className="text-xl font-bold text-primary">{viewingHackathonReg.events.fee_amount} {viewingHackathonReg.events.fee_currency}</p>
+								</div>
+							)}
+						</div>
+						<div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+							<p className="text-sm text-yellow-400">
+								<strong>Note:</strong> Members should transfer the exact amount and include their transaction ID in the payment reference.
+							</p>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setViewingHackathonReg(null)}>Close</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>

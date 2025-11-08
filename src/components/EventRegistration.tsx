@@ -116,6 +116,7 @@ export default function EventRegistration({
           : "You've successfully registered for this event.",
       });
 
+      // Call onSuccess with eventId to refresh data
       onSuccess();
     } catch (e: any) {
       console.error("Registration error:", e);
