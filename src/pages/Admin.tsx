@@ -673,8 +673,22 @@ const scannerLockRef = useRef(false);
 			toast({ title: "Title required", description: "Please enter an event title." });
 			return;
 		}
-		if (!eventFormData.start_date) {
-			toast({ title: "Start date required", description: "Please select a start date." });
+		if (!eventFormData.start_date || !eventFormData.start_date.trim()) {
+			toast({ title: "Start date required", description: "Please select a start date and time." });
+			return;
+		}
+
+		// Validate that the datetime-local value is complete (has both date and time)
+		const startDateValue = eventFormData.start_date.trim();
+		if (!startDateValue.includes('T') || startDateValue.split('T')[1] === '') {
+			toast({ title: "Start time required", description: "Please select both date and time for the start date." });
+			return;
+		}
+
+		// Validate that the date is valid
+		const startDate = new Date(startDateValue);
+		if (isNaN(startDate.getTime())) {
+			toast({ title: "Invalid start date", description: "Please enter a valid start date and time." });
 			return;
 		}
 
@@ -683,7 +697,7 @@ const scannerLockRef = useRef(false);
 				title: eventFormData.title.trim(),
 				description: eventFormData.description.trim() || null,
 				event_type: eventFormData.event_type,
-				start_date: new Date(eventFormData.start_date).toISOString(),
+				start_date: startDate.toISOString(),
 				end_date: eventFormData.end_date ? new Date(eventFormData.end_date).toISOString() : null,
 				location: eventFormData.location.trim() || null,
 				registration_link: eventFormData.registration_link.trim() || null,
@@ -1950,7 +1964,12 @@ const scannerLockRef = useRef(false);
 									type="datetime-local"
 									value={eventFormData.start_date}
 									onChange={(e) => setEventFormData({ ...eventFormData, start_date: e.target.value })}
+									required
+									min={new Date().toISOString().slice(0, 16)}
 								/>
+								<p className="text-xs text-muted-foreground mt-1">
+									Please select both date and time
+								</p>
 							</div>
 
 							<div>
@@ -1992,13 +2011,16 @@ const scannerLockRef = useRef(false);
 							</div>
 
 							<div>
-								<label className="block text-sm font-medium mb-2">Registration Link</label>
+								<label className="block text-sm font-medium mb-2">External Registration Link (optional)</label>
 								<Input
 									type="url"
 									value={eventFormData.registration_link}
 									onChange={(e) => setEventFormData({ ...eventFormData, registration_link: e.target.value })}
-									placeholder="https://..."
+									placeholder="https://... (leave empty for in-app registration)"
 								/>
+								<p className="text-xs text-muted-foreground mt-1">
+									Leave empty to use our in-app registration system. Only add a link for external registrations (e.g., Google Forms).
+								</p>
 							</div>
 
 							<div>

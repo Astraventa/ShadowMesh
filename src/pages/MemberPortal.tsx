@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
+import EventRegistration from "@/components/EventRegistration";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -106,6 +107,7 @@ export default function MemberPortal() {
   const [teamRequests, setTeamRequests] = useState<TeamRequest[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [showHackathonReg, setShowHackathonReg] = useState<string | null>(null);
+  const [showEventReg, setShowEventReg] = useState<string | null>(null);
   const [showTeamForm, setShowTeamForm] = useState<string | null>(null);
   const [showFindTeammates, setShowFindTeammates] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
@@ -387,25 +389,11 @@ export default function MemberPortal() {
     }
   }
 
-  async function registerForEvent(eventId: string) {
-    if (!member) return;
-
-    try {
-      const { error } = await supabase
-        .from("event_registrations")
-        .insert({
-          event_id: eventId,
-          member_id: member.id,
-          status: "registered",
-        });
-
-      if (error) throw error;
-
-      setRegisteredEvents((prev) => new Set([...prev, eventId]));
-      toast({ title: "Registered!", description: "You've successfully registered for this event." });
-    } catch (e: any) {
-      toast({ title: "Registration failed", description: e.message || "Please try again." });
-    }
+  async function handleEventRegistrationSuccess(eventId: string) {
+    setRegisteredEvents((prev) => new Set([...prev, eventId]));
+    setShowEventReg(null);
+    // Reload member data to refresh registrations
+    await loadMemberData();
   }
 
   function getResourceIcon(type: string) {
@@ -981,22 +969,13 @@ export default function MemberPortal() {
                             Already Registered
                           </Button>
                         ) : (
-                          <>
-                            <Button
-                              variant="default"
-                              className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
-                              onClick={() => registerForEvent(event.id)}
-                            >
-                              Register Now
-                            </Button>
-                            {event.registration_link && (
-                              <Button variant="outline" asChild>
-                                <a href={event.registration_link} target="_blank" rel="noopener noreferrer">
-                                  <ExternalLink className="w-4 h-4" />
-                                </a>
-                              </Button>
-                            )}
-                          </>
+                          <Button
+                            variant="default"
+                            className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                            onClick={() => setShowEventReg(event.id)}
+                          >
+                            Register Now
+                          </Button>
                         )}
                       </div>
                     </CardContent>
@@ -1602,6 +1581,30 @@ export default function MemberPortal() {
                   Submit Feedback
                 </Button>
               </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Event Registration Dialog */}
+        {showEventReg && member && events.find(e => e.id === showEventReg) && (
+          <Dialog open onOpenChange={() => setShowEventReg(null)}>
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Register for Event</DialogTitle>
+                <DialogDescription>
+                  Complete the registration form below
+                </DialogDescription>
+              </DialogHeader>
+              <EventRegistration
+                eventId={showEventReg}
+                eventTitle={events.find(e => e.id === showEventReg)?.title || ""}
+                memberId={member.id}
+                paymentRequired={events.find(e => e.id === showEventReg)?.payment_required || false}
+                feeAmount={events.find(e => e.id === showEventReg)?.fee_amount || 0}
+                feeCurrency={events.find(e => e.id === showEventReg)?.fee_currency || "PKR"}
+                onSuccess={() => handleEventRegistrationSuccess(showEventReg)}
+                onCancel={() => setShowEventReg(null)}
+              />
             </DialogContent>
           </Dialog>
         )}

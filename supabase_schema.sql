@@ -141,8 +141,14 @@ create table if not exists public.event_registrations (
   created_at        timestamptz not null default now(),
   event_id          uuid references public.events(id) on delete cascade,
   member_id         uuid references public.members(id) on delete cascade,
-  status            text        not null default 'registered' check (status in ('registered', 'attended', 'cancelled')),
+  status            text        not null default 'registered' check (status in ('registered', 'attended', 'cancelled', 'pending_payment')),
   notes             text,
+  -- Payment fields (for paid events)
+  payment_method    text, -- e.g., 'bank_transfer', 'easypaisa', 'jazzcash', 'other'
+  payment_proof_url text, -- URL to payment screenshot/receipt
+  transaction_id    text, -- Transaction reference number
+  payment_amount    numeric(10,2),
+  payment_date      timestamptz,
   unique (event_id, member_id) -- One registration per member per event
 );
 
@@ -607,4 +613,27 @@ begin
   if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='verification_token') then
     alter table public.join_applications add column verification_token uuid default gen_random_uuid();
   end if;
+
+  -- Add payment fields to event_registrations if they don't exist
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='event_registrations' and column_name='payment_method') then
+    alter table public.event_registrations add column payment_method text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='event_registrations' and column_name='payment_proof_url') then
+    alter table public.event_registrations add column payment_proof_url text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='event_registrations' and column_name='transaction_id') then
+    alter table public.event_registrations add column transaction_id text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='event_registrations' and column_name='payment_amount') then
+    alter table public.event_registrations add column payment_amount numeric(10,2);
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='event_registrations' and column_name='payment_date') then
+    alter table public.event_registrations add column payment_date timestamptz;
+  end if;
+  -- Update status constraint to include 'pending_payment'
+  if exists (select 1 from information_schema.table_constraints where constraint_name='event_registrations_status_check' and table_schema='public' and table_name='event_registrations') then
+    alter table public.event_registrations drop constraint if exists event_registrations_status_check;
+  end if;
+  alter table public.event_registrations add constraint event_registrations_status_check 
+    check (status in ('registered', 'attended', 'cancelled', 'pending_payment'));
 end$$;
