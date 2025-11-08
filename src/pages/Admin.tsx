@@ -153,6 +153,9 @@ const Admin = () => {
 	const [hackathonRegs, setHackathonRegs] = useState<any[]>([]);
 	const [hackRegsHasMore, setHackRegsHasMore] = useState(true);
 	const [hackRegsLoading, setHackRegsLoading] = useState(false);
+	const [feedbacks, setFeedbacks] = useState<any[]>([]);
+	const [feedbacksLoading, setFeedbacksLoading] = useState(false);
+	const [feedbacksHasMore, setFeedbacksHasMore] = useState(true);
 
 const [events, setEvents] = useState<any[]>([]);
 const [eventsLoading, setEventsLoading] = useState(false);
@@ -173,7 +176,7 @@ const [eventFormData, setEventFormData] = useState({
 	fee_currency: "PKR",
 	payment_required: false,
 	notify_members: false,
-	category: "",
+	category: "none",
 	tags: "",
 	image_url: "",
 	registration_deadline: "",
@@ -208,12 +211,21 @@ const scannerLockRef = useRef(false);
         void loadApps("pending", true);
         void loadApps("approved", true);
         void loadApps("rejected", true);
-        void loadMsgs(true);
-        void loadMembers(true);
-        void loadHackathonRegs(true);
-        void loadEvents(true);
+									void loadMsgs(true);
+									void loadMembers(true);
+									void loadHackathonRegs(true);
+                                void loadEvents(true);
+								if (tab === "feedback") void loadFeedbacks(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authed, token]);
+
+	// Load feedbacks when tab changes to feedback
+	useEffect(() => {
+		if (tab === "feedback" && authed) {
+			void loadFeedbacks(true);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [tab, authed]);
 
     useEffect(() => {
         if (!authed || !token) return;
@@ -680,7 +692,7 @@ const scannerLockRef = useRef(false);
 				fee_currency: eventFormData.fee_currency,
 				payment_required: eventFormData.payment_required,
 				notify_members: eventFormData.notify_members,
-				category: eventFormData.category.trim() || null,
+				category: eventFormData.category === "none" || !eventFormData.category.trim() ? null : eventFormData.category.trim(),
 				tags: eventFormData.tags.trim() ? eventFormData.tags.split(",").map(t => t.trim()).filter(Boolean) : null,
 				image_url: eventFormData.image_url.trim() || null,
 				registration_deadline: eventFormData.registration_deadline ? new Date(eventFormData.registration_deadline).toISOString() : null,
@@ -751,6 +763,48 @@ const scannerLockRef = useRef(false);
 			if (error) throw error;
 			toast({ title: "Event deleted", description: "The event has been deleted." });
 			void loadEvents(true);
+		} catch (e: any) {
+			toast({ title: "Delete failed", description: e.message || String(e) });
+		}
+	}
+
+	async function loadFeedbacks(reset = false) {
+		if (!authed) return;
+		setFeedbacksLoading(true);
+		try {
+			const page = reset ? 0 : Math.floor(feedbacks.length / PAGE_SIZE);
+			const { data, error } = await supabase
+				.from("member_feedback")
+				.select(`
+					*,
+					members(full_name, email),
+					events(title)
+				`)
+				.order("created_at", { ascending: false })
+				.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+			if (error) throw error;
+			const list = Array.isArray(data) ? data : [];
+			setFeedbacks((prev) => (reset ? list : [...prev, ...list]));
+			setFeedbacksHasMore(list.length === PAGE_SIZE);
+		} catch (e: any) {
+			toast({ title: "Failed to load feedbacks", description: e.message || String(e) });
+		} finally {
+			setFeedbacksLoading(false);
+		}
+	}
+
+	async function deleteFeedback(id: string) {
+		if (!confirm("Are you sure you want to delete this feedback?")) return;
+		try {
+			const { error } = await supabase
+				.from("member_feedback")
+				.delete()
+				.eq("id", id);
+
+			if (error) throw error;
+			toast({ title: "Feedback deleted", description: "The feedback has been deleted." });
+			void loadFeedbacks(true);
 		} catch (e: any) {
 			toast({ title: "Delete failed", description: e.message || String(e) });
 		}
@@ -876,6 +930,7 @@ const scannerLockRef = useRef(false);
                         <TabsTrigger value="events">Events</TabsTrigger>
                         <TabsTrigger value="attendance">Attendance</TabsTrigger>
                         <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
+                        <TabsTrigger value="feedback">Feedback</TabsTrigger>
 					</TabsList>
 
 					<TabsContent value="applications">
@@ -1155,7 +1210,7 @@ const scannerLockRef = useRef(false);
 																fee_currency: event.fee_currency || "PKR",
 																payment_required: event.payment_required || false,
 																notify_members: event.notify_members || false,
-																category: event.category || "",
+																category: event.category || "none",
 																tags: Array.isArray(event.tags) ? event.tags.join(", ") : event.tags || "",
 																image_url: event.image_url || "",
 																registration_deadline: event.registration_deadline ? new Date(event.registration_deadline).toISOString().slice(0, 16) : "",
@@ -1500,18 +1555,126 @@ const scannerLockRef = useRef(false);
 							</CardContent>
 						</Card>
 					</TabsContent>
+
+					{/* Feedback Tab */}
+					<TabsContent value="feedback">
+						<Card>
+							<CardHeader>
+								<CardTitle>Member Feedback ({feedbacks.length})</CardTitle>
+								<CardDescription>View and manage feedback submitted by members</CardDescription>
+							</CardHeader>
+							<CardContent>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>When</TableHead>
+											<TableHead>Member</TableHead>
+											<TableHead>Type</TableHead>
+											<TableHead>Subject</TableHead>
+											<TableHead>Rating</TableHead>
+											<TableHead>Status</TableHead>
+											<TableHead className="text-right">Actions</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{feedbacks.length === 0 && !feedbacksLoading ? (
+											<TableRow>
+												<TableCell colSpan={7} className="text-center text-muted-foreground">No feedback yet</TableCell>
+											</TableRow>
+										) : (
+											feedbacks.map((feedback) => (
+												<TableRow key={feedback.id} className="hover:bg-card/50">
+													<TableCell>{formatDate(feedback.created_at)}</TableCell>
+													<TableCell>
+														<div>
+															<p className="font-medium">{feedback.members?.full_name || "-"}</p>
+															<p className="text-xs text-muted-foreground">{feedback.members?.email || "-"}</p>
+														</div>
+													</TableCell>
+													<TableCell>
+														<Badge variant="outline" className="capitalize">{feedback.feedback_type}</Badge>
+													</TableCell>
+													<TableCell className="max-w-[200px] truncate" title={feedback.subject || feedback.message}>
+														{feedback.subject || "(No subject)"}
+													</TableCell>
+													<TableCell>
+														{feedback.rating ? (
+															<div className="flex items-center gap-1">
+																<span className="text-yellow-500">★</span>
+																<span>{feedback.rating}/5</span>
+															</div>
+														) : (
+															<span className="text-muted-foreground">-</span>
+														)}
+													</TableCell>
+													<TableCell>
+														<Badge variant={feedback.status === "new" ? "default" : feedback.status === "resolved" ? "secondary" : "outline"} className="capitalize">
+															{feedback.status}
+														</Badge>
+													</TableCell>
+													<TableCell className="text-right space-x-2">
+														<Button size="sm" variant="outline" onClick={() => {
+															setDetail(feedback);
+															setOpenDetail(true);
+														}}>View</Button>
+														<Button size="sm" variant="ghost" onClick={() => void deleteFeedback(feedback.id)}>Delete</Button>
+													</TableCell>
+												</TableRow>
+											))
+										)}
+									</TableBody>
+								</Table>
+								<div className="flex justify-center mt-4">
+									<Button variant="outline" disabled={!feedbacksHasMore || feedbacksLoading} onClick={() => void loadFeedbacks(false)}>
+										{feedbacksLoading ? "Loading..." : feedbacksHasMore ? "Load more" : "No more"}
+									</Button>
+								</div>
+							</CardContent>
+						</Card>
+					</TabsContent>
 				</Tabs>
 			</div>
 
 			<Dialog open={openDetail} onOpenChange={setOpenDetail}>
 				<DialogContent className="max-w-2xl">
 					<DialogHeader>
-						<DialogTitle>Application Details</DialogTitle>
+						<DialogTitle>{detail && 'feedback_type' in detail ? "Feedback Details" : "Application Details"}</DialogTitle>
 					</DialogHeader>
-					<DetailView detail={detail} />
+					{detail && 'feedback_type' in detail ? (
+						<div className="space-y-4">
+							<div className="grid grid-cols-2 gap-3">
+								<div><span className="text-sm text-muted-foreground">Member</span><div>{detail.members?.full_name || "-"}</div></div>
+								<div><span className="text-sm text-muted-foreground">Email</span><div>{detail.members?.email || "-"}</div></div>
+								<div><span className="text-sm text-muted-foreground">Type</span><div className="capitalize">{detail.feedback_type}</div></div>
+								<div><span className="text-sm text-muted-foreground">Status</span><div className="capitalize">{detail.status}</div></div>
+								{detail.rating && (
+									<div><span className="text-sm text-muted-foreground">Rating</span><div className="flex items-center gap-1"><span className="text-yellow-500">★</span><span>{detail.rating}/5</span></div></div>
+								)}
+								<div><span className="text-sm text-muted-foreground">Submitted</span><div>{formatDate(detail.created_at)}</div></div>
+								{detail.related_event_id && (
+									<div className="col-span-2"><span className="text-sm text-muted-foreground">Related Event</span><div>{detail.events?.title || "-"}</div></div>
+								)}
+								{detail.subject && (
+									<div className="col-span-2"><span className="text-sm text-muted-foreground">Subject</span><div>{detail.subject}</div></div>
+								)}
+							</div>
+							<div className="border-t pt-3">
+								<span className="text-sm text-muted-foreground">Message</span>
+								<div className="mt-2 p-3 bg-muted rounded-md whitespace-pre-wrap">{detail.message}</div>
+							</div>
+							{detail.admin_notes && (
+								<div className="border-t pt-3">
+									<span className="text-sm text-muted-foreground">Admin Notes</span>
+									<div className="mt-2 p-3 bg-muted rounded-md whitespace-pre-wrap">{detail.admin_notes}</div>
+								</div>
+							)}
+						</div>
+					) : (
+						<DetailView detail={detail} />
+					)}
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setOpenDetail(false)}>Close</Button>
-						{detail && detail.status === "pending" && (
+						{detail && !('feedback_type' in detail) && detail.status === "pending" && (
 							<>
 								<Button variant="secondary" onClick={() => { void moderate(detail.id, "approve"); }}>Approve</Button>
 								<Button variant="destructive" onClick={() => { setRejectingId(detail.id); setRejectOpen(true); }}>Reject</Button>
@@ -1767,12 +1930,12 @@ const scannerLockRef = useRef(false);
 
 							<div>
 								<label className="block text-sm font-medium mb-2">Category</label>
-								<Select value={eventFormData.category} onValueChange={(v) => setEventFormData({ ...eventFormData, category: v })}>
+								<Select value={eventFormData.category || undefined} onValueChange={(v) => setEventFormData({ ...eventFormData, category: v === "none" ? "" : v })}>
 									<SelectTrigger>
 										<SelectValue placeholder="Select category" />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="">None</SelectItem>
+										<SelectItem value="none">None</SelectItem>
 										<SelectItem value="cyber">Cybersecurity</SelectItem>
 										<SelectItem value="ai">AI / Machine Learning</SelectItem>
 										<SelectItem value="fusion">AI × Cyber Fusion</SelectItem>
