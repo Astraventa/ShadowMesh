@@ -20,6 +20,8 @@ interface Member {
   created_at: string;
   cohort?: string;
   secret_code?: string;
+  area_of_interest?: string;
+  password_hash?: string;
 }
 
 interface Event {
@@ -100,20 +102,35 @@ export default function MemberPortal() {
   const [teamName, setTeamName] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
   const [showQRCode, setShowQRCode] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginCode, setLoginCode] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [isSettingPassword, setIsSettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
-    // Check if user has verification token
-    const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get("code") || params.get("token");
-    const token = tokenParam || localStorage.getItem("shadowmesh_member_token");
+    // Check if user is already authenticated
+    const authenticated = localStorage.getItem("shadowmesh_authenticated");
+    const storedCode = localStorage.getItem("shadowmesh_member_token");
     
-    if (!token) {
-      toast({ title: "Access Denied", description: "Please use your verification token to access the member portal." });
-      navigate("/#join");
-      return;
+    if (authenticated === "true" && storedCode) {
+      // User is authenticated, load data
+      loadMemberData(storedCode);
+    } else {
+      // Show login screen
+      setShowLogin(true);
+      setLoading(false);
+      
+      // Pre-fill code from URL if present
+      const params = new URLSearchParams(window.location.search);
+      const tokenParam = params.get("code") || params.get("token");
+      if (tokenParam) {
+        setLoginCode(tokenParam.trim().toUpperCase());
+      } else if (storedCode) {
+        setLoginCode(storedCode);
+      }
     }
-
-    loadMemberData(token.trim().toUpperCase());
   }, []);
 
   async function loadMemberData(token: string) {
@@ -179,17 +196,26 @@ export default function MemberPortal() {
       setMember(memberData);
       const storedCode = providedCode;
       localStorage.setItem("shadowmesh_member_token", storedCode);
+      localStorage.setItem("shadowmesh_authenticated", "true");
 
       // Load events (workshops and other events, excluding hackathons)
       // Show all active events, not just future ones
-      const { data: eventsData } = await supabase
+      const { data: eventsData, error: eventsError } = await supabase
         .from("events")
         .select("*")
         .eq("is_active", true)
         .neq("event_type", "hackathon")
         .order("start_date", { ascending: true });
 
-      if (eventsData) setEvents(eventsData);
+      if (eventsError) {
+        console.error("Error loading events:", eventsError);
+      }
+      if (eventsData) {
+        console.log("Loaded events:", eventsData.length);
+        setEvents(eventsData);
+      } else {
+        console.log("No events found in database");
+      }
 
       // Load resources filtered by member's area_of_interest
       // Filter by title/description keywords based on area_of_interest
@@ -489,6 +515,123 @@ export default function MemberPortal() {
     }
   }
 
+  async function handleLogin() {
+    if (!loginCode.trim()) {
+      toast({ title: "Code required", description: "Please enter your ShadowMesh code." });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // First verify the code
+      const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({ code: loginCode.trim().toUpperCase() }),
+      });
+
+      if (!verifyRes.ok) {
+        throw new Error("Invalid code. Please check your ShadowMesh code.");
+      }
+
+      const verifyData = await verifyRes.json();
+      if (verifyData.status !== "approved") {
+        throw new Error("Your application is not approved yet.");
+      }
+
+      // Get member by secret_code
+      const { data: memberData, error: memberError } = await supabase
+        .from("members")
+        .select("*")
+        .eq("secret_code", loginCode.trim().toUpperCase())
+        .single();
+
+      if (memberError || !memberData) {
+        throw new Error("Member not found. Please ensure your application has been approved.");
+      }
+
+      // Check if password is set
+      if (!memberData.password_hash) {
+        // First time login - require password setup
+        if (!newPassword || !confirmPassword) {
+          setIsSettingPassword(true);
+          return;
+        }
+        
+        if (newPassword.length < 6) {
+          toast({ title: "Password too short", description: "Password must be at least 6 characters." });
+          return;
+        }
+        
+        if (newPassword !== confirmPassword) {
+          toast({ title: "Passwords don't match", description: "Please make sure both passwords match." });
+          return;
+        }
+
+        // Hash password (simple hash for now - in production use bcrypt)
+        const passwordHash = await hashPassword(newPassword);
+        
+        // Update member with password
+        const { error: updateError } = await supabase
+          .from("members")
+          .update({ password_hash: passwordHash })
+          .eq("id", memberData.id);
+
+        if (updateError) throw updateError;
+        
+        toast({ title: "Password set!", description: "Your password has been set successfully." });
+        setIsSettingPassword(false);
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        // Password is set - verify it
+        if (!loginPassword) {
+          toast({ title: "Password required", description: "Please enter your password." });
+          return;
+        }
+
+        const isValid = await verifyPassword(loginPassword, memberData.password_hash);
+        if (!isValid) {
+          toast({ title: "Invalid password", description: "The password you entered is incorrect." });
+          return;
+        }
+      }
+
+      // Authentication successful
+      setMember(memberData);
+      localStorage.setItem("shadowmesh_member_token", loginCode.trim().toUpperCase());
+      localStorage.setItem("shadowmesh_authenticated", "true");
+      setShowLogin(false);
+      setLoginPassword("");
+      setLoginCode("");
+      
+      // Load member data
+      await loadMemberData(loginCode.trim().toUpperCase());
+    } catch (e: any) {
+      toast({ title: "Login failed", description: e.message || "Please try again." });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function hashPassword(password: string): Promise<string> {
+    // Simple hash using Web Crypto API (in production, use bcrypt on server)
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function verifyPassword(password: string, hash: string): Promise<boolean> {
+    const passwordHash = await hashPassword(password);
+    return passwordHash === hash;
+  }
+
   function formatDate(dateStr: string) {
     return new Date(dateStr).toLocaleDateString("en-US", {
       month: "short",
@@ -497,6 +640,107 @@ export default function MemberPortal() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  // Show login screen if not authenticated
+  if (showLogin && !member) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">
+        <Card className="w-full max-w-md bg-gradient-to-br from-background/90 to-background/70 backdrop-blur-sm border-border/50">
+          <CardHeader>
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
+                <KeyRound className="w-8 h-8 text-primary" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl text-center">ShadowMesh Portal</CardTitle>
+            <CardDescription className="text-center">
+              Enter your code and password to access your member dashboard
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">ShadowMesh Code</label>
+              <Input
+                value={loginCode}
+                onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
+                placeholder="SMXXXXXX"
+                className="font-mono text-center text-lg"
+                disabled={loading}
+              />
+            </div>
+            
+            {isSettingPassword ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Set Password (min 6 characters)</label>
+                  <Input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password"
+                    disabled={loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Confirm Password</label>
+                  <Input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm password"
+                    disabled={loading}
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium mb-2">Password</label>
+                <Input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  disabled={loading}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleLogin();
+                    }
+                  }}
+                />
+              </div>
+            )}
+            
+            <Button
+              className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+              onClick={handleLogin}
+              disabled={loading}
+            >
+              {loading ? "Loading..." : isSettingPassword ? "Set Password & Login" : "Login"}
+            </Button>
+            
+            {isSettingPassword && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setIsSettingPassword(false);
+                  setNewPassword("");
+                  setConfirmPassword("");
+                }}
+                disabled={loading}
+              >
+                Cancel
+              </Button>
+            )}
+            
+            <p className="text-xs text-muted-foreground text-center mt-4">
+              🔒 Your password protects your account. Keep it secure.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   if (loading) {
@@ -961,9 +1205,23 @@ export default function MemberPortal() {
                     <p className="text-lg">{member.cohort}</p>
                   </div>
                 )}
+                {member.area_of_interest && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Area of Interest</label>
+                    <p className="text-lg">
+                      <Badge variant="secondary" className="text-base">
+                        {member.area_of_interest === "AI" ? "AI / Machine Learning" :
+                         member.area_of_interest === "Cyber" ? "Cybersecurity" :
+                         member.area_of_interest === "Both" ? "Both (AI × Cyber)" :
+                         member.area_of_interest}
+                      </Badge>
+                    </p>
+                  </div>
+                )}
                 <div className="pt-4 border-t">
                   <Button variant="outline" onClick={() => {
                     localStorage.removeItem("shadowmesh_member_token");
+                    localStorage.removeItem("shadowmesh_authenticated");
                     navigate("/");
                   }}>
                     Sign Out

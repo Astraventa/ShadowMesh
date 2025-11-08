@@ -46,8 +46,8 @@ Deno.serve(async (req) => {
     const updated = await res.json();
     const row = updated?.[0];
 
-    // Fetch application to get email/name
-    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,secret_code`, {
+    // Fetch application to get email/name/area_of_interest
+    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,secret_code,area_of_interest`, {
       headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
     });
     const appRows = appRes.ok ? await appRes.json() : [];
@@ -68,7 +68,13 @@ Deno.serve(async (req) => {
             'Content-Type': 'application/json',
             'Prefer': 'return=minimal'
           },
-          body: JSON.stringify({ full_name: app.full_name, email: app.email, source_application: id, secret_code: app.secret_code })
+          body: JSON.stringify({ 
+            full_name: app.full_name, 
+            email: app.email, 
+            source_application: id, 
+            secret_code: app.secret_code,
+            area_of_interest: app.area_of_interest || null
+          })
         });
       }
     }
