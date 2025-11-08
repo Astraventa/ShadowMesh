@@ -107,13 +107,18 @@ export default function AttendanceCheckin() {
 
 		setEventsLoading(true);
 		try {
-			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+			const res = await fetch(`${SUPABASE_URL}/functions/v1/attendance_list`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
 					Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+					"x-attendance-token": `${ATTENDANCE_USERNAME}:${ATTENDANCE_PASSWORD}`,
 				},
-				body: JSON.stringify({ type: "events" }),
+				body: JSON.stringify({ 
+					type: "events",
+					username: ATTENDANCE_USERNAME,
+					password: ATTENDANCE_PASSWORD,
+				}),
 			});
 
 			if (!res.ok) {
@@ -138,15 +143,18 @@ export default function AttendanceCheckin() {
 			const current = attendanceEventId;
 			setAttendanceLoading(true);
 			try {
-				const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_list`, {
+				const res = await fetch(`${SUPABASE_URL}/functions/v1/attendance_list`, {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
 						Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+						"x-attendance-token": `${ATTENDANCE_USERNAME}:${ATTENDANCE_PASSWORD}`,
 					},
 					body: JSON.stringify({
 						type: "attendance_details",
 						event_id: eventId,
+						username: ATTENDANCE_USERNAME,
+						password: ATTENDANCE_PASSWORD,
 					}),
 				});
 
@@ -203,28 +211,52 @@ export default function AttendanceCheckin() {
 			setCheckinLoading(true);
 			setCheckinResult(null);
 			try {
-				const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_attendance_checkin`, {
+				const res = await fetch(`${SUPABASE_URL}/functions/v1/attendance_checkin`, {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
 						Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+						"x-attendance-token": `${ATTENDANCE_USERNAME}:${ATTENDANCE_PASSWORD}`,
 					},
 					body: JSON.stringify({
 						event_id: eventId,
-						secret_code: code.toUpperCase().trim(),
+						code: code.toUpperCase().trim(),
 						method,
+						username: ATTENDANCE_USERNAME,
+						password: ATTENDANCE_PASSWORD,
 					}),
 				});
 
 				const data = await res.json();
-				if (!res.ok) {
+				
+				// Handle different response statuses
+				if (data.status === "checked_in") {
+					const message = data.message || `${data.member?.full_name || "Member"} checked in successfully.`;
+					toast({ title: "Check-in successful", description: message });
+					await loadAttendance(eventId, true);
+					return { status: "success", message: data.message || message };
+				} else if (data.status === "already_checked_in") {
+					const time = data.checkin?.created_at ? formatDate(data.checkin.created_at) : "earlier";
+					const message = `Already checked in (${time}).`;
+					toast({ title: "Already checked in", description: message, variant: "default" });
+					await loadAttendance(eventId, true);
+					return { status: "already_checked_in", message };
+				} else if (data.status === "not_registered") {
+					const message = "Member is not registered for this event.";
+					toast({ title: "Not registered", description: message, variant: "destructive" });
+					return { status: "not_registered", message };
+				} else if (data.status === "code_not_found") {
+					const message = "Member code not found.";
+					toast({ title: "Code not found", description: message, variant: "destructive" });
+					return { status: "code_not_found", message };
+				} else if (!res.ok) {
 					throw new Error(data.error || data.message || "Check-in failed");
+				} else {
+					const message = data.message || "Check-in successful";
+					toast({ title: "Check-in successful", description: message });
+					await loadAttendance(eventId, true);
+					return { status: "success", message };
 				}
-
-				const message = data.message || "Check-in successful";
-				toast({ title: "Check-in successful", description: message });
-				await loadAttendance(eventId, true);
-				return { status: "success", message };
 			} catch (e: any) {
 				const errorMsg = e.message || String(e);
 				toast({ title: "Check-in failed", description: errorMsg, variant: "destructive" });
