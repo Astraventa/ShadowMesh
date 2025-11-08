@@ -135,12 +135,21 @@ export default function EventRegistration({
       <div className="space-y-2">
         <h3 className="text-lg font-semibold">Register for {eventTitle}</h3>
         {paymentRequired && (
-          <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+          <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-md space-y-3">
             <p className="text-sm text-yellow-400">
               <strong>Payment Required:</strong> {feeAmount} {feeCurrency}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Please complete payment and upload proof to complete registration.
+            <div className="bg-background/50 p-3 rounded border border-border/50">
+              <p className="text-xs font-semibold mb-2 text-foreground">Bank Transfer Details:</p>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p><strong className="text-foreground">Account Name:</strong> Zeeshan</p>
+                <p><strong className="text-foreground">IBAN:</strong> PK08 MEZN 0000 3001 1288 7110</p>
+                <p><strong className="text-foreground">Account Number:</strong> 0030 0112887110</p>
+                <p><strong className="text-foreground">Bank:</strong> Meezan Bank</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Please transfer {feeAmount} {feeCurrency} to the account above and upload proof below.
             </p>
           </div>
         )}

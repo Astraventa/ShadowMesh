@@ -127,6 +127,16 @@ export default function MemberPortal() {
   const [feedbackEventId, setFeedbackEventId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Load viewed hackathons from localStorage
+    const viewed = localStorage.getItem("shadowmesh_hackathons_viewed");
+    if (viewed) {
+      try {
+        setHackathonsViewed(new Set(JSON.parse(viewed)));
+      } catch (e) {
+        console.error("Error loading viewed hackathons:", e);
+      }
+    }
+
     // Check if user is already authenticated
     const authenticated = localStorage.getItem("shadowmesh_authenticated");
     const storedCode = localStorage.getItem("shadowmesh_member_token");
@@ -962,6 +972,12 @@ export default function MemberPortal() {
                             <span>Max {event.max_participants} participants</span>
                           </div>
                         )}
+                        {event.registration_deadline && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">📅</span>
+                            <span>Registration deadline: {formatDate(event.registration_deadline)}</span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-2 pt-2">
                         {registeredEvents.has(event.id) ? (
@@ -1111,7 +1127,11 @@ export default function MemberPortal() {
                         
                         {!reg ? (
                           <div>
-                            <p className="text-sm mb-3">This hackathon requires payment and registration.</p>
+                            {hackathon.payment_required ? (
+                              <p className="text-sm mb-3">This hackathon requires payment and registration.</p>
+                            ) : (
+                              <p className="text-sm mb-3">Register to participate in this hackathon.</p>
+                            )}
                             <Button onClick={() => setShowHackathonReg(hackathon.id)}>Register for Hackathon</Button>
                           </div>
                         ) : reg.status === "pending" ? (

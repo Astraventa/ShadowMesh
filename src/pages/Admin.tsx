@@ -942,7 +942,6 @@ const scannerLockRef = useRef(false);
 						<TabsTrigger value="messages">Contact Messages</TabsTrigger>
                         <TabsTrigger value="members">Members</TabsTrigger>
                         <TabsTrigger value="events">Events</TabsTrigger>
-                        <TabsTrigger value="attendance">Attendance</TabsTrigger>
                         <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
                         <TabsTrigger value="feedback">Feedback</TabsTrigger>
 					</TabsList>
@@ -1173,6 +1172,7 @@ const scannerLockRef = useRef(false);
 											<TableHead>Type</TableHead>
 											<TableHead>Start Date</TableHead>
 											<TableHead>Fee</TableHead>
+											<TableHead>Registrations</TableHead>
 											<TableHead>Status</TableHead>
 											<TableHead>Active</TableHead>
 											<TableHead className="text-right">Actions</TableHead>
@@ -1181,7 +1181,7 @@ const scannerLockRef = useRef(false);
 									<TableBody>
 										{events.length === 0 && !eventsLoading ? (
 											<TableRow>
-												<TableCell colSpan={7} className="text-center text-muted-foreground">No events yet. Create your first event!</TableCell>
+												<TableCell colSpan={8} className="text-center text-muted-foreground">No events yet. Create your first event!</TableCell>
 											</TableRow>
 										) : (
 											events.map((event) => (
@@ -1197,6 +1197,9 @@ const scannerLockRef = useRef(false);
 														) : (
 															<span className="text-muted-foreground">Free</span>
 														)}
+													</TableCell>
+													<TableCell>
+														<Badge variant="secondary">{event.registration_count || 0}</Badge>
 													</TableCell>
 													<TableCell>
 														<Badge variant={event.status === "upcoming" ? "default" : event.status === "ongoing" ? "secondary" : "outline"} className="capitalize">
@@ -1258,204 +1261,7 @@ const scannerLockRef = useRef(false);
 						</Card>
 					</TabsContent>
 
-					<TabsContent value="attendance">
-						<Card>
-							<CardHeader>
-								<CardTitle>Attendance Management</CardTitle>
-								<CardDescription>Track registrations and check-ins for events in real time.</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-6">
-								<div className="flex flex-wrap items-center gap-3">
-									<div className="min-w-[220px]">
-										<Select value={attendanceEventId ?? ""} onValueChange={(value) => setAttendanceEventId(value)} disabled={eventsLoading || events.length === 0}>
-											<SelectTrigger>
-												<SelectValue placeholder={eventsLoading ? "Loading events..." : "Select event"} />
-											</SelectTrigger>
-											<SelectContent>
-												{events.map((event) => (
-													<SelectItem key={event.id} value={event.id}>
-														{event.title}
-													</SelectItem>
-												))}
-												{!events.length && !eventsLoading && <div className="px-2 py-1.5 text-sm text-muted-foreground">No events found</div>}
-											</SelectContent>
-										</Select>
-									</div>
-									<Button variant="outline" onClick={() => void loadEvents(true)} disabled={eventsLoading}>
-										{eventsLoading ? "Refreshing..." : "Refresh Events"}
-									</Button>
-									<Button variant="outline" onClick={() => { setScannerOpen(true); setScannerPaused(false); setCheckinResult(null); }} disabled={!attendanceEventId || attendanceLoading}>
-										Open QR Scanner
-									</Button>
-								</div>
-
-								{attendanceLoading ? (
-									<p className="text-sm text-muted-foreground">Loading attendance...</p>
-								) : attendanceData && attendanceEventId ? (
-									<>
-										<div className="grid gap-4 sm:grid-cols-3">
-											<Card>
-												<CardHeader className="py-4">
-													<CardTitle className="text-sm font-medium">Registered</CardTitle>
-													<CardDescription className="text-2xl font-semibold text-foreground">{totalRegistered}</CardDescription>
-												</CardHeader>
-											</Card>
-											<Card>
-												<CardHeader className="py-4">
-													<CardTitle className="text-sm font-medium">Checked-in</CardTitle>
-													<CardDescription className="text-2xl font-semibold text-foreground">{totalCheckedIn}</CardDescription>
-												</CardHeader>
-											</Card>
-											<Card>
-												<CardHeader className="py-4">
-													<CardTitle className="text-sm font-medium">Check-in Rate</CardTitle>
-													<CardDescription className="text-2xl font-semibold text-foreground">{attendanceRate}%</CardDescription>
-												</CardHeader>
-											</Card>
-										</div>
-
-										<Card>
-											<CardHeader>
-												<CardTitle>Manual Check-In</CardTitle>
-												<CardDescription>Enter a ShadowMesh code to mark attendance without scanning.</CardDescription>
-											</CardHeader>
-											<CardContent className="space-y-3">
-												<form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleManualCheckIn}>
-													<Input value={checkinCode} onChange={(e) => setCheckinCode(e.target.value.toUpperCase())} placeholder="SMXXXXXX" className="sm:w-64" maxLength={8} disabled={checkinLoading} />
-													<Button type="submit" disabled={checkinLoading}>
-														{checkinLoading ? "Checking..." : "Check In"}
-													</Button>
-												</form>
-												{checkinResult && !scannerOpen && (
-													<p className="text-xs text-muted-foreground">{checkinResult}</p>
-												)}
-											</CardContent>
-										</Card>
-
-										<div className="grid gap-6 lg:grid-cols-2">
-											<Card>
-												<CardHeader>
-													<CardTitle>Registered Members ({registrations.length})</CardTitle>
-													<CardDescription>RSVPs and approvals for this event.</CardDescription>
-												</CardHeader>
-												<CardContent>
-													{registrations.length ? (
-														<Table>
-															<TableHeader>
-																<TableRow>
-																	<TableHead>Name</TableHead>
-																	<TableHead>Email</TableHead>
-																	<TableHead>Code</TableHead>
-																	<TableHead>Registered</TableHead>
-																	<TableHead>Status</TableHead>
-																</TableRow>
-															</TableHeader>
-															<TableBody>
-																{registrations.map((reg: any) => {
-																	const attended = checkedMemberIds.has(reg.member_id);
-																	return (
-																		<TableRow key={reg.id} className={attended ? "bg-muted/50" : undefined}>
-																		<TableCell>{reg.members?.full_name || "-"}</TableCell>
-																		<TableCell>{reg.members?.email || "-"}</TableCell>
-																		<TableCell><span className="font-mono text-xs">{reg.members?.secret_code || "-"}</span></TableCell>
-																		<TableCell>{formatDate(reg.created_at)}</TableCell>
-																		<TableCell>
-																			<Badge variant={attended ? "secondary" : "outline"}>{attended ? "Checked-in" : reg.status}</Badge>
-																		</TableCell>
-																	</TableRow>
-																);
-															})}
-															</TableBody>
-														</Table>
-													) : (
-														<p className="text-sm text-muted-foreground">No registrations yet.</p>
-													)}
-												</CardContent>
-											</Card>
-											<Card>
-												<CardHeader>
-													<CardTitle>Recent Check-ins ({checkins.length})</CardTitle>
-												</CardHeader>
-												<CardContent>
-													{checkins.length ? (
-														<Table>
-															<TableHeader>
-																<TableRow>
-																	<TableHead>When</TableHead>
-																	<TableHead>Member</TableHead>
-																	<TableHead>Method</TableHead>
-																	<TableHead>Recorded By</TableHead>
-																</TableRow>
-															</TableHeader>
-															<TableBody>
-																{checkins.map((entry: any) => (
-																	<TableRow key={entry.id}>
-																		<TableCell>{formatDate(entry.created_at)}</TableCell>
-																		<TableCell>
-																			<div>{entry.members?.full_name || "-"}</div>
-																			<div className="text-xs text-muted-foreground">{entry.members?.email || "-"}</div>
-																		</TableCell>
-																		<TableCell className="capitalize">{entry.method || "-"}</TableCell>
-																		<TableCell>{entry.recorded_by || "-"}</TableCell>
-																	</TableRow>
-																))}
-															</TableBody>
-														</Table>
-													) : (
-														<p className="text-sm text-muted-foreground">No check-ins yet.</p>
-													)}
-												</CardContent>
-											</Card>
-										</div>
-									</>
-								) : (
-									<p className="text-sm text-muted-foreground">Select an event to manage attendance.</p>
-								)}
-							</CardContent>
-						</Card>
-
-						<Dialog open={scannerOpen} onOpenChange={(open) => {
-							setScannerOpen(open);
-							if (!open) {
-								scannerLockRef.current = false;
-								setScannerPaused(false);
-								setCheckinResult(null);
-							}
-						}}>
-							<DialogContent className="max-w-xl">
-								<DialogHeader>
-									<DialogTitle>QR Check-In</DialogTitle>
-									<DialogDescription>Scan ShadowMesh passes to mark attendance instantly.</DialogDescription>
-								</DialogHeader>
-								<div className="space-y-4">
-									{attendanceEventId ? (
-										<div className="space-y-3">
-											<QrScanner
-												key={attendanceEventId}
-												onDecode={(value) => {
-													if (!value || scannerPaused) return;
-													void handleScannerDecode(value);
-												}}
-												onError={(error) => console.error(error)}
-												constraints={{ facingMode: "environment" }}
-												containerStyle={{ width: "100%" }}
-												videoStyle={{ width: "100%" }}
-											/>
-											<Button variant="outline" onClick={() => { scannerLockRef.current = false; setScannerPaused(false); }} disabled={!scannerPaused}>
-												Resume scanner
-											</Button>
-										</div>
-									) : (
-										<p className="text-sm text-muted-foreground">Select an event before scanning.</p>
-									)}
-									{checkinResult && (
-										<p className="text-xs text-muted-foreground">{checkinResult}</p>
-									)}
-								</div>
-							</DialogContent>
-						</Dialog>
-					</TabsContent>
-
+					{/* Hackathons Tab */}
 					<TabsContent value="hackathons">
 						<Card>
 							<CardHeader>

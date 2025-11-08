@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } else if (type === 'events') {
-      let url = `${SUPABASE_URL}/rest/v1/events?select=id,title,start_date,event_type,is_member_only,location,event_registrations(count),event_checkins(count)&order=start_date.desc`;
+      let url = `${SUPABASE_URL}/rest/v1/events?select=*,event_registrations(count)&order=start_date.desc`;
       if (search && search.trim()) {
         const s = encodeURIComponent(`%${search.trim()}%`);
         url += `&title.ilike.${s}`;
@@ -239,7 +239,12 @@ Deno.serve(async (req) => {
         return new Response(`error: ${await res.text()}`, { status: 502, headers: corsHeaders });
       }
       const data = await res.json();
-      return new Response(JSON.stringify({ data }), {
+      // Transform data to include registration count
+      const transformed = Array.isArray(data) ? data.map((event: any) => ({
+        ...event,
+        registration_count: Array.isArray(event.event_registrations) ? event.event_registrations.length : (event.event_registrations?.[0]?.count || 0)
+      })) : [];
+      return new Response(JSON.stringify({ data: transformed }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
