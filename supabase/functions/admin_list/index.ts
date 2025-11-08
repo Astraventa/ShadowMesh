@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } else if (type === 'events') {
-      let url = `${SUPABASE_URL}/rest/v1/events?select=*,event_registrations(count)&order=start_date.desc`;
+      let url = `${SUPABASE_URL}/rest/v1/events?select=*&order=start_date.desc`;
       if (search && search.trim()) {
         const s = encodeURIComponent(`%${search.trim()}%`);
         url += `&title.ilike.${s}`;
@@ -238,13 +238,28 @@ Deno.serve(async (req) => {
       if (!res.ok) {
         return new Response(`error: ${await res.text()}`, { status: 502, headers: corsHeaders });
       }
-      const data = await res.json();
-      // Transform data to include registration count
-      const transformed = Array.isArray(data) ? data.map((event: any) => ({
-        ...event,
-        registration_count: Array.isArray(event.event_registrations) ? event.event_registrations.length : (event.event_registrations?.[0]?.count || 0)
-      })) : [];
-      return new Response(JSON.stringify({ data: transformed }), {
+      const eventsData = await res.json();
+      
+      // Get registration counts for each event
+      const eventsWithCounts = await Promise.all((Array.isArray(eventsData) ? eventsData : []).map(async (event: any) => {
+        const countRes = await fetch(`${SUPABASE_URL}/rest/v1/event_registrations?select=id&event_id=eq.${event.id}`, {
+          headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Prefer': 'count=exact' },
+        });
+        let count = 0;
+        if (countRes.ok) {
+          const countHeader = countRes.headers.get('content-range');
+          if (countHeader) {
+            const match = countHeader.match(/\/(\d+)/);
+            if (match) count = parseInt(match[1], 10);
+          }
+        }
+        return {
+          ...event,
+          registration_count: count
+        };
+      }));
+      
+      return new Response(JSON.stringify({ data: eventsWithCounts }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

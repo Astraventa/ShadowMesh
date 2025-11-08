@@ -1207,9 +1207,7 @@ const scannerLockRef = useRef(false);
 														<Badge variant="secondary">{event.registration_count || 0}</Badge>
 													</TableCell>
 													<TableCell>
-														<Badge variant={event.status === "upcoming" ? "default" : event.status === "ongoing" ? "secondary" : "outline"} className="capitalize">
-															{event.status}
-														</Badge>
+														<Badge variant="secondary">Upcoming</Badge>
 													</TableCell>
 													<TableCell>
 														<Badge variant={event.is_active ? "secondary" : "outline"}>

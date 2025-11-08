@@ -112,6 +112,10 @@ export default function MemberPortal() {
   const [showFindTeammates, setShowFindTeammates] = useState<string | null>(null);
   const [hackathonRegisteredMembers, setHackathonRegisteredMembers] = useState<any[]>([]);
   const [loadingHackathonMembers, setLoadingHackathonMembers] = useState(false);
+  const [hackathonTeams, setHackathonTeams] = useState<any[]>([]);
+  const [hackathonSinglePlayers, setHackathonSinglePlayers] = useState<any[]>([]);
+  const [showJoinTeam, setShowJoinTeam] = useState<string | null>(null);
+  const [selectedHackathonForTeams, setSelectedHackathonForTeams] = useState<string | null>(null);
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
   const [teamName, setTeamName] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
@@ -467,6 +471,126 @@ export default function MemberPortal() {
       void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
     } catch (e: any) {
       toast({ title: "Failed to create team", description: e.message });
+    }
+  }
+
+  async function loadHackathonTeamsAndPlayers(hackathonId: string) {
+    if (!member) return;
+    setLoadingHackathonMembers(true);
+    try {
+      // Get all approved registrations for this hackathon
+      const { data: approvedRegs, error: regError } = await supabase
+        .from("hackathon_registrations")
+        .select("member_id, members(id, full_name, email, area_of_interest, secret_code)")
+        .eq("hackathon_id", hackathonId)
+        .eq("status", "approved");
+
+      if (regError) throw regError;
+
+      // Get all teams for this hackathon with their members
+      const { data: teamsData, error: teamsError } = await supabase
+        .from("hackathon_teams")
+        .select(`
+          id,
+          team_name,
+          team_leader_id,
+          status,
+          max_members,
+          team_members(
+            member_id,
+            role,
+            members(id, full_name, email, area_of_interest, secret_code)
+          )
+        `)
+        .eq("hackathon_id", hackathonId)
+        .eq("status", "forming");
+
+      if (teamsError) throw teamsError;
+
+      // Get all member IDs that are in teams
+      const teamMemberIds = new Set<string>();
+      const formattedTeams = (teamsData || []).map((team: any) => {
+        const members = (team.team_members || []).map((tm: any) => {
+          if (tm.member_id) teamMemberIds.add(tm.member_id);
+          return {
+            member_id: tm.member_id,
+            full_name: tm.members?.full_name || "",
+            email: tm.members?.email || "",
+            area_of_interest: tm.members?.area_of_interest || "",
+            secret_code: tm.members?.secret_code || "",
+            role: tm.role,
+          };
+        });
+        return {
+          ...team,
+          members,
+        };
+      });
+
+      // Get single players (approved members not in any team)
+      const singlePlayers = (approvedRegs || [])
+        .filter((r: any) => !teamMemberIds.has(r.member_id))
+        .map((r: any) => ({
+          id: r.member_id,
+          full_name: r.members?.full_name || "",
+          email: r.members?.email || "",
+          area_of_interest: r.members?.area_of_interest || "",
+          secret_code: r.members?.secret_code || "",
+        }));
+
+      setHackathonTeams(formattedTeams);
+      setHackathonSinglePlayers(singlePlayers);
+    } catch (e: any) {
+      console.error("Failed to load hackathon teams and players:", e);
+      toast({ title: "Failed to load data", description: e.message });
+    } finally {
+      setLoadingHackathonMembers(false);
+    }
+  }
+
+  async function joinTeam(teamId: string) {
+    if (!member) return;
+    try {
+      // Check if team has space
+      const { data: teamData } = await supabase
+        .from("hackathon_teams")
+        .select("id, max_members, team_members(count)")
+        .eq("id", teamId)
+        .single();
+
+      if (teamData) {
+        const memberCount = Array.isArray(teamData.team_members) ? teamData.team_members.length : 0;
+        if (memberCount >= (teamData.max_members || 4)) {
+          toast({ title: "Team is full", description: "This team has reached the maximum number of members.", variant: "destructive" });
+          return;
+        }
+      }
+
+      // Add member to team
+      const { error } = await supabase.from("team_members").insert({
+        team_id: teamId,
+        member_id: member.id,
+        role: "member",
+      });
+
+      if (error) throw error;
+
+      // Log activity
+      await supabase.from("member_activity").insert({
+        member_id: member.id,
+        activity_type: "team_joined",
+        activity_data: { team_id: teamId },
+        related_id: teamId,
+      });
+
+      toast({ title: "Joined team!", description: "You've successfully joined the team." });
+      setShowJoinTeam(null);
+      void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
+      if (selectedHackathonForTeams) {
+        void loadHackathonTeamsAndPlayers(selectedHackathonForTeams);
+      }
+    } catch (e: any) {
+      toast({ title: "Failed to join team", description: e.message, variant: "destructive" });
     }
   }
 
@@ -1033,13 +1157,11 @@ export default function MemberPortal() {
                   return (
                     <Card 
                       key={event.id} 
-                      className={`bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 relative overflow-hidden ${
-                        isNew ? 'animate-pulse' : ''
-                      }`}
+                      className="bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 relative overflow-hidden"
                     >
                       {isNew && (
                         <div className="absolute top-2 right-2 z-10">
-                          <Badge variant="destructive" className="animate-bounce">NEW</Badge>
+                          <Badge variant="destructive" className="animate-pulse">NEW</Badge>
                         </div>
                       )}
                       <CardHeader>
@@ -1050,6 +1172,8 @@ export default function MemberPortal() {
                               <Badge variant="outline" className="bg-primary/10 border-primary/30 text-primary">
                                 {event.event_type}
                               </Badge>
+                              <span className="text-sm text-muted-foreground">•</span>
+                              <Badge variant="secondary" className="text-xs">Upcoming</Badge>
                               <span className="text-sm text-muted-foreground">•</span>
                               <span className="text-sm text-muted-foreground">{formatDate(event.start_date)}</span>
                             </div>
@@ -1349,24 +1473,31 @@ export default function MemberPortal() {
                             <p className="text-sm text-muted-foreground">Your registration is under review. You'll be notified once approved.</p>
                           </div>
                         ) : reg.status === "approved" ? (
-                          <div className="space-y-3">
+                          <div className="space-y-4">
                             <Badge variant="secondary">✓ Approved for Hackathon</Badge>
+                            
+                            {/* Action Buttons */}
                             {!userTeam ? (
-                              <div className="space-y-3">
-                                <p className="text-sm font-medium">Create or join a team to participate!</p>
-                                <div className="flex flex-col gap-2">
-                                  <Button onClick={() => setShowTeamForm(hackathon.id)} className="w-full">
-                                    <Users className="w-4 h-4 mr-2" />
-                                    Create Team
-                                  </Button>
-                                  <Button variant="outline" onClick={() => {
-                                    setShowFindTeammates(hackathon.id);
-                                    void loadHackathonRegisteredMembers(hackathon.id);
-                                  }} className="w-full">
-                                    <Users className="w-4 h-4 mr-2" />
-                                    Invite Someone / Find Teammates
-                                  </Button>
-                                </div>
+                              <div className="flex flex-col gap-2">
+                                <Button onClick={() => setShowTeamForm(hackathon.id)} className="w-full">
+                                  <Users className="w-4 h-4 mr-2" />
+                                  Create Team
+                                </Button>
+                                <Button variant="outline" onClick={() => {
+                                  setSelectedHackathonForTeams(hackathon.id);
+                                  void loadHackathonTeamsAndPlayers(hackathon.id);
+                                  setShowJoinTeam(hackathon.id);
+                                }} className="w-full">
+                                  <Users className="w-4 h-4 mr-2" />
+                                  Join Team
+                                </Button>
+                                <Button variant="outline" onClick={() => {
+                                  setShowFindTeammates(hackathon.id);
+                                  void loadHackathonRegisteredMembers(hackathon.id);
+                                }} className="w-full">
+                                  <Users className="w-4 h-4 mr-2" />
+                                  Invite Someone
+                                </Button>
                               </div>
                             ) : (
                               <div className="p-4 bg-muted rounded space-y-3">
@@ -1394,6 +1525,20 @@ export default function MemberPortal() {
                                 )}
                               </div>
                             )}
+
+                            {/* View Teams & Players Button */}
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full"
+                              onClick={() => {
+                                setSelectedHackathonForTeams(hackathon.id);
+                                void loadHackathonTeamsAndPlayers(hackathon.id);
+                                setShowJoinTeam(hackathon.id);
+                              }}
+                            >
+                              View Teams & Players
+                            </Button>
                           </div>
                         ) : (
                           <div>
@@ -1823,6 +1968,140 @@ export default function MemberPortal() {
                   disabled={!teamName.trim()}
                 >
                   Create Team
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Join Team / View Teams & Players Dialog */}
+        {showJoinTeam && member && selectedHackathonForTeams && (
+          <Dialog open onOpenChange={() => {
+            setShowJoinTeam(null);
+            setSelectedHackathonForTeams(null);
+            setHackathonTeams([]);
+            setHackathonSinglePlayers([]);
+          }}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Teams & Players</DialogTitle>
+                <DialogDescription>
+                  {selectedHackathonForTeams && hackathons.find(h => h.id === selectedHackathonForTeams) && (
+                    <p>View teams and single players for: <strong>{hackathons.find(h => h.id === selectedHackathonForTeams)?.title}</strong></p>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-6 py-4">
+                {loadingHackathonMembers ? (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">Loading teams and players...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Existing Teams */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                        <Users className="w-5 h-5" />
+                        Existing Teams ({hackathonTeams.length})
+                      </h3>
+                      {hackathonTeams.length === 0 ? (
+                        <Card className="p-4">
+                          <p className="text-sm text-muted-foreground text-center">No teams formed yet. Be the first to create one!</p>
+                        </Card>
+                      ) : (
+                        <div className="grid gap-4">
+                          {hackathonTeams.map((team: any) => {
+                            const isInTeam = userTeam?.id === team.id;
+                            const canJoin = !isInTeam && !userTeam && team.members.length < (team.max_members || 4);
+                            
+                            return (
+                              <Card key={team.id} className="p-4">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex-1">
+                                    <p className="font-semibold text-lg">{team.team_name}</p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      {team.members.length}/{team.max_members || 4} members
+                                    </p>
+                                  </div>
+                                  {isInTeam && (
+                                    <Badge variant="secondary">Your Team</Badge>
+                                  )}
+                                  {canJoin && (
+                                    <Button size="sm" onClick={() => {
+                                      void joinTeam(team.id);
+                                    }}>
+                                      Join Team
+                                    </Button>
+                                  )}
+                                </div>
+                                <div className="space-y-2 mt-3 pt-3 border-t">
+                                  <p className="text-xs font-medium text-muted-foreground">Members:</p>
+                                  {team.members.map((m: any) => (
+                                    <div key={m.member_id} className="flex items-center justify-between text-sm">
+                                      <div className="flex-1">
+                                        <p className="font-medium">
+                                          {m.full_name} {m.role === "leader" && <Badge variant="outline" className="ml-2 text-xs">Leader</Badge>}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">{m.email}</p>
+                                        {m.area_of_interest && (
+                                          <Badge variant="outline" className="mt-1 text-xs">
+                                            {m.area_of_interest}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <p className="text-xs font-mono text-muted-foreground ml-2">{m.secret_code}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Single Players */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                        <Users className="w-5 h-5" />
+                        Single Players ({hackathonSinglePlayers.length})
+                      </h3>
+                      {hackathonSinglePlayers.length === 0 ? (
+                        <Card className="p-4">
+                          <p className="text-sm text-muted-foreground text-center">All approved members are in teams.</p>
+                        </Card>
+                      ) : (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {hackathonSinglePlayers.map((player: any) => (
+                            <Card key={player.id} className="p-3">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <p className="font-medium">{player.full_name}</p>
+                                  <p className="text-xs text-muted-foreground">{player.email}</p>
+                                  {player.area_of_interest && (
+                                    <Badge variant="outline" className="mt-1 text-xs">
+                                      {player.area_of_interest}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs font-mono text-muted-foreground ml-2">{player.secret_code}</p>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => {
+                  setShowJoinTeam(null);
+                  setSelectedHackathonForTeams(null);
+                  setHackathonTeams([]);
+                  setHackathonSinglePlayers([]);
+                }}>
+                  Close
                 </Button>
               </DialogFooter>
             </DialogContent>
