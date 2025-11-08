@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound } from "lucide-react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -170,11 +170,12 @@ export default function MemberPortal() {
       const storedCode = (verifyData.secret_code || token).toUpperCase();
       localStorage.setItem("shadowmesh_member_token", storedCode);
 
-      // Load events
+      // Load events (workshops and other events, excluding hackathons)
       const { data: eventsData } = await supabase
         .from("events")
         .select("*")
         .eq("is_active", true)
+        .neq("event_type", "hackathon")
         .gte("start_date", new Date().toISOString())
         .order("start_date", { ascending: true });
 
@@ -219,26 +220,67 @@ export default function MemberPortal() {
 
       if (hackRegData) setHackathonRegistrations(hackRegData);
 
-      // Load teams (where user is a member or leader)
-      const { data: teamsData } = await supabase
-        .from("hackathon_teams")
-        .select(`
-          *,
-          team_members!inner(member_id, role, members(full_name, email))
-        `)
-        .or(`team_leader_id.eq.${memberData.id},team_members.member_id.eq.${memberData.id}`);
+      // Load teams (where user is a member or leader) - simplified query
+      try {
+        // First, get teams where user is leader
+        const { data: leaderTeams } = await supabase
+          .from("hackathon_teams")
+          .select("*")
+          .eq("team_leader_id", memberData.id);
 
-      if (teamsData) {
-        const formattedTeams = teamsData.map((t: any) => ({
-          ...t,
-          members: t.team_members?.map((tm: any) => ({
-            member_id: tm.member_id,
-            full_name: tm.members?.full_name || "",
-            email: tm.members?.email || "",
-            role: tm.role,
-          })) || [],
-        }));
+        // Then, get teams where user is a member
+        const { data: memberTeamsData } = await supabase
+          .from("team_members")
+          .select("team_id, hackathon_teams(*)")
+          .eq("member_id", memberData.id);
+
+        // Combine and deduplicate
+        const allTeamIds = new Set<string>();
+        const allTeams: any[] = [];
+
+        if (leaderTeams) {
+          leaderTeams.forEach((t: any) => {
+            if (!allTeamIds.has(t.id)) {
+              allTeamIds.add(t.id);
+              allTeams.push(t);
+            }
+          });
+        }
+
+        if (memberTeamsData) {
+          memberTeamsData.forEach((tm: any) => {
+            const team = tm.hackathon_teams;
+            if (team && !allTeamIds.has(team.id)) {
+              allTeamIds.add(team.id);
+              allTeams.push(team);
+            }
+          });
+        }
+
+        // Now load members for each team
+        const formattedTeams = await Promise.all(
+          allTeams.map(async (team: any) => {
+            const { data: teamMembersData } = await supabase
+              .from("team_members")
+              .select("member_id, role, members(full_name, email)")
+              .eq("team_id", team.id);
+
+            return {
+              ...team,
+              members: (teamMembersData || []).map((tm: any) => ({
+                member_id: tm.member_id,
+                full_name: tm.members?.full_name || "",
+                email: tm.members?.email || "",
+                role: tm.role,
+              })),
+            };
+          })
+        );
+
         setTeams(formattedTeams);
+      } catch (teamsError) {
+        console.warn("Failed to load teams:", teamsError);
+        // Continue without teams - not critical
       }
 
       // Load team requests (pending requests to user)
@@ -272,7 +314,7 @@ export default function MemberPortal() {
       if (activityData) setActivities(activityData);
     } catch (e: any) {
       toast({ title: "Error", description: e.message || "Failed to load member data" });
-      navigate("/join-us");
+      navigate("/#join");
     } finally {
       setLoading(false);
     }
@@ -433,10 +475,18 @@ export default function MemberPortal() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading member portal...</p>
+          <div className="relative">
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary/20 border-t-primary mx-auto mb-6"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <KeyRound className="w-6 h-6 text-primary animate-pulse" />
+            </div>
+          </div>
+          <h3 className="text-xl font-semibold mb-2 bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+            Loading Member Portal
+          </h3>
+          <p className="text-muted-foreground">Accessing your ShadowMesh dashboard...</p>
         </div>
       </div>
     );
@@ -447,73 +497,175 @@ export default function MemberPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-background py-12">
-      <div className="container mx-auto px-4 max-w-6xl">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 py-12 relative overflow-hidden">
+      {/* Animated background effects */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-secondary/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+      </div>
+
+      <div className="container mx-auto px-4 max-w-7xl relative z-10">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Welcome, {member.full_name}!</h1>
-          <p className="text-muted-foreground">ShadowMesh Member Portal</p>
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-5xl font-bold mb-3 bg-gradient-to-r from-primary via-purple-500 to-primary bg-clip-text text-transparent">
+                Welcome back, {member.full_name.split(' ')[0]}!
+              </h1>
+              <p className="text-lg text-muted-foreground">ShadowMesh Member Portal • Your gateway to AI × Cyber</p>
+            </div>
+            <div className="hidden md:flex items-center gap-3">
+              <Badge variant="secondary" className="px-4 py-2 text-sm">
+                <KeyRound className="w-4 h-4 mr-2" />
+                {member.secret_code}
+              </Badge>
+            </div>
+          </div>
+          
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/30 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Events</p>
+                    <p className="text-2xl font-bold">{events.length}</p>
+                  </div>
+                  <Calendar className="w-8 h-8 text-primary/50" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/30 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Hackathons</p>
+                    <p className="text-2xl font-bold">{hackathons.length}</p>
+                  </div>
+                  <Trophy className="w-8 h-8 text-purple-500/50" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border-blue-500/30 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Teams</p>
+                    <p className="text-2xl font-bold">{teams.length}</p>
+                  </div>
+                  <Users className="w-8 h-8 text-blue-500/50" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-green-500/10 to-green-500/5 border-green-500/30 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Resources</p>
+                    <p className="text-2xl font-bold">{resources.length}</p>
+                  </div>
+                  <BookOpen className="w-8 h-8 text-green-500/50" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         <Tabs defaultValue="events" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="events">Events</TabsTrigger>
-            <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
-            <TabsTrigger value="teams">Teams</TabsTrigger>
-            <TabsTrigger value="resources">Resources</TabsTrigger>
-            <TabsTrigger value="profile">Profile</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-5 bg-muted/50 backdrop-blur-sm border border-border/50 p-1 rounded-lg">
+            <TabsTrigger value="events" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Calendar className="w-4 h-4 mr-2" />
+              Events
+            </TabsTrigger>
+            <TabsTrigger value="hackathons" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Trophy className="w-4 h-4 mr-2" />
+              Hackathons
+            </TabsTrigger>
+            <TabsTrigger value="teams" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Users className="w-4 h-4 mr-2" />
+              Teams
+            </TabsTrigger>
+            <TabsTrigger value="resources" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <BookOpen className="w-4 h-4 mr-2" />
+              Resources
+            </TabsTrigger>
+            <TabsTrigger value="profile" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Activity className="w-4 h-4 mr-2" />
+              Profile
+            </TabsTrigger>
           </TabsList>
 
           {/* Events Tab */}
-          <TabsContent value="events">
-            <div className="grid gap-6 md:grid-cols-2">
-              {events.length === 0 ? (
-                <Card className="col-span-2">
-                  <CardContent className="py-12 text-center">
-                    <Calendar className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground">No upcoming events at the moment.</p>
-                    <p className="text-sm text-muted-foreground mt-2">Check back soon for workshops, hackathons, and meetups!</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                events.map((event) => (
-                  <Card key={event.id}>
+          <TabsContent value="events" className="space-y-6">
+            {events.length === 0 ? (
+              <Card className="bg-muted/30 backdrop-blur-sm border-border/50">
+                <CardContent className="py-16 text-center">
+                  <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Calendar className="w-10 h-10 text-primary/50" />
+                  </div>
+                  <h3 className="text-xl font-semibold mb-2">No upcoming events</h3>
+                  <p className="text-muted-foreground">Check back soon for workshops, hackathons, and meetups!</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2">
+                {events.map((event) => (
+                  <Card key={event.id} className="bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-sm border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10">
                     <CardHeader>
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
-                          <CardTitle>{event.title}</CardTitle>
-                          <CardDescription className="mt-1">
-                            <Badge variant="outline" className="mr-2">{event.event_type}</Badge>
-                            {formatDate(event.start_date)}
-                          </CardDescription>
+                          <CardTitle className="text-xl mb-2">{event.title}</CardTitle>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="bg-primary/10 border-primary/30 text-primary">
+                              {event.event_type}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">•</span>
+                            <span className="text-sm text-muted-foreground">{formatDate(event.start_date)}</span>
+                          </div>
                         </div>
+                        {registeredEvents.has(event.id) && (
+                          <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
+                            ✓ Registered
+                          </Badge>
+                        )}
                       </div>
                     </CardHeader>
-                    <CardContent>
-                      {event.description && <p className="text-sm text-muted-foreground mb-4">{event.description}</p>}
-                      {event.location && <p className="text-sm mb-2"><strong>Location:</strong> {event.location}</p>}
-                      {event.max_participants && (
-                        <p className="text-sm text-muted-foreground mb-4">
-                          Max participants: {event.max_participants}
-                        </p>
+                    <CardContent className="space-y-4">
+                      {event.description && (
+                        <p className="text-sm text-muted-foreground leading-relaxed">{event.description}</p>
                       )}
-                      <div className="flex gap-2 mt-4">
+                      <div className="space-y-2 text-sm">
+                        {event.location && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">📍</span>
+                            <span>{event.location}</span>
+                          </div>
+                        )}
+                        {event.max_participants && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">👥</span>
+                            <span>Max {event.max_participants} participants</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-2 pt-2">
                         {registeredEvents.has(event.id) ? (
-                          <Badge variant="secondary" className="flex-1 justify-center">Registered</Badge>
+                          <Button variant="secondary" className="flex-1" disabled>
+                            Already Registered
+                          </Button>
                         ) : (
                           <>
                             <Button
                               variant="default"
-                              className="flex-1"
+                              className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
                               onClick={() => registerForEvent(event.id)}
                             >
-                              Register
+                              Register Now
                             </Button>
                             {event.registration_link && (
                               <Button variant="outline" asChild>
                                 <a href={event.registration_link} target="_blank" rel="noopener noreferrer">
-                                  <ExternalLink className="w-4 h-4 mr-2" />
-                                  More Info
+                                  <ExternalLink className="w-4 h-4" />
                                 </a>
                               </Button>
                             )}
@@ -522,9 +674,9 @@ export default function MemberPortal() {
                       </div>
                     </CardContent>
                   </Card>
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* Resources Tab */}
@@ -609,10 +761,13 @@ export default function MemberPortal() {
               )}
 
               {hackathons.length === 0 ? (
-                <Card>
-                  <CardContent className="py-12 text-center">
-                    <Trophy className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground">No upcoming hackathons at the moment.</p>
+                <Card className="bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/30 backdrop-blur-sm">
+                  <CardContent className="py-16 text-center">
+                    <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-purple-500/10 flex items-center justify-center">
+                      <Trophy className="w-10 h-10 text-purple-500/50" />
+                    </div>
+                    <h3 className="text-xl font-semibold mb-2">No upcoming hackathons</h3>
+                    <p className="text-muted-foreground">Check back soon for exciting hackathon opportunities!</p>
                   </CardContent>
                 </Card>
               ) : (
@@ -622,13 +777,28 @@ export default function MemberPortal() {
                   const isApproved = reg?.status === "approved";
 
                   return (
-                    <Card key={hackathon.id}>
+                    <Card key={hackathon.id} className="bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/30 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300">
                       <CardHeader>
-                        <CardTitle>{hackathon.title}</CardTitle>
-                        <CardDescription>
-                          <Badge variant="outline" className="mr-2">Hackathon</Badge>
-                          {formatDate(hackathon.start_date)}
-                        </CardDescription>
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <CardTitle className="text-xl mb-2 flex items-center gap-2">
+                              <Trophy className="w-5 h-5 text-purple-400" />
+                              {hackathon.title}
+                            </CardTitle>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="outline" className="bg-purple-500/20 border-purple-500/30 text-purple-300">
+                                Hackathon
+                              </Badge>
+                              <span className="text-sm text-muted-foreground">•</span>
+                              <span className="text-sm text-muted-foreground">{formatDate(hackathon.start_date)}</span>
+                            </div>
+                          </div>
+                          {isApproved && (
+                            <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
+                              ✓ Approved
+                            </Badge>
+                          )}
+                        </div>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         {hackathon.description && <p className="text-sm text-muted-foreground">{hackathon.description}</p>}
