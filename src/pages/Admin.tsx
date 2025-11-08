@@ -158,6 +158,29 @@ const [events, setEvents] = useState<any[]>([]);
 const [eventsLoading, setEventsLoading] = useState(false);
 const [attendanceEventId, setAttendanceEventId] = useState<string | null>(null);
 const [attendanceData, setAttendanceData] = useState<any>(null);
+const [showEventForm, setShowEventForm] = useState(false);
+const [editingEvent, setEditingEvent] = useState<any | null>(null);
+const [eventFormData, setEventFormData] = useState({
+	title: "",
+	description: "",
+	event_type: "workshop",
+	start_date: "",
+	end_date: "",
+	location: "",
+	registration_link: "",
+	max_participants: "",
+	fee_amount: "0",
+	fee_currency: "PKR",
+	payment_required: false,
+	notify_members: false,
+	category: "",
+	tags: "",
+	image_url: "",
+	registration_deadline: "",
+	status: "upcoming",
+	is_active: true,
+	is_member_only: true,
+});
 const [attendanceLoading, setAttendanceLoading] = useState(false);
 const [checkinCode, setCheckinCode] = useState("");
 const [checkinLoading, setCheckinLoading] = useState(false);
@@ -633,6 +656,106 @@ const scannerLockRef = useRef(false);
 		}
 	}
 
+	async function saveEvent() {
+		if (!eventFormData.title.trim()) {
+			toast({ title: "Title required", description: "Please enter an event title." });
+			return;
+		}
+		if (!eventFormData.start_date) {
+			toast({ title: "Start date required", description: "Please select a start date." });
+			return;
+		}
+
+		try {
+			const eventData: any = {
+				title: eventFormData.title.trim(),
+				description: eventFormData.description.trim() || null,
+				event_type: eventFormData.event_type,
+				start_date: new Date(eventFormData.start_date).toISOString(),
+				end_date: eventFormData.end_date ? new Date(eventFormData.end_date).toISOString() : null,
+				location: eventFormData.location.trim() || null,
+				registration_link: eventFormData.registration_link.trim() || null,
+				max_participants: eventFormData.max_participants ? parseInt(eventFormData.max_participants) : null,
+				fee_amount: parseFloat(eventFormData.fee_amount) || 0,
+				fee_currency: eventFormData.fee_currency,
+				payment_required: eventFormData.payment_required,
+				notify_members: eventFormData.notify_members,
+				category: eventFormData.category.trim() || null,
+				tags: eventFormData.tags.trim() ? eventFormData.tags.split(",").map(t => t.trim()).filter(Boolean) : null,
+				image_url: eventFormData.image_url.trim() || null,
+				registration_deadline: eventFormData.registration_deadline ? new Date(eventFormData.registration_deadline).toISOString() : null,
+				status: eventFormData.status,
+				is_active: eventFormData.is_active,
+				is_member_only: eventFormData.is_member_only,
+				updated_at: new Date().toISOString(),
+			};
+
+			if (editingEvent) {
+				// Update existing event
+				const { error } = await supabase
+					.from("events")
+					.update(eventData)
+					.eq("id", editingEvent.id);
+
+				if (error) throw error;
+				toast({ title: "Event updated", description: "The event has been updated successfully." });
+			} else {
+				// Create new event
+				const { error } = await supabase
+					.from("events")
+					.insert([eventData]);
+
+				if (error) throw error;
+				toast({ title: "Event created", description: "The event has been created and is now visible in member portals." });
+				
+				// Send notification if requested
+				if (eventFormData.notify_members) {
+					try {
+						await fetch(`${SUPABASE_URL}/functions/v1/notify`, {
+							method: "POST",
+							headers: {
+								"Content-Type": "application/json",
+								"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+							},
+							body: JSON.stringify({
+								type: "event_announcement",
+								data: {
+									eventTitle: eventFormData.title,
+									eventType: eventFormData.event_type,
+									startDate: eventFormData.start_date,
+									location: eventFormData.location,
+								},
+							}),
+						});
+					} catch (e) {
+						console.warn("Notification failed:", e);
+					}
+				}
+			}
+
+			setShowEventForm(false);
+			setEditingEvent(null);
+			void loadEvents(true);
+		} catch (e: any) {
+			toast({ title: editingEvent ? "Update failed" : "Creation failed", description: e.message || String(e) });
+		}
+	}
+
+	async function deleteEvent(id: string) {
+		try {
+			const { error } = await supabase
+				.from("events")
+				.delete()
+				.eq("id", id);
+
+			if (error) throw error;
+			toast({ title: "Event deleted", description: "The event has been deleted." });
+			void loadEvents(true);
+		} catch (e: any) {
+			toast({ title: "Delete failed", description: e.message || String(e) });
+		}
+	}
+
 	async function deleteItem(type: "application" | "message", id: string) {
 		if (!token) {
 			toast({ title: "Admin token required", description: "Set the moderator token to perform actions." });
@@ -750,6 +873,7 @@ const scannerLockRef = useRef(false);
 						<TabsTrigger value="applications">Join Applications</TabsTrigger>
 						<TabsTrigger value="messages">Contact Messages</TabsTrigger>
                         <TabsTrigger value="members">Members</TabsTrigger>
+                        <TabsTrigger value="events">Events</TabsTrigger>
                         <TabsTrigger value="attendance">Attendance</TabsTrigger>
                         <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
 					</TabsList>
@@ -931,6 +1055,134 @@ const scannerLockRef = useRef(false);
 								<div className="flex justify-center mt-4">
 									<Button variant="outline" disabled={!membersHasMore || membersLoading} onClick={() => void loadMembers(false)}>
 										{membersLoading ? "Loading..." : membersHasMore ? "Load more" : "No more"}
+									</Button>
+								</div>
+							</CardContent>
+						</Card>
+					</TabsContent>
+
+					{/* Events Tab */}
+					<TabsContent value="events">
+						<Card>
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<CardTitle>Events & Hackathons ({events.length})</CardTitle>
+									<Button onClick={() => {
+										setEditingEvent(null);
+										setEventFormData({
+											title: "",
+											description: "",
+											event_type: "workshop",
+											start_date: "",
+											end_date: "",
+											location: "",
+											registration_link: "",
+											max_participants: "",
+											fee_amount: "0",
+											fee_currency: "PKR",
+											payment_required: false,
+											notify_members: false,
+											category: "",
+											tags: "",
+											image_url: "",
+											registration_deadline: "",
+											status: "upcoming",
+											is_active: true,
+											is_member_only: true,
+										});
+										setShowEventForm(true);
+									}}>
+										Create Event
+									</Button>
+								</div>
+							</CardHeader>
+							<CardContent>
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>Title</TableHead>
+											<TableHead>Type</TableHead>
+											<TableHead>Start Date</TableHead>
+											<TableHead>Fee</TableHead>
+											<TableHead>Status</TableHead>
+											<TableHead>Active</TableHead>
+											<TableHead className="text-right">Actions</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{events.length === 0 && !eventsLoading ? (
+											<TableRow>
+												<TableCell colSpan={7} className="text-center text-muted-foreground">No events yet. Create your first event!</TableCell>
+											</TableRow>
+										) : (
+											events.map((event) => (
+												<TableRow key={event.id} className="hover:bg-card/50">
+													<TableCell className="font-medium">{event.title}</TableCell>
+													<TableCell>
+														<Badge variant="outline" className="capitalize">{event.event_type}</Badge>
+													</TableCell>
+													<TableCell>{formatDate(event.start_date)}</TableCell>
+													<TableCell>
+														{event.payment_required && event.fee_amount ? (
+															<span>{event.fee_amount} {event.fee_currency}</span>
+														) : (
+															<span className="text-muted-foreground">Free</span>
+														)}
+													</TableCell>
+													<TableCell>
+														<Badge variant={event.status === "upcoming" ? "default" : event.status === "ongoing" ? "secondary" : "outline"} className="capitalize">
+															{event.status}
+														</Badge>
+													</TableCell>
+													<TableCell>
+														<Badge variant={event.is_active ? "secondary" : "outline"}>
+															{event.is_active ? "Active" : "Inactive"}
+														</Badge>
+													</TableCell>
+													<TableCell className="text-right space-x-2">
+														<Button size="sm" variant="outline" onClick={() => {
+															setEditingEvent(event);
+															setEventFormData({
+																title: event.title || "",
+																description: event.description || "",
+																event_type: event.event_type || "workshop",
+																start_date: event.start_date ? new Date(event.start_date).toISOString().slice(0, 16) : "",
+																end_date: event.end_date ? new Date(event.end_date).toISOString().slice(0, 16) : "",
+																location: event.location || "",
+																registration_link: event.registration_link || "",
+																max_participants: event.max_participants?.toString() || "",
+																fee_amount: event.fee_amount?.toString() || "0",
+																fee_currency: event.fee_currency || "PKR",
+																payment_required: event.payment_required || false,
+																notify_members: event.notify_members || false,
+																category: event.category || "",
+																tags: Array.isArray(event.tags) ? event.tags.join(", ") : event.tags || "",
+																image_url: event.image_url || "",
+																registration_deadline: event.registration_deadline ? new Date(event.registration_deadline).toISOString().slice(0, 16) : "",
+																status: event.status || "upcoming",
+																is_active: event.is_active ?? true,
+																is_member_only: event.is_member_only ?? true,
+															});
+															setShowEventForm(true);
+														}}>
+															Edit
+														</Button>
+														<Button size="sm" variant="ghost" onClick={() => {
+															if (confirm(`Delete "${event.title}"? This cannot be undone.`)) {
+																void deleteEvent(event.id);
+															}
+														}}>
+															Delete
+														</Button>
+													</TableCell>
+												</TableRow>
+											))
+										)}
+									</TableBody>
+								</Table>
+								<div className="flex justify-center mt-4">
+									<Button variant="outline" onClick={() => void loadEvents(true)} disabled={eventsLoading}>
+										{eventsLoading ? "Loading..." : "Refresh"}
 									</Button>
 								</div>
 							</CardContent>
@@ -1467,6 +1719,262 @@ const scannerLockRef = useRef(false);
 							onClick={() => void deleteMember()}
 						>
 							Delete Member
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Event Form Dialog */}
+			<Dialog open={showEventForm} onOpenChange={(open) => {
+				if (!open) {
+					setShowEventForm(false);
+					setEditingEvent(null);
+				}
+			}}>
+				<DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle>{editingEvent ? "Edit Event" : "Create New Event"}</DialogTitle>
+						<DialogDescription>
+							{editingEvent ? "Update event details. Changes will be reflected immediately in member portals." : "Create a new event or hackathon. It will be visible in member portals immediately after creation."}
+						</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4 py-4">
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<div className="md:col-span-2">
+								<label className="block text-sm font-medium mb-2">Event Title <span className="text-destructive">*</span></label>
+								<Input
+									value={eventFormData.title}
+									onChange={(e) => setEventFormData({ ...eventFormData, title: e.target.value })}
+									placeholder="e.g., Cybersecurity Workshop: Into the Breach"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Event Type <span className="text-destructive">*</span></label>
+								<Select value={eventFormData.event_type} onValueChange={(v) => setEventFormData({ ...eventFormData, event_type: v })}>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="workshop">Workshop</SelectItem>
+										<SelectItem value="hackathon">Hackathon</SelectItem>
+										<SelectItem value="meetup">Meetup</SelectItem>
+										<SelectItem value="webinar">Webinar</SelectItem>
+										<SelectItem value="other">Other</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Category</label>
+								<Select value={eventFormData.category} onValueChange={(v) => setEventFormData({ ...eventFormData, category: v })}>
+									<SelectTrigger>
+										<SelectValue placeholder="Select category" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="">None</SelectItem>
+										<SelectItem value="cyber">Cybersecurity</SelectItem>
+										<SelectItem value="ai">AI / Machine Learning</SelectItem>
+										<SelectItem value="fusion">AI × Cyber Fusion</SelectItem>
+										<SelectItem value="general">General</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Start Date & Time <span className="text-destructive">*</span></label>
+								<Input
+									type="datetime-local"
+									value={eventFormData.start_date}
+									onChange={(e) => setEventFormData({ ...eventFormData, start_date: e.target.value })}
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">End Date & Time</label>
+								<Input
+									type="datetime-local"
+									value={eventFormData.end_date}
+									onChange={(e) => setEventFormData({ ...eventFormData, end_date: e.target.value })}
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Location</label>
+								<Input
+									value={eventFormData.location}
+									onChange={(e) => setEventFormData({ ...eventFormData, location: e.target.value })}
+									placeholder="e.g., RIUF Campus, Online, etc."
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Max Participants</label>
+								<Input
+									type="number"
+									value={eventFormData.max_participants}
+									onChange={(e) => setEventFormData({ ...eventFormData, max_participants: e.target.value })}
+									placeholder="Leave empty for unlimited"
+									min="1"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Registration Deadline</label>
+								<Input
+									type="datetime-local"
+									value={eventFormData.registration_deadline}
+									onChange={(e) => setEventFormData({ ...eventFormData, registration_deadline: e.target.value })}
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Registration Link</label>
+								<Input
+									type="url"
+									value={eventFormData.registration_link}
+									onChange={(e) => setEventFormData({ ...eventFormData, registration_link: e.target.value })}
+									placeholder="https://..."
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Image URL</label>
+								<Input
+									type="url"
+									value={eventFormData.image_url}
+									onChange={(e) => setEventFormData({ ...eventFormData, image_url: e.target.value })}
+									placeholder="https://..."
+								/>
+							</div>
+
+							<div className="md:col-span-2">
+								<label className="block text-sm font-medium mb-2">Description</label>
+								<Textarea
+									value={eventFormData.description}
+									onChange={(e) => setEventFormData({ ...eventFormData, description: e.target.value })}
+									placeholder="Detailed event description..."
+									rows={4}
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Tags (comma-separated)</label>
+								<Input
+									value={eventFormData.tags}
+									onChange={(e) => setEventFormData({ ...eventFormData, tags: e.target.value })}
+									placeholder="e.g., beginner, hands-on, networking"
+								/>
+							</div>
+
+							<div>
+								<label className="block text-sm font-medium mb-2">Status</label>
+								<Select value={eventFormData.status} onValueChange={(v) => setEventFormData({ ...eventFormData, status: v })}>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="upcoming">Upcoming</SelectItem>
+										<SelectItem value="ongoing">Ongoing</SelectItem>
+										<SelectItem value="completed">Completed</SelectItem>
+										<SelectItem value="cancelled">Cancelled</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+						</div>
+
+						{/* Payment Section */}
+						<div className="border-t pt-4 space-y-4">
+							<h3 className="font-semibold">Payment Settings</h3>
+							<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+								<div className="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="payment_required"
+										checked={eventFormData.payment_required}
+										onChange={(e) => setEventFormData({ ...eventFormData, payment_required: e.target.checked })}
+										className="rounded"
+									/>
+									<label htmlFor="payment_required" className="text-sm font-medium">Payment Required</label>
+								</div>
+
+								{eventFormData.payment_required && (
+									<>
+										<div>
+											<label className="block text-sm font-medium mb-2">Fee Amount</label>
+											<Input
+												type="number"
+												step="0.01"
+												min="0"
+												value={eventFormData.fee_amount}
+												onChange={(e) => setEventFormData({ ...eventFormData, fee_amount: e.target.value })}
+												placeholder="0.00"
+											/>
+										</div>
+										<div>
+											<label className="block text-sm font-medium mb-2">Currency</label>
+											<Select value={eventFormData.fee_currency} onValueChange={(v) => setEventFormData({ ...eventFormData, fee_currency: v })}>
+												<SelectTrigger>
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="PKR">PKR (Pakistani Rupee)</SelectItem>
+													<SelectItem value="USD">USD (US Dollar)</SelectItem>
+													<SelectItem value="EUR">EUR (Euro)</SelectItem>
+												</SelectContent>
+											</Select>
+										</div>
+									</>
+								)}
+							</div>
+						</div>
+
+						{/* Settings Section */}
+						<div className="border-t pt-4 space-y-3">
+							<h3 className="font-semibold">Settings</h3>
+							<div className="space-y-2">
+								<div className="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="is_active"
+										checked={eventFormData.is_active}
+										onChange={(e) => setEventFormData({ ...eventFormData, is_active: e.target.checked })}
+										className="rounded"
+									/>
+									<label htmlFor="is_active" className="text-sm font-medium">Active (visible in member portals)</label>
+								</div>
+								<div className="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="is_member_only"
+										checked={eventFormData.is_member_only}
+										onChange={(e) => setEventFormData({ ...eventFormData, is_member_only: e.target.checked })}
+										className="rounded"
+									/>
+									<label htmlFor="is_member_only" className="text-sm font-medium">Members Only</label>
+								</div>
+								<div className="flex items-center space-x-2">
+									<input
+										type="checkbox"
+										id="notify_members"
+										checked={eventFormData.notify_members}
+										onChange={(e) => setEventFormData({ ...eventFormData, notify_members: e.target.checked })}
+										className="rounded"
+									/>
+									<label htmlFor="notify_members" className="text-sm font-medium">Notify Members (send email notification)</label>
+								</div>
+							</div>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => {
+							setShowEventForm(false);
+							setEditingEvent(null);
+						}}>
+							Cancel
+						</Button>
+						<Button onClick={() => void saveEvent()}>
+							{editingEvent ? "Update Event" : "Create Event"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

@@ -90,7 +90,18 @@ create table if not exists public.members (
   email              citext not null,
   source_application uuid references public.join_applications(id) on delete set null,
   cohort             text,
-  status             text not null default 'active'
+  status             text not null default 'active',
+  -- Fields from join_applications
+  area_of_interest   text,
+  motivation         text,
+  affiliation        text,
+  university_name    text,
+  department         text,
+  roll_number        text,
+  organization       text,
+  role_title         text,
+  phone_e164         text,
+  secret_code        text
 );
 
 create index if not exists idx_members_created_at on public.members (created_at desc);
@@ -111,7 +122,17 @@ create table if not exists public.events (
   max_participants  integer,
   is_active         boolean      not null default true,
   is_member_only    boolean      not null default true, -- Only members can register
-  created_by        text         default 'admin'
+  created_by        text         default 'admin',
+  -- Additional fields for event management
+  fee_amount        numeric(10,2) default 0, -- Event fee (0 for free)
+  fee_currency      text default 'PKR', -- Currency code
+  payment_required  boolean default false, -- Whether payment is required
+  notify_members    boolean default false, -- Whether to notify members about this event
+  category          text, -- e.g., 'cyber', 'ai', 'fusion', 'general'
+  tags              text[], -- Array of tags
+  image_url         text, -- Event image/thumbnail URL
+  registration_deadline timestamptz, -- Deadline for registration
+  status            text default 'upcoming' check (status in ('upcoming', 'ongoing', 'completed', 'cancelled'))
 );
 
 -- Event registrations (members register for events)
@@ -293,6 +314,116 @@ begin
     update public.members set secret_code = public.generate_secret_code() where secret_code is null;
     alter table public.members alter column secret_code set not null;
   end if;
+  
+  -- Add fields from join_applications to members table
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='area_of_interest') then
+    alter table public.members add column area_of_interest text;
+    update public.members m
+      set area_of_interest = ja.area_of_interest
+      from public.join_applications ja
+      where m.source_application = ja.id and m.area_of_interest is null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='motivation') then
+    alter table public.members add column motivation text;
+    update public.members m
+      set motivation = ja.motivation
+      from public.join_applications ja
+      where m.source_application = ja.id and m.motivation is null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='affiliation') then
+    alter table public.members add column affiliation text;
+    update public.members m
+      set affiliation = ja.affiliation::text
+      from public.join_applications ja
+      where m.source_application = ja.id and m.affiliation is null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='university_name') then
+    alter table public.members add column university_name text;
+    update public.members m
+      set university_name = ja.university_name
+      from public.join_applications ja
+      where m.source_application = ja.id and m.university_name is null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='department') then
+    alter table public.members add column department text;
+    update public.members m
+      set department = ja.department
+      from public.join_applications ja
+      where m.source_application = ja.id and m.department is null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='roll_number') then
+    alter table public.members add column roll_number text;
+    update public.members m
+      set roll_number = ja.roll_number
+      from public.join_applications ja
+      where m.source_application = ja.id and m.roll_number is null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='organization') then
+    alter table public.members add column organization text;
+    update public.members m
+      set organization = ja.organization
+      from public.join_applications ja
+      where m.source_application = ja.id and m.organization is null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='role_title') then
+    alter table public.members add column role_title text;
+    update public.members m
+      set role_title = ja.role_title
+      from public.join_applications ja
+      where m.source_application = ja.id and m.role_title is null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='phone_e164') then
+    alter table public.members add column phone_e164 text;
+    update public.members m
+      set phone_e164 = ja.phone_e164
+      from public.join_applications ja
+      where m.source_application = ja.id and m.phone_e164 is null;
+  end if;
+  
+  -- Add additional event fields
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='fee_amount') then
+    alter table public.events add column fee_amount numeric(10,2) default 0;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='fee_currency') then
+    alter table public.events add column fee_currency text default 'PKR';
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='payment_required') then
+    alter table public.events add column payment_required boolean default false;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='notify_members') then
+    alter table public.events add column notify_members boolean default false;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='category') then
+    alter table public.events add column category text;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='tags') then
+    alter table public.events add column tags text[];
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='image_url') then
+    alter table public.events add column image_url text;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='registration_deadline') then
+    alter table public.events add column registration_deadline timestamptz;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='status') then
+    alter table public.events add column status text default 'upcoming' check (status in ('upcoming', 'ongoing', 'completed', 'cancelled'));
+  end if;
 end$$;
 
 create unique index if not exists idx_join_applications_secret_code on public.join_applications (secret_code);
@@ -327,6 +458,27 @@ create table if not exists public.contact_messages (
   honeypot     text default null,
   constraint chk_honeypot_empty_contact check (coalesce(honeypot,'') = '')
 );
+
+-- Feedback table for member feedback
+create table if not exists public.member_feedback (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  member_id         uuid references public.members(id) on delete cascade,
+  feedback_type     text not null default 'general' check (feedback_type in ('general', 'event', 'portal', 'suggestion', 'bug', 'other')),
+  subject           text,
+  message           text not null,
+  rating            integer check (rating >= 1 and rating <= 5), -- 1-5 star rating
+  related_event_id  uuid references public.events(id) on delete set null, -- If feedback is about a specific event
+  status            text default 'new' check (status in ('new', 'read', 'responded', 'resolved', 'archived')),
+  admin_notes       text, -- Admin internal notes
+  responded_at      timestamptz,
+  responded_by      text
+);
+
+create index if not exists idx_member_feedback_member_id on public.member_feedback (member_id);
+create index if not exists idx_member_feedback_type on public.member_feedback (feedback_type);
+create index if not exists idx_member_feedback_status on public.member_feedback (status);
+create index if not exists idx_member_feedback_created_at on public.member_feedback (created_at desc);
 
 -- 4) Indexes -----------------------------------------------------------------
 create index if not exists idx_join_applications_created_at on public.join_applications (created_at desc);

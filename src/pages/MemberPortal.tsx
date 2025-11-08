@@ -5,8 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -22,6 +23,14 @@ interface Member {
   secret_code?: string;
   area_of_interest?: string;
   password_hash?: string;
+  motivation?: string;
+  affiliation?: string;
+  university_name?: string;
+  department?: string;
+  roll_number?: string;
+  organization?: string;
+  role_title?: string;
+  phone_e164?: string;
 }
 
 interface Event {
@@ -108,6 +117,12 @@ export default function MemberPortal() {
   const [isSettingPassword, setIsSettingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackType, setFeedbackType] = useState("general");
+  const [feedbackSubject, setFeedbackSubject] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null);
+  const [feedbackEventId, setFeedbackEventId] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if user is already authenticated
@@ -630,6 +645,39 @@ export default function MemberPortal() {
   async function verifyPassword(password: string, hash: string): Promise<boolean> {
     const passwordHash = await hashPassword(password);
     return passwordHash === hash;
+  }
+
+  async function submitFeedback() {
+    if (!member || !feedbackMessage.trim()) {
+      toast({ title: "Message required", description: "Please enter your feedback message." });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("member_feedback")
+        .insert({
+          member_id: member.id,
+          feedback_type: feedbackType,
+          subject: feedbackSubject.trim() || null,
+          message: feedbackMessage.trim(),
+          rating: feedbackRating || null,
+          related_event_id: feedbackEventId || null,
+          status: "new",
+        });
+
+      if (error) throw error;
+
+      toast({ title: "Feedback submitted!", description: "Thank you for your feedback. We'll review it soon." });
+      setShowFeedback(false);
+      setFeedbackType("general");
+      setFeedbackSubject("");
+      setFeedbackMessage("");
+      setFeedbackRating(null);
+      setFeedbackEventId(null);
+    } catch (e: any) {
+      toast({ title: "Failed to submit feedback", description: e.message || "Please try again." });
+    }
   }
 
   function formatDate(dateStr: string) {
@@ -1218,8 +1266,72 @@ export default function MemberPortal() {
                     </p>
                   </div>
                 )}
-                <div className="pt-4 border-t">
-                  <Button variant="outline" onClick={() => {
+                {member.affiliation && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Affiliation</label>
+                    <p className="text-lg capitalize">{member.affiliation}</p>
+                  </div>
+                )}
+                {member.motivation && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Motivation</label>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{member.motivation}</p>
+                  </div>
+                )}
+                {member.affiliation === "student" && (
+                  <>
+                    {member.university_name && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">University</label>
+                        <p className="text-lg">{member.university_name}</p>
+                      </div>
+                    )}
+                    {member.department && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Department</label>
+                        <p className="text-lg">{member.department}</p>
+                      </div>
+                    )}
+                    {member.roll_number && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Roll Number</label>
+                        <p className="text-lg font-mono">{member.roll_number}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                {(member.affiliation === "professional" || member.affiliation === "other") && (
+                  <>
+                    {member.organization && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Organization</label>
+                        <p className="text-lg">{member.organization}</p>
+                      </div>
+                    )}
+                    {member.role_title && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Role / Title</label>
+                        <p className="text-lg">{member.role_title}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                {member.phone_e164 && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Phone</label>
+                    <p className="text-lg">{member.phone_e164}</p>
+                  </div>
+                )}
+                <div className="pt-4 border-t space-y-3">
+                  <Button 
+                    variant="default" 
+                    className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                    onClick={() => setShowFeedback(true)}
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    Send Feedback
+                  </Button>
+                  <Button variant="outline" className="w-full" onClick={() => {
                     localStorage.removeItem("shadowmesh_member_token");
                     localStorage.removeItem("shadowmesh_authenticated");
                     navigate("/");
@@ -1377,6 +1489,118 @@ export default function MemberPortal() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowFindTeammates(null)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Feedback Dialog */}
+        {showFeedback && member && (
+          <Dialog open={showFeedback} onOpenChange={setShowFeedback}>
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5" />
+                  Send Feedback
+                </DialogTitle>
+                <DialogDescription>
+                  Share your thoughts, suggestions, or report issues. We value your feedback!
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Feedback Type</label>
+                  <Select value={feedbackType} onValueChange={setFeedbackType}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="general">General Feedback</SelectItem>
+                      <SelectItem value="event">Event Feedback</SelectItem>
+                      <SelectItem value="portal">Portal Feedback</SelectItem>
+                      <SelectItem value="suggestion">Suggestion</SelectItem>
+                      <SelectItem value="bug">Bug Report</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {feedbackType === "event" && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Related Event (optional)</label>
+                    <Select value={feedbackEventId || ""} onValueChange={(v) => setFeedbackEventId(v || null)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an event" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">None</SelectItem>
+                        {[...events, ...hackathons].map((event) => (
+                          <SelectItem key={event.id} value={event.id}>{event.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Subject (optional)</label>
+                  <Input
+                    value={feedbackSubject}
+                    onChange={(e) => setFeedbackSubject(e.target.value)}
+                    placeholder="Brief subject line"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Rating (optional)</label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setFeedbackRating(star)}
+                        className={`p-2 rounded transition-colors ${
+                          feedbackRating && feedbackRating >= star
+                            ? "text-yellow-400"
+                            : "text-muted-foreground hover:text-yellow-300"
+                        }`}
+                      >
+                        <Star className={`w-6 h-6 ${feedbackRating && feedbackRating >= star ? "fill-current" : ""}`} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Message <span className="text-destructive">*</span></label>
+                  <Textarea
+                    value={feedbackMessage}
+                    onChange={(e) => setFeedbackMessage(e.target.value)}
+                    placeholder="Tell us what you think..."
+                    rows={6}
+                    className="resize-none"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => {
+                  setShowFeedback(false);
+                  setFeedbackType("general");
+                  setFeedbackSubject("");
+                  setFeedbackMessage("");
+                  setFeedbackRating(null);
+                  setFeedbackEventId(null);
+                }}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={submitFeedback}
+                  className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                  disabled={!feedbackMessage.trim()}
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  Submit Feedback
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

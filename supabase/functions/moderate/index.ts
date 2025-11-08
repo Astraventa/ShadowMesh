@@ -46,8 +46,8 @@ Deno.serve(async (req) => {
     const updated = await res.json();
     const row = updated?.[0];
 
-    // Fetch application to get email/name/area_of_interest
-    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,secret_code,area_of_interest`, {
+    // Fetch application to get all fields
+    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,secret_code,area_of_interest,motivation,affiliation,university_name,department,roll_number,organization,role_title,phone_e164`, {
       headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
     });
     const appRows = appRes.ok ? await appRes.json() : [];
@@ -73,7 +73,15 @@ Deno.serve(async (req) => {
             email: app.email, 
             source_application: id, 
             secret_code: app.secret_code,
-            area_of_interest: app.area_of_interest || null
+            area_of_interest: app.area_of_interest || null,
+            motivation: app.motivation || null,
+            affiliation: app.affiliation ? String(app.affiliation) : null,
+            university_name: app.university_name || null,
+            department: app.department || null,
+            roll_number: app.roll_number || null,
+            organization: app.organization || null,
+            role_title: app.role_title || null,
+            phone_e164: app.phone_e164 || null
           })
         });
       }
