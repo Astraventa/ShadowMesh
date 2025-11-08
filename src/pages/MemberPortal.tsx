@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -98,6 +99,7 @@ export default function MemberPortal() {
   const [showFindTeammates, setShowFindTeammates] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
+  const [showQRCode, setShowQRCode] = useState(false);
 
   useEffect(() => {
     // Check if user has verification token
@@ -166,27 +168,51 @@ export default function MemberPortal() {
         throw new Error("Member not found. Please ensure your application has been approved and you're using the correct code.");
       }
 
+      // SECURITY: Verify that the code matches the member's secret_code
+      const providedCode = (verifyData.secret_code || token).toUpperCase();
+      const memberSecretCode = memberData.secret_code?.toUpperCase();
+      
+      if (memberSecretCode && providedCode !== memberSecretCode) {
+        throw new Error("Invalid access code. This code does not match your account.");
+      }
+
       setMember(memberData);
-      const storedCode = (verifyData.secret_code || token).toUpperCase();
+      const storedCode = providedCode;
       localStorage.setItem("shadowmesh_member_token", storedCode);
 
       // Load events (workshops and other events, excluding hackathons)
+      // Show all active events, not just future ones
       const { data: eventsData } = await supabase
         .from("events")
         .select("*")
         .eq("is_active", true)
         .neq("event_type", "hackathon")
-        .gte("start_date", new Date().toISOString())
         .order("start_date", { ascending: true });
 
       if (eventsData) setEvents(eventsData);
 
-      // Load resources
-      const { data: resourcesData } = await supabase
+      // Load resources filtered by member's area_of_interest
+      // Filter by title/description keywords based on area_of_interest
+      let resourcesQuery = supabase
         .from("member_resources")
         .select("*")
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
+        .eq("is_active", true);
+      
+      // Filter by area_of_interest if member has one
+      if (memberData.area_of_interest) {
+        const interest = memberData.area_of_interest.toLowerCase();
+        if (interest === "both" || interest.includes("both")) {
+          // Show all resources for "Both" - no filter needed
+        } else if (interest.includes("ai") || interest.includes("ml")) {
+          // Show AI resources - filter by title/description containing AI/ML keywords
+          resourcesQuery = resourcesQuery.or("title.ilike.%ai%,title.ilike.%ml%,title.ilike.%machine learning%,description.ilike.%ai%,description.ilike.%ml%,description.ilike.%machine learning%");
+        } else if (interest.includes("cyber") || interest.includes("security")) {
+          // Show Cyber resources - filter by title/description containing cyber/security keywords
+          resourcesQuery = resourcesQuery.or("title.ilike.%cyber%,title.ilike.%security%,title.ilike.%hack%,description.ilike.%cyber%,description.ilike.%security%,description.ilike.%hack%");
+        }
+      }
+      
+      const { data: resourcesData } = await resourcesQuery.order("created_at", { ascending: false });
 
       if (resourcesData) setResources(resourcesData);
 
@@ -202,12 +228,12 @@ export default function MemberPortal() {
       }
 
       // Load hackathons (events with event_type = 'hackathon')
+      // Show all active hackathons, not just future ones
       const { data: hackathonsData } = await supabase
         .from("events")
         .select("*")
         .eq("event_type", "hackathon")
         .eq("is_active", true)
-        .gte("start_date", new Date().toISOString())
         .order("start_date", { ascending: true });
 
       if (hackathonsData) setHackathons(hackathonsData);
@@ -519,6 +545,15 @@ export default function MemberPortal() {
                 <KeyRound className="w-4 h-4 mr-2" />
                 {member.secret_code}
               </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowQRCode(true)}
+                className="border-primary/30 hover:border-primary/50"
+              >
+                <QrCode className="w-4 h-4 mr-2" />
+                QR Code
+              </Button>
             </div>
           </div>
           
@@ -981,6 +1016,53 @@ export default function MemberPortal() {
                   void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
                 }}
               />
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* QR Code Dialog */}
+        {showQRCode && member && (
+          <Dialog open={showQRCode} onOpenChange={setShowQRCode}>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <QrCode className="w-5 h-5" />
+                  Your ShadowMesh Code
+                </DialogTitle>
+                <DialogDescription>
+                  Scan this QR code to quickly access your member portal or share it for event check-ins.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col items-center space-y-4 py-4">
+                <div className="p-4 bg-white rounded-lg">
+                  <QRCodeSVG
+                    value={member.secret_code || ""}
+                    size={200}
+                    level="H"
+                    includeMargin={true}
+                  />
+                </div>
+                <div className="text-center space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Your Code</p>
+                  <p className="text-2xl font-mono font-bold">{member.secret_code}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Keep this code secure. Use it for event registration and attendance.
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowQRCode(false)}>Close</Button>
+                <Button
+                  onClick={() => {
+                    if (member.secret_code) {
+                      navigator.clipboard.writeText(member.secret_code);
+                      toast({ title: "Copied!", description: "Code copied to clipboard." });
+                    }
+                  }}
+                >
+                  Copy Code
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         )}

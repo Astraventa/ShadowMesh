@@ -369,7 +369,16 @@ const JoinUs = () => {
                 <div className="grid md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Area of Interest</label>
-                    <Input value={areaOfInterest} onChange={(e)=>setAreaOfInterest(e.target.value)} placeholder="Cybersecurity, AI/ML, Both" className="bg-background/50 border-border focus:border-primary transition-colors" />
+                    <Select value={areaOfInterest} onValueChange={setAreaOfInterest}>
+                      <SelectTrigger className="bg-background/50 border-border">
+                        <SelectValue placeholder="Select your interest area" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="AI">AI / Machine Learning</SelectItem>
+                        <SelectItem value="Cyber">Cybersecurity</SelectItem>
+                        <SelectItem value="Both">Both (AI × Cyber)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
               </div>
 
