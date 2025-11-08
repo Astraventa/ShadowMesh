@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
       queryParam = `verification_token=eq.${encodeURIComponent(lookupValue)}`;
     }
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?${queryParam}&select=status,reviewed_at,decision_reason,secret_code,verification_token`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?${queryParam}&select=status,reviewed_at,decision_reason,secret_code,verification_token,email,full_name`, {
       headers: {
         'apikey': SERVICE_KEY,
         'Authorization': `Bearer ${SERVICE_KEY}`,

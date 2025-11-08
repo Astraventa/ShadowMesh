@@ -107,7 +107,7 @@ export default function MemberPortal() {
     
     if (!token) {
       toast({ title: "Access Denied", description: "Please use your verification token to access the member portal." });
-      navigate("/join-us");
+      navigate("/#join");
       return;
     }
 
@@ -121,7 +121,10 @@ export default function MemberPortal() {
       const payloadKey = token.includes("-") ? "verification_token" : "code";
       const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+        },
         body: JSON.stringify({ [payloadKey]: token }),
       });
 
@@ -134,15 +137,33 @@ export default function MemberPortal() {
         throw new Error("Your application is not approved yet");
       }
 
-      // Get member details
-      const { data: memberData, error: memberError } = await supabase
-        .from("members")
-        .select("*")
-        .eq("email", verifyData.email)
-        .single();
+      // Get member details - try by email first, then by secret_code
+      let memberData = null;
+      let memberError = null;
+      
+      if (verifyData.email) {
+        const { data, error } = await supabase
+          .from("members")
+          .select("*")
+          .eq("email", verifyData.email)
+          .single();
+        memberData = data;
+        memberError = error;
+      }
+      
+      // If not found by email, try by secret_code
+      if (!memberData && verifyData.secret_code) {
+        const { data, error } = await supabase
+          .from("members")
+          .select("*")
+          .eq("secret_code", verifyData.secret_code.toUpperCase())
+          .single();
+        memberData = data;
+        memberError = error;
+      }
 
       if (memberError || !memberData) {
-        throw new Error("Member not found");
+        throw new Error("Member not found. Please ensure your application has been approved and you're using the correct code.");
       }
 
       setMember(memberData);
