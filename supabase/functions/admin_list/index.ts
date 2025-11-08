@@ -242,16 +242,14 @@ Deno.serve(async (req) => {
       
       // Get registration counts for each event
       const eventsWithCounts = await Promise.all((Array.isArray(eventsData) ? eventsData : []).map(async (event: any) => {
+        // Fetch all registrations for this event and count them
         const countRes = await fetch(`${SUPABASE_URL}/rest/v1/event_registrations?select=id&event_id=eq.${event.id}`, {
-          headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}`, 'Prefer': 'count=exact' },
+          headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
         });
         let count = 0;
         if (countRes.ok) {
-          const countHeader = countRes.headers.get('content-range');
-          if (countHeader) {
-            const match = countHeader.match(/\/(\d+)/);
-            if (match) count = parseInt(match[1], 10);
-          }
+          const registrations = await countRes.json();
+          count = Array.isArray(registrations) ? registrations.length : 0;
         }
         return {
           ...event,

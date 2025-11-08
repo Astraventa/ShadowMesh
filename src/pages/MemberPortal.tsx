@@ -1161,7 +1161,7 @@ export default function MemberPortal() {
                     >
                       {isNew && (
                         <div className="absolute top-2 right-2 z-10">
-                          <Badge variant="destructive" className="animate-pulse">NEW</Badge>
+                          <Badge variant="destructive">NEW</Badge>
                         </div>
                       )}
                       <CardHeader>
