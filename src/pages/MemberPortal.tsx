@@ -455,7 +455,7 @@ export default function MemberPortal() {
       // Get all approved registrations for this hackathon
       const { data: approvedRegs, error: regError } = await supabase
         .from("hackathon_registrations")
-        .select("member_id, members(id, full_name, email, area_of_interest, secret_code)")
+        .select("member_id, members(id, full_name, email, area_of_interest)")
         .eq("hackathon_id", hackathonId)
         .eq("status", "approved");
 
@@ -473,7 +473,7 @@ export default function MemberPortal() {
           team_members(
             member_id,
             role,
-            members(id, full_name, email, area_of_interest, secret_code)
+            members(id, full_name, email, area_of_interest)
           )
         `)
         .eq("hackathon_id", hackathonId)
@@ -491,7 +491,6 @@ export default function MemberPortal() {
             full_name: tm.members?.full_name || "",
             email: tm.members?.email || "",
             area_of_interest: tm.members?.area_of_interest || "",
-            secret_code: tm.members?.secret_code || "",
             role: tm.role,
           };
         });
@@ -509,7 +508,6 @@ export default function MemberPortal() {
           full_name: r.members?.full_name || "",
           email: r.members?.email || "",
           area_of_interest: r.members?.area_of_interest || "",
-          secret_code: r.members?.secret_code || "",
         }));
 
       setHackathonTeams(formattedTeams);
@@ -575,7 +573,7 @@ export default function MemberPortal() {
       // Get all approved registrations for this hackathon
       const { data, error } = await supabase
         .from("hackathon_registrations")
-        .select("member_id, members(id, full_name, email, area_of_interest, secret_code)")
+        .select("member_id, members(id, full_name, email, area_of_interest)")
         .eq("hackathon_id", hackathonId)
         .eq("status", "approved");
 
@@ -1220,7 +1218,7 @@ export default function MemberPortal() {
             <div className="hidden md:flex items-center gap-3">
               <Badge variant="secondary" className="px-4 py-2 text-sm">
                 <KeyRound className="w-4 h-4 mr-2" />
-                {member.secret_code}
+                {member.email}
               </Badge>
               <Button
                 variant="outline"
@@ -1958,8 +1956,8 @@ export default function MemberPortal() {
                   <p className="text-lg">{member.email}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground">ShadowMesh Code</label>
-                  <p className="font-mono text-sm">{member.secret_code}</p>
+                  <label className="text-sm font-medium text-muted-foreground">Email Verified</label>
+                  <p className="text-lg">{member.email_verified ? "✓ Verified" : "Not verified"}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">Member Since</label>
@@ -2041,6 +2039,44 @@ export default function MemberPortal() {
                   </div>
                 )}
                 <div className="pt-4 border-t space-y-3">
+                  {/* 2FA Section */}
+                  <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-semibold flex items-center gap-2">
+                          <Shield className="w-4 h-4" />
+                          Two-Factor Authentication
+                        </h4>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {member.two_factor_enabled 
+                            ? "2FA is enabled. Your account is protected." 
+                            : "Add an extra layer of security to your account."}
+                        </p>
+                      </div>
+                      <Badge variant={member.two_factor_enabled ? "default" : "secondary"}>
+                        {member.two_factor_enabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </div>
+                    {!member.two_factor_enabled ? (
+                      <Button 
+                        variant="outline" 
+                        className="w-full"
+                        onClick={() => setShow2FASetup(true)}
+                      >
+                        <Shield className="w-4 h-4 mr-2" />
+                        Enable 2FA
+                      </Button>
+                    ) : (
+                      <Button 
+                        variant="outline" 
+                        className="w-full border-destructive/50 text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDisable2FA()}
+                      >
+                        Disable 2FA
+                      </Button>
+                    )}
+                  </div>
+                  
                   <Button 
                     variant="default" 
                     className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
@@ -2050,7 +2086,7 @@ export default function MemberPortal() {
                     Send Feedback
                   </Button>
                   <Button variant="outline" className="w-full" onClick={() => {
-                    localStorage.removeItem("shadowmesh_member_token");
+                    localStorage.removeItem("shadowmesh_member_email");
                     localStorage.removeItem("shadowmesh_authenticated");
                     navigate("/");
                   }}>
@@ -2127,17 +2163,17 @@ export default function MemberPortal() {
               <div className="flex flex-col items-center space-y-4 py-4">
                 <div className="p-4 bg-white rounded-lg">
                   <QRCodeSVG
-                    value={member.secret_code || ""}
+                    value={member.id || ""}
                     size={200}
                     level="H"
                     includeMargin={true}
                   />
                 </div>
                 <div className="text-center space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">Your Code</p>
-                  <p className="text-2xl font-mono font-bold">{member.secret_code}</p>
+                  <p className="text-sm font-medium text-muted-foreground">Your Member ID</p>
+                  <p className="text-xs font-mono text-muted-foreground break-all">{member.id}</p>
                   <p className="text-xs text-muted-foreground">
-                    Keep this code secure. Use it for event registration and attendance.
+                    Use this QR code for event attendance check-in.
                   </p>
                 </div>
               </div>
@@ -2145,13 +2181,13 @@ export default function MemberPortal() {
                 <Button variant="outline" onClick={() => setShowQRCode(false)}>Close</Button>
                 <Button
                   onClick={() => {
-                    if (member.secret_code) {
-                      navigator.clipboard.writeText(member.secret_code);
-                      toast({ title: "Copied!", description: "Code copied to clipboard." });
+                    if (member.id) {
+                      navigator.clipboard.writeText(member.id);
+                      toast({ title: "Copied!", description: "Member ID copied to clipboard." });
                     }
                   }}
                 >
-                  Copy Code
+                  Copy Member ID
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -2400,7 +2436,6 @@ export default function MemberPortal() {
                                           </Badge>
                                         )}
                                       </div>
-                                      <p className="text-xs font-mono text-muted-foreground ml-2">{m.secret_code}</p>
                                     </div>
                                   ))}
                                 </div>
@@ -2435,7 +2470,6 @@ export default function MemberPortal() {
                                     </Badge>
                                   )}
                                 </div>
-                                <p className="text-xs font-mono text-muted-foreground ml-2">{player.secret_code}</p>
                               </div>
                             </Card>
                           ))}

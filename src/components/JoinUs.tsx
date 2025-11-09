@@ -21,7 +21,7 @@ const JoinUs = () => {
   const [success, setSuccess] = useState(false);
   const [applicationId, setApplicationId] = useState<string | null>(null);
   const [secretCode, setSecretCode] = useState<string | null>(null);
-  const [statusInfo, setStatusInfo] = useState<{ status: string; reviewed_at?: string; decision_reason?: string; secret_code?: string } | null>(null);
+  const [statusInfo, setStatusInfo] = useState<{ status: string; reviewed_at?: string; decision_reason?: string } | null>(null);
 
   // Controlled inputs
   const [fullName, setFullName] = useState("");
@@ -41,7 +41,7 @@ const JoinUs = () => {
   // Status check
   const [checkToken, setCheckToken] = useState("");
   const [checkingStatus, setCheckingStatus] = useState(false);
-  const [checkResult, setCheckResult] = useState<{ status: string; reviewed_at?: string; decision_reason?: string; secret_code?: string } | null>(null);
+  const [checkResult, setCheckResult] = useState<{ status: string; reviewed_at?: string; decision_reason?: string } | null>(null);
 
   // Honeypot
   const [honeypot, setHoneypot] = useState("");
@@ -138,10 +138,6 @@ const JoinUs = () => {
       });
       if (res.ok) {
         const info = await res.json();
-        if (info.secret_code) {
-          info.secret_code = String(info.secret_code).toUpperCase();
-          setSecretCode(info.secret_code);
-        }
         setCheckResult(info);
       } else {
         const text = await res.text();
@@ -209,13 +205,13 @@ const JoinUs = () => {
           ip_addr: null,
           honeypot,
         }])
-        .select('id, verification_token, secret_code')
+        .select('id, verification_token')
         .single();
 
       if (error) throw error;
 
       setApplicationId(data?.id || null);
-      const rawCode = data?.secret_code || data?.verification_token || null;
+      const rawCode = data?.verification_token || null;
       const normalizedCode = rawCode ? String(rawCode).toUpperCase() : null;
       setSecretCode(normalizedCode);
       setCheckToken(normalizedCode || "");
@@ -325,7 +321,6 @@ const JoinUs = () => {
                 {statusInfo && (
                   <div className="mt-4 text-sm text-muted-foreground">
                     <p>Status: <span className="text-foreground font-medium">{statusInfo.status}</span></p>
-                    {statusInfo.secret_code && <p>Code: <span className="font-mono text-xs">{statusInfo.secret_code}</span></p>}
                     {statusInfo.decision_reason && <p>Notes: {statusInfo.decision_reason}</p>}
                   </div>
                 )}
@@ -445,26 +440,22 @@ const JoinUs = () => {
                     <Card className="p-6 mt-4">
                       {checkResult.status === "not_found" ? (
                         <div className="text-center">
-                          <p className="text-destructive font-medium">Code not found</p>
-                          <p className="text-sm text-muted-foreground mt-2">Double-check your code or register first.</p>
+                          <p className="text-destructive font-medium">Application not found</p>
+                          <p className="text-sm text-muted-foreground mt-2">Double-check your verification token or register first.</p>
                         </div>
                       ) : checkResult.status === "approved" ? (
                         <div className="text-center space-y-3">
                           <Badge variant="secondary" className="text-base px-4 py-2">✓ Approved</Badge>
                           <p className="text-foreground font-medium">Congratulations! You're now a member of ShadowMesh.</p>
-                          {checkResult.secret_code && (
-                            <p className="text-sm font-mono bg-muted inline-block px-3 py-1 rounded">Code: {checkResult.secret_code}</p>
-                          )}
-                          <p className="text-sm text-muted-foreground">Check your email for the community link and next steps.</p>
+                          <p className="text-sm text-muted-foreground">Check your email for the welcome message and password setup link.</p>
                           <Button
                             variant="glow"
                             className="mt-4"
                             onClick={() => {
-                              const code = checkResult.secret_code || checkToken;
-                              window.location.href = code ? `/member-portal?code=${encodeURIComponent(code)}` : "/member-portal";
+                              window.location.href = "/member-portal";
                             }}
                           >
-                            Access Member Portal
+                            Go to Member Portal
                           </Button>
                         </div>
                       ) : checkResult.status === "rejected" ? (

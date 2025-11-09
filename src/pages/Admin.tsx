@@ -57,7 +57,7 @@ function parseScanPayload(raw: string): { eventId?: string | null; code?: string
 		try {
 			const params = new URLSearchParams(queryString);
 			eventId = eventId ?? params.get("event_id") ?? params.get("eventId") ?? params.get("event") ?? undefined;
-			code = code ?? params.get("code") ?? params.get("secret_code") ?? params.get("key") ?? undefined;
+			code = code ?? params.get("member_id") ?? params.get("memberId") ?? params.get("id") ?? undefined;
 		} catch {
 			// ignore
 		}
@@ -1098,7 +1098,7 @@ const scannerLockRef = useRef(false);
 													<TableCell>{m.email}</TableCell>
 											<TableCell>{m.cohort || "-"}</TableCell>
 										<TableCell>
-											{m.secret_code ? (
+											{m.email ? (
 												<Button size="sm" variant="outline" onClick={() => {
 													if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
 														navigator.clipboard.writeText(m.secret_code);
@@ -1779,7 +1779,7 @@ const scannerLockRef = useRef(false);
 									</div>
 									<div>
 										<label className="text-sm text-muted-foreground">ShadowMesh Code</label>
-										<p className="font-mono text-sm">{memberDetails.member.secret_code}</p>
+										<p className="text-sm">{memberDetails.member.email}</p>
 									</div>
 									<div>
 										<label className="text-sm text-muted-foreground">Member Since</label>
@@ -2206,7 +2206,7 @@ const DetailView = ({ detail }: { detail: JoinRow | null }) => {
 			<div><span className="text-sm text-muted-foreground">Status</span><div>{detail.status}</div></div>
 			<div><span className="text-sm text-muted-foreground">Reviewed</span><div>{formatDate(detail.reviewed_at)}</div></div>
 			<div className="col-span-2"><span className="text-sm text-muted-foreground">Reason</span><div>{detail.decision_reason || "-"}</div></div>
-			<div className="col-span-2"><span className="text-sm text-muted-foreground">ShadowMesh Code</span><div className="font-mono text-xs">{detail.secret_code || "-"}</div></div>
+			<div className="col-span-2"><span className="text-sm text-muted-foreground">Email</span><div className="text-xs">{detail.email || "-"}</div></div>
 		</div>
 		</div>
 	);

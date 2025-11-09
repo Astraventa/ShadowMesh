@@ -143,7 +143,7 @@ export default function AttendanceCheckin() {
 				// Get registrations
 				const { data: regData, error: regError } = await supabase
 					.from("event_registrations")
-					.select("id,member_id,status,created_at,members(id,full_name,email,secret_code)")
+					.select("id,member_id,status,created_at,members(id,full_name,email)")
 					.eq("event_id", eventId);
 
 				if (regError) throw regError;
@@ -476,7 +476,6 @@ export default function AttendanceCheckin() {
 																<TableRow key={reg.id} className={attended ? "bg-muted/50" : undefined}>
 																	<TableCell>{reg.members?.full_name || "-"}</TableCell>
 																	<TableCell>
-																		<span className="font-mono text-xs">{reg.members?.secret_code || "-"}</span>
 																	</TableCell>
 																	<TableCell>
 																		<Badge variant={attended ? "secondary" : "outline"}>{attended ? "Checked-in" : "Registered"}</Badge>
@@ -511,7 +510,6 @@ export default function AttendanceCheckin() {
 																<TableCell>{formatDate(entry.created_at)}</TableCell>
 																<TableCell>
 																	<div>{entry.members?.full_name || "-"}</div>
-																	<div className="text-xs text-muted-foreground">{entry.members?.secret_code || "-"}</div>
 																</TableCell>
 																<TableCell className="capitalize">{entry.method || "-"}</TableCell>
 															</TableRow>

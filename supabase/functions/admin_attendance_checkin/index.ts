@@ -26,24 +26,35 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { event_id, code, method = "qr", recorded_by } = await req.json();
-    if (!event_id || !code) {
-      return new Response("event_id and code are required", { status: 400, headers: corsHeaders });
+    const { event_id, member_id, email, method = "qr", recorded_by } = await req.json();
+    if (!event_id || (!member_id && !email)) {
+      return new Response("event_id and member_id or email are required", { status: 400, headers: corsHeaders });
     }
 
-    const normalizedCode = String(code).trim().toUpperCase();
-
-    // Lookup member by secret code
-    const memberRes = await fetch(`${SUPABASE_URL}/rest/v1/members?secret_code=eq.${normalizedCode}&select=id,full_name,email,secret_code`, {
-      headers: {
-        apikey: SERVICE_KEY,
-        Authorization: `Bearer ${SERVICE_KEY}`,
-      },
-    });
-    const memberRows = memberRes.ok ? await memberRes.json() : [];
-    const member = Array.isArray(memberRows) && memberRows[0] ? memberRows[0] : null;
+    // Lookup member by ID or email
+    let member = null;
+    if (member_id) {
+      const memberRes = await fetch(`${SUPABASE_URL}/rest/v1/members?id=eq.${member_id}&select=id,full_name,email`, {
+        headers: {
+          apikey: SERVICE_KEY,
+          Authorization: `Bearer ${SERVICE_KEY}`,
+        },
+      });
+      const memberRows = memberRes.ok ? await memberRes.json() : [];
+      member = Array.isArray(memberRows) && memberRows[0] ? memberRows[0] : null;
+    } else if (email) {
+      const memberRes = await fetch(`${SUPABASE_URL}/rest/v1/members?email=eq.${encodeURIComponent(email.toLowerCase())}&select=id,full_name,email`, {
+        headers: {
+          apikey: SERVICE_KEY,
+          Authorization: `Bearer ${SERVICE_KEY}`,
+        },
+      });
+      const memberRows = memberRes.ok ? await memberRes.json() : [];
+      member = Array.isArray(memberRows) && memberRows[0] ? memberRows[0] : null;
+    }
+    
     if (!member) {
-      return new Response(JSON.stringify({ status: "code_not_found" }), {
+      return new Response(JSON.stringify({ status: "member_not_found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
