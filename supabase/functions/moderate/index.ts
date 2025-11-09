@@ -47,11 +47,13 @@ Deno.serve(async (req) => {
     const row = updated?.[0];
 
     // Fetch application to get all fields
-    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,secret_code,area_of_interest,motivation,affiliation,university_name,department,roll_number,organization,role_title,phone_e164`, {
+    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,verification_token,area_of_interest,motivation,affiliation,university_name,department,roll_number,organization,role_title,phone_e164,welcome_email_sent`, {
       headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
     });
     const appRows = appRes.ok ? await appRes.json() : [];
     const app = Array.isArray(appRows) && appRows[0] ? appRows[0] : null;
+
+    let newMemberId = null;
 
     // On approve: insert member if not exists
     if (action === 'approve' && app?.email) {
@@ -60,19 +62,19 @@ Deno.serve(async (req) => {
       });
       const existing = checkRes.ok ? await checkRes.json() : [];
       if (!Array.isArray(existing) || existing.length === 0) {
-        await fetch(`${SUPABASE_URL}/rest/v1/members`, {
+        // Create member record
+        const memberRes = await fetch(`${SUPABASE_URL}/rest/v1/members`, {
           method: 'POST',
           headers: {
             'apikey': SERVICE_KEY,
             'Authorization': `Bearer ${SERVICE_KEY}`,
             'Content-Type': 'application/json',
-            'Prefer': 'return=minimal'
+            'Prefer': 'return=representation'
           },
           body: JSON.stringify({ 
             full_name: app.full_name, 
             email: app.email, 
             source_application: id, 
-            secret_code: app.secret_code,
             area_of_interest: app.area_of_interest || null,
             motivation: app.motivation || null,
             affiliation: app.affiliation ? String(app.affiliation) : null,
@@ -81,39 +83,156 @@ Deno.serve(async (req) => {
             roll_number: app.roll_number || null,
             organization: app.organization || null,
             role_title: app.role_title || null,
-            phone_e164: app.phone_e164 || null
+            phone_e164: app.phone_e164 || null,
+            welcome_email_sent: false
           })
         });
+        if (memberRes.ok) {
+          const memberData = await memberRes.json();
+          newMemberId = Array.isArray(memberData) ? memberData[0]?.id : memberData?.id;
+        }
+      } else {
+        newMemberId = existing[0]?.id;
       }
     }
 
-    // Emails via Resend
-    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-    const RESEND_FROM = Deno.env.get('RESEND_FROM');
-    const COMMUNITY_WHATSAPP_LINK = Deno.env.get('COMMUNITY_WHATSAPP_LINK');
-    const LOGO_URL = 'https://shadowmesh-six.vercel.app/logo.png';
-    if (RESEND_API_KEY && RESEND_FROM && app?.email) {
-      const subject = action === 'approve' ? 'Welcome to ShadowMesh!' : 'ShadowMesh Application Update';
-      const html = action === 'approve'
-        ? `<div style="font-family:Inter,sans-serif;padding:16px;color:#0b1224">
-            <img src="${LOGO_URL}" alt="ShadowMesh" style="height:48px;margin-bottom:12px" />
-            <h2>Congratulations, ${app.full_name}!</h2>
-            <p>Your application has been <b>approved</b>. Welcome to ShadowMesh.</p>
-            <p>Your ShadowMesh access code: <strong>${app.secret_code}</strong></p>
-            ${COMMUNITY_WHATSAPP_LINK ? `<p>Join our community: <a href="${COMMUNITY_WHATSAPP_LINK}">${COMMUNITY_WHATSAPP_LINK}</a></p>` : ''}
-          </div>`
-        : `<div style="font-family:Inter,sans-serif;padding:16px;color:#0b1224">
-            <img src="${LOGO_URL}" alt="ShadowMesh" style="height:48px;margin-bottom:12px" />
-            <h2>Hello ${app.full_name},</h2>
-            <p>Thanks for applying. After review, we’re not able to proceed at this time.</p>
-            ${reason ? `<p><i>Reason:</i> ${reason}</p>` : ''}
-            <p>You’re welcome to re-apply in the future.</p>
-          </div>`;
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: RESEND_FROM, to: [app.email], subject, html })
-      });
+    // Send welcome email via send_email edge function (only on approve, and only once)
+    if (action === 'approve' && app?.email && !app.welcome_email_sent && newMemberId) {
+      const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+      const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('RESEND_FROM') || 'noreply@shadowmesh.org';
+      const BASE_URL = Deno.env.get('BASE_URL') || 'https://shadowmesh.org';
+      
+      if (RESEND_API_KEY) {
+        // Generate password setup token
+        const setupToken = crypto.randomUUID();
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
+        
+        // Store setup token in member record (using password_reset_token field temporarily)
+        await fetch(`${SUPABASE_URL}/rest/v1/members?id=eq.${newMemberId}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SERVICE_KEY,
+            'Authorization': `Bearer ${SERVICE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            password_reset_token: setupToken,
+            password_reset_expires: expiresAt.toISOString()
+          })
+        });
+
+        // Mark welcome email as sent
+        await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SERVICE_KEY,
+            'Authorization': `Bearer ${SERVICE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ welcome_email_sent: true })
+        });
+
+        // Send welcome email with password setup link
+        const setupLink = `${BASE_URL}/member-portal?setup=${setupToken}`;
+        const emailHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Welcome to ShadowMesh</title>
+          </head>
+          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #0ea5e9, #8b5cf6); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+              <h1 style="color: white; margin: 0;">ShadowMesh</h1>
+            </div>
+            <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb;">
+              <h2 style="color: #1f2937; margin-top: 0;">Welcome to ShadowMesh, ${app.full_name}!</h2>
+              <p>Congratulations! Your application has been <strong>approved</strong>. You're now a member of our elite cybersecurity community.</p>
+              <p>To get started, please set up your password by clicking the button below:</p>
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${setupLink}" 
+                   style="background: linear-gradient(135deg, #0ea5e9, #8b5cf6); color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+                  Set Up Password
+                </a>
+              </div>
+              <p style="color: #6b7280; font-size: 14px;">Or copy this link: ${setupLink}</p>
+              <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">This link will expire in 24 hours.</p>
+              <p style="color: #6b7280; font-size: 14px;">After setting your password, you can log in to the member portal using your email and password.</p>
+            </div>
+          </body>
+          </html>
+        `;
+
+        try {
+          await fetch(`${SUPABASE_URL}/functions/v1/send_email`, {
+            method: 'POST',
+            headers: { 
+              'Authorization': `Bearer ${SERVICE_KEY}`, 
+              'Content-Type': 'application/json' 
+            },
+            body: JSON.stringify({
+              type: 'welcome',
+              to: app.email,
+              subject: 'Welcome to ShadowMesh - Set Up Your Password',
+              html: emailHtml
+            })
+          });
+        } catch (emailError) {
+          console.error('Failed to send welcome email:', emailError);
+          // Don't fail the approval if email fails
+        }
+      }
+    }
+
+    // Send rejection email
+    if (action === 'reject' && app?.email) {
+      const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+      const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('RESEND_FROM') || 'noreply@shadowmesh.org';
+      
+      if (RESEND_API_KEY) {
+        const emailHtml = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>ShadowMesh Application Update</title>
+          </head>
+          <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #0ea5e9, #8b5cf6); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+              <h1 style="color: white; margin: 0;">ShadowMesh</h1>
+            </div>
+            <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb;">
+              <h2 style="color: #1f2937; margin-top: 0;">Hello ${app.full_name},</h2>
+              <p>Thank you for your interest in ShadowMesh. After careful review, we're not able to proceed with your application at this time.</p>
+              ${reason ? `<p style="background: #fee2e2; padding: 15px; border-radius: 5px; border-left: 4px solid #ef4444;"><strong>Reason:</strong> ${reason}</p>` : ''}
+              <p>You're welcome to re-apply in the future when circumstances change.</p>
+              <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">Best regards,<br>The ShadowMesh Team</p>
+            </div>
+          </body>
+          </html>
+        `;
+
+        try {
+          await fetch(`${SUPABASE_URL}/functions/v1/send_email`, {
+            method: 'POST',
+            headers: { 
+              'Authorization': `Bearer ${SERVICE_KEY}`, 
+              'Content-Type': 'application/json' 
+            },
+            body: JSON.stringify({
+              type: 'rejection',
+              to: app.email,
+              subject: 'ShadowMesh Application Update',
+              html: emailHtml
+            })
+          });
+        } catch (emailError) {
+          console.error('Failed to send rejection email:', emailError);
+        }
+      }
     }
 
     return new Response(JSON.stringify(row || {}), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

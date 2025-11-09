@@ -58,6 +58,7 @@ create table if not exists public.join_applications (
   reviewed_by       text,
   decision_reason   text,
   verification_token uuid default gen_random_uuid(),
+  welcome_email_sent boolean default false,
 
   -- Client metadata (optional)
   user_agent        text,
@@ -101,7 +102,8 @@ create table if not exists public.members (
   organization       text,
   role_title         text,
   phone_e164         text,
-  secret_code        text
+  welcome_email_sent boolean default false,
+  email_verified     boolean default false
 );
 
 create index if not exists idx_members_created_at on public.members (created_at desc);
@@ -216,30 +218,7 @@ create index if not exists idx_event_checkins_member_id on public.event_checkins
 create index if not exists idx_event_checkins_method on public.event_checkins (method);
 create index if not exists idx_member_resources_is_active on public.member_resources (is_active);
 
-create or replace function public.generate_secret_code()
-returns text
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_code text;
-  v_exists boolean := false;
-begin
-  loop
-    -- SM plus 6 uppercase characters derived from md5(random + timestamp)
-    v_code := 'SM' || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
-    begin
-      execute 'select exists(select 1 from public.join_applications where secret_code = $1)' into v_exists using v_code;
-    exception when undefined_column then
-      -- First run: column may not exist yet
-      v_exists := false;
-    end;
-    exit when not v_exists;
-  end loop;
-  return v_code;
-end;
-$$;
+-- Secret code generation removed - using email-based authentication
 
 -- Hackathon registrations (separate from regular events, includes payment)
 create table if not exists public.hackathon_registrations (
@@ -337,17 +316,23 @@ begin
   if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='verification_token') then
     alter table public.join_applications add column verification_token uuid default gen_random_uuid();
   end if;
-  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='secret_code') then
-    alter table public.join_applications add column secret_code text not null default public.generate_secret_code();
+  -- Remove secret_code columns if they exist (migration to email-based auth)
+  if exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='secret_code') then
+    alter table public.join_applications drop column secret_code;
   end if;
-  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='secret_code') then
-    alter table public.members add column secret_code text;
-    update public.members m
-      set secret_code = ja.secret_code
-      from public.join_applications ja
-      where m.source_application = ja.id and m.secret_code is null;
-    update public.members set secret_code = public.generate_secret_code() where secret_code is null;
-    alter table public.members alter column secret_code set not null;
+  if exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='secret_code') then
+    alter table public.members drop column secret_code;
+  end if;
+  
+  -- Add welcome email tracking
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='join_applications' and column_name='welcome_email_sent') then
+    alter table public.join_applications add column welcome_email_sent boolean default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='welcome_email_sent') then
+    alter table public.members add column welcome_email_sent boolean default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='members' and column_name='email_verified') then
+    alter table public.members add column email_verified boolean default false;
   end if;
   
   -- Add fields from join_applications to members table
@@ -461,8 +446,7 @@ begin
   end if;
 end$$;
 
-create unique index if not exists idx_join_applications_secret_code on public.join_applications (secret_code);
-create unique index if not exists idx_members_secret_code on public.members (secret_code);
+-- Removed secret_code indexes - using email as primary identifier
 
 alter table public.member_activity drop constraint if exists member_activity_activity_type_check;
 alter table public.member_activity

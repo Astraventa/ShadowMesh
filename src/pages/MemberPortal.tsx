@@ -21,7 +21,6 @@ interface Member {
   email: string;
   created_at: string;
   cohort?: string;
-  secret_code?: string;
   area_of_interest?: string;
   password_hash?: string;
   motivation?: string;
@@ -130,8 +129,9 @@ export default function MemberPortal() {
   const [requestMessage, setRequestMessage] = useState("");
   const [showQRCode, setShowQRCode] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
-  const [loginCode, setLoginCode] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [setupToken, setSetupToken] = useState<string | null>(null);
   const [isSettingPassword, setIsSettingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -160,93 +160,53 @@ export default function MemberPortal() {
 
     // Check if user is already authenticated
     const authenticated = localStorage.getItem("shadowmesh_authenticated");
-    const storedCode = localStorage.getItem("shadowmesh_member_token");
+    const storedEmail = localStorage.getItem("shadowmesh_member_email");
     
-    if (authenticated === "true" && storedCode) {
+    // Check for password setup token from welcome email
+    const params = new URLSearchParams(window.location.search);
+    const setupParam = params.get("setup");
+    
+    if (setupParam) {
+      // User came from welcome email - show password setup
+      setSetupToken(setupParam);
+      setIsSettingPassword(true);
+      setShowLogin(true);
+      setLoading(false);
+    } else if (authenticated === "true" && storedEmail) {
       // User is authenticated, load data
-      loadMemberData(storedCode);
+      loadMemberDataByEmail(storedEmail);
     } else {
       // Show login screen
       setShowLogin(true);
       setLoading(false);
       
-      // Pre-fill code from URL if present
-      const params = new URLSearchParams(window.location.search);
-      const tokenParam = params.get("code") || params.get("token");
-      if (tokenParam) {
-        setLoginCode(tokenParam.trim().toUpperCase());
-      } else if (storedCode) {
-        setLoginCode(storedCode);
+      // Pre-fill email if available
+      if (storedEmail) {
+        setLoginEmail(storedEmail);
       }
     }
   }, []);
 
-  async function loadMemberData(token: string) {
+  async function loadMemberDataByEmail(email: string) {
     setLoading(true);
     try {
-      // Verify token and get member info
-      if (!token || typeof token !== 'string') {
-        throw new Error("Invalid token provided");
-      }
-      const payloadKey = token.includes("-") ? "verification_token" : "code";
-      const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ [payloadKey]: token }),
-      });
-
-      if (!verifyRes.ok) {
-        throw new Error("Invalid token");
+      if (!email || typeof email !== 'string') {
+        throw new Error("Invalid email provided");
       }
 
-      const verifyData = await verifyRes.json();
-      if (verifyData.status !== "approved") {
-        throw new Error("Your application is not approved yet");
-      }
-
-      // Get member details - try by email first, then by secret_code
-      let memberData = null;
-      let memberError = null;
-      
-      if (verifyData.email) {
-        const { data, error } = await supabase
-          .from("members")
-          .select("*")
-          .eq("email", verifyData.email)
-          .single();
-        memberData = data;
-        memberError = error;
-      }
-      
-      // If not found by email, try by secret_code
-      if (!memberData && verifyData.secret_code) {
-        const { data, error } = await supabase
-          .from("members")
-          .select("*")
-          .eq("secret_code", verifyData.secret_code.toUpperCase())
-          .single();
-        memberData = data;
-        memberError = error;
-      }
+      // Get member by email
+      const { data: memberData, error: memberError } = await supabase
+        .from("members")
+        .select("*")
+        .eq("email", email.trim().toLowerCase())
+        .single();
 
       if (memberError || !memberData) {
-        throw new Error("Member not found. Please ensure your application has been approved and you're using the correct code.");
-      }
-
-      // SECURITY: Verify that the code matches the member's secret_code
-      const providedCode = (verifyData.secret_code || token).toUpperCase();
-      const memberSecretCode = memberData.secret_code?.toUpperCase();
-      
-      if (memberSecretCode && providedCode !== memberSecretCode) {
-        throw new Error("Invalid access code. This code does not match your account.");
+        throw new Error("Member not found. Please ensure your application has been approved.");
       }
 
       setMember(memberData);
-      const storedCode = providedCode;
-      localStorage.setItem("shadowmesh_member_token", storedCode);
+      localStorage.setItem("shadowmesh_member_email", email.trim().toLowerCase());
       localStorage.setItem("shadowmesh_authenticated", "true");
 
       // Load events (workshops and other events, excluding hackathons)
@@ -431,7 +391,7 @@ export default function MemberPortal() {
     // Reload member data to refresh registrations
     const token = localStorage.getItem("shadowmesh_member_token");
     if (token) {
-      await loadMemberData(token);
+      await loadMemberDataByEmail(member?.email || "");
     }
   }
 
@@ -482,7 +442,7 @@ export default function MemberPortal() {
       toast({ title: "Team created!", description: "You can now invite teammates." });
       setShowTeamForm(null);
       setTeamName("");
-      void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
+      void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
     } catch (e: any) {
       toast({ title: "Failed to create team", description: e.message });
     }
@@ -599,7 +559,7 @@ export default function MemberPortal() {
 
       toast({ title: "Joined team!", description: "You've successfully joined the team." });
       setShowJoinTeam(null);
-      void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
+      void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
       if (selectedHackathonForTeams) {
         void loadHackathonTeamsAndPlayers(selectedHackathonForTeams);
       }
@@ -705,7 +665,7 @@ export default function MemberPortal() {
 
       toast({ title: "Invitation sent!", description: "The member will be notified and can accept your invitation." });
       setRequestMessage("");
-      void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
+      void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
       void loadHackathonRegisteredMembers(showFindTeammates || "");
     } catch (e: any) {
       toast({ title: "Failed to send invitation", description: e.message, variant: "destructive" });
@@ -753,15 +713,15 @@ export default function MemberPortal() {
       }
 
       toast({ title: accept ? "Request accepted!" : "Request rejected" });
-      void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
+      void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
     } catch (e: any) {
       toast({ title: "Failed to respond", description: e.message });
     }
   }
 
   async function handleLogin() {
-    if (!loginCode.trim()) {
-      toast({ title: "Code required", description: "Please enter your ShadowMesh code." });
+    if (!loginEmail.trim()) {
+      toast({ title: "Email required", description: "Please enter your registered email address." });
       return;
     }
 
@@ -786,41 +746,31 @@ export default function MemberPortal() {
     try {
       setLoading(true);
       
-      // First verify the code
-      const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ code: loginCode.trim().toUpperCase() }),
-      });
-
-      if (!verifyRes.ok) {
-        throw new Error("Invalid code. Please check your ShadowMesh code.");
-      }
-
-      const verifyData = await verifyRes.json();
-      if (verifyData.status !== "approved") {
-        throw new Error("Your application is not approved yet.");
-      }
-
-      // Get member by secret_code
+      // Get member by email
       const { data: memberData, error: memberError } = await supabase
         .from("members")
         .select("*")
-        .eq("secret_code", loginCode.trim().toUpperCase())
+        .eq("email", loginEmail.trim().toLowerCase())
         .single();
 
       if (memberError || !memberData) {
         throw new Error("Member not found. Please ensure your application has been approved.");
       }
 
-      // Check if password is set
-      if (!memberData.password_hash) {
-        // First time login - require password setup
+      // Handle password setup from welcome email token
+      if (setupToken && isSettingPassword) {
+        // Verify setup token
+        if (memberData.password_reset_token !== setupToken) {
+          throw new Error("Invalid setup token. Please use the link from your welcome email.");
+        }
+        
+        const expiresAt = memberData.password_reset_expires ? new Date(memberData.password_reset_expires) : null;
+        if (expiresAt && new Date() > expiresAt) {
+          throw new Error("Setup token has expired. Please request a new password reset.");
+        }
+
         if (!newPassword || !confirmPassword) {
-          setIsSettingPassword(true);
+          toast({ title: "Password required", description: "Please enter and confirm your password." });
           return;
         }
         
@@ -850,79 +800,98 @@ export default function MemberPortal() {
         }
 
         // Hash password using PBKDF2 (secure key derivation)
-        // Use member's secret_code for consistent salt generation
-        const passwordHash = await hashPassword(newPassword, memberData.secret_code || memberData.id);
+        // Use member's email for consistent salt generation
+        const passwordHash = await hashPassword(newPassword, memberData.email);
         
-        // Update member with password
+        // Update member with password and clear setup token
         const { error: updateError } = await supabase
           .from("members")
-          .update({ password_hash: passwordHash })
+          .update({ 
+            password_hash: passwordHash,
+            password_reset_token: null,
+            password_reset_expires: null,
+            email_verified: true
+          })
           .eq("id", memberData.id);
 
         if (updateError) throw updateError;
         
-        toast({ title: "Password set!", description: "Your password has been set successfully." });
+        toast({ title: "Password set!", description: "Your password has been set successfully. You can now log in." });
         setIsSettingPassword(false);
+        setSetupToken(null);
         setNewPassword("");
         setConfirmPassword("");
-      } else {
-        // Password is set - verify it
-        if (!loginPassword) {
-          toast({ title: "Password required", description: "Please enter your password." });
-          return;
-        }
-
-        // Verify password using member's secret_code for consistent salt
-        const isValid = await verifyPassword(loginPassword, memberData.password_hash, memberData.secret_code || memberData.id);
-        if (!isValid) {
-          // Increment failed attempts
-          const newFailedAttempts = failedAttempts + 1;
-          setFailedAttempts(newFailedAttempts);
-          
-          // Lock account after 3 failed attempts
-          if (newFailedAttempts >= 3) {
-            const lockTime = new Date();
-            lockTime.setMinutes(lockTime.getMinutes() + 15); // Lock for 15 minutes
-            setIsLocked(true);
-            setLockUntil(lockTime);
-            setShowForgotPassword(true);
-            
-            toast({ 
-              title: "Account locked", 
-              description: "Too many failed attempts. Account locked for 15 minutes. Use 'Forgot Password' to reset.",
-              variant: "destructive"
-            });
-          } else {
-            toast({ 
-              title: "Invalid password", 
-              description: `Incorrect password. ${3 - newFailedAttempts} attempt(s) remaining.`,
-              variant: "destructive"
-            });
-          }
-          return;
-        }
-        
-        // Successful login - reset failed attempts
-        setFailedAttempts(0);
-        setIsLocked(false);
-        setLockUntil(null);
-        setShowForgotPassword(false);
+        // Don't auto-login, let them log in with email+password
+        return;
       }
+
+      // Check if password is set
+      if (!memberData.password_hash) {
+        // First time login - require password setup
+        toast({ 
+          title: "Password not set", 
+          description: "Please check your email for the password setup link, or use 'Forgot Password' to set one.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Password is set - verify it
+      if (!loginPassword) {
+        toast({ title: "Password required", description: "Please enter your password." });
+        return;
+      }
+
+      // Verify password using member's email for consistent salt
+      const isValid = await verifyPassword(loginPassword, memberData.password_hash, memberData.email);
+      if (!isValid) {
+        // Increment failed attempts
+        const newFailedAttempts = failedAttempts + 1;
+        setFailedAttempts(newFailedAttempts);
+        
+        // Lock account after 3 failed attempts
+        if (newFailedAttempts >= 3) {
+          const lockTime = new Date();
+          lockTime.setMinutes(lockTime.getMinutes() + 15); // Lock for 15 minutes
+          setIsLocked(true);
+          setLockUntil(lockTime);
+          setShowForgotPassword(true);
+          
+          toast({ 
+            title: "Account locked", 
+            description: "Too many failed attempts. Account locked for 15 minutes. Use 'Forgot Password' to reset.",
+            variant: "destructive"
+          });
+        } else {
+          toast({ 
+            title: "Invalid password", 
+            description: `Incorrect password. ${3 - newFailedAttempts} attempt(s) remaining.`,
+            variant: "destructive"
+          });
+        }
+        return;
+      }
+      
+      // Successful login - reset failed attempts
+      setFailedAttempts(0);
+      setIsLocked(false);
+      setLockUntil(null);
+      setShowForgotPassword(false);
 
       // Authentication successful
       setMember(memberData);
-      localStorage.setItem("shadowmesh_member_token", loginCode.trim().toUpperCase());
+      localStorage.setItem("shadowmesh_member_email", loginEmail.trim().toLowerCase());
       localStorage.setItem("shadowmesh_authenticated", "true");
       setShowLogin(false);
       setLoginPassword("");
-      setLoginCode("");
+      setLoginEmail("");
       setFailedAttempts(0);
       setIsLocked(false);
       setLockUntil(null);
       setShowForgotPassword(false);
       
       // Load member data
-      await loadMemberData(loginCode.trim().toUpperCase());
+      await loadMemberDataByEmail(loginEmail.trim().toLowerCase());
     } catch (e: any) {
       toast({ title: "Login failed", description: e.message || "Please try again." });
     } finally {
@@ -930,15 +899,15 @@ export default function MemberPortal() {
     }
   }
 
-  async function hashPassword(password: string, memberIdOrCode: string): Promise<string> {
+  async function hashPassword(password: string, email: string): Promise<string> {
     // Enhanced password hashing with PBKDF2 for better security
     // Using PBKDF2 with 100,000 iterations to resist brute force attacks
     const encoder = new TextEncoder();
     const passwordData = encoder.encode(password);
     
-    // Generate salt from member ID or code (deterministic but unique per user)
-    // Use memberIdOrCode to ensure consistent salt generation
-    const saltData = encoder.encode((memberIdOrCode || loginCode || "").trim().toUpperCase() + "shadowmesh_salt");
+    // Generate salt from email (deterministic but unique per user)
+    // Use email to ensure consistent salt generation
+    const saltData = encoder.encode(email.trim().toLowerCase() + "shadowmesh_salt");
     
     // Import key for PBKDF2
     const keyMaterial = await crypto.subtle.importKey(
@@ -966,8 +935,8 @@ export default function MemberPortal() {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  async function verifyPassword(password: string, hash: string, memberIdOrCode: string): Promise<boolean> {
-    const passwordHash = await hashPassword(password, memberIdOrCode);
+  async function verifyPassword(password: string, hash: string, email: string): Promise<boolean> {
+    const passwordHash = await hashPassword(password, email);
     return passwordHash === hash;
   }
 
@@ -1083,20 +1052,25 @@ export default function MemberPortal() {
             </div>
             <CardTitle className="text-2xl text-center">ShadowMesh Portal</CardTitle>
             <CardDescription className="text-center">
-              Enter your code and password to access your member dashboard
+              {isSettingPassword && setupToken 
+                ? "Set up your password to access your member dashboard"
+                : "Enter your email and password to access your member dashboard"}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">ShadowMesh Code</label>
-              <Input
-                value={loginCode}
-                onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
-                placeholder="SMXXXXXX"
-                className="font-mono text-center text-lg"
-                disabled={loading}
-              />
-            </div>
+            {!isSettingPassword && (
+              <div>
+                <label className="block text-sm font-medium mb-2">Email Address</label>
+                <Input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value.toLowerCase())}
+                  placeholder="your.email@example.com"
+                  className="text-center"
+                  disabled={loading}
+                />
+              </div>
+            )}
             
             {isSettingPassword ? (
               <>
@@ -2130,7 +2104,7 @@ export default function MemberPortal() {
                 feeCurrency={hackathons.find((h) => h.id === showHackathonReg)?.fee_currency || "PKR"}
                 onSuccess={() => {
                   setShowHackathonReg(null);
-                  void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
+                  void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
                 }}
               />
             </DialogContent>

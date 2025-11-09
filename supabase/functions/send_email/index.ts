@@ -101,6 +101,12 @@ serve(async (req) => {
         </body>
         </html>
       `;
+    } else if (type === "welcome") {
+      // Welcome email template is provided in html parameter
+      emailSubject = emailSubject || "Welcome to ShadowMesh";
+    } else if (type === "rejection") {
+      // Rejection email template is provided in html parameter
+      emailSubject = emailSubject || "ShadowMesh Application Update";
     }
 
     // Send email via Resend API
