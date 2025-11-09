@@ -45,6 +45,13 @@ interface Event {
   registration_link?: string;
   max_participants?: number;
   is_member_only: boolean;
+  created_at?: string;
+  payment_required?: boolean;
+  fee_amount?: number;
+  fee_currency?: string;
+  category?: string;
+  tags?: string[];
+  registration_deadline?: string;
 }
 
 interface Resource {
@@ -80,6 +87,7 @@ interface TeamRequest {
   id: string;
   team_id: string;
   from_member_id: string;
+  to_member_id: string;
   status: string;
   message?: string;
   team_name?: string;
@@ -117,6 +125,7 @@ export default function MemberPortal() {
   const [showJoinTeam, setShowJoinTeam] = useState<string | null>(null);
   const [selectedHackathonForTeams, setSelectedHackathonForTeams] = useState<string | null>(null);
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
+  const [expandedHackathons, setExpandedHackathons] = useState<Set<string>>(new Set());
   const [teamName, setTeamName] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
   const [showQRCode, setShowQRCode] = useState(false);
@@ -134,15 +143,15 @@ export default function MemberPortal() {
   const [feedbackEventId, setFeedbackEventId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Load viewed hackathons from localStorage
-    const viewed = localStorage.getItem("shadowmesh_hackathons_viewed");
-    if (viewed) {
-      try {
-        setHackathonsViewed(new Set(JSON.parse(viewed)));
-      } catch (e) {
-        console.error("Error loading viewed hackathons:", e);
-      }
-    }
+    // Load viewed hackathons from localStorage (if needed in future)
+    // const viewed = localStorage.getItem("shadowmesh_hackathons_viewed");
+    // if (viewed) {
+    //   try {
+    //     setHackathonsViewed(new Set(JSON.parse(viewed)));
+    //   } catch (e) {
+    //     console.error("Error loading viewed hackathons:", e);
+    //   }
+    // }
 
     // Check if user is already authenticated
     const authenticated = localStorage.getItem("shadowmesh_authenticated");
@@ -1430,9 +1439,19 @@ export default function MemberPortal() {
                   const reg = hackathonRegistrations.find((r) => r.hackathon_id === hackathon.id);
                   const userTeam = teams.find((t) => t.hackathon_id === hackathon.id);
                   const isApproved = reg?.status === "approved";
+                  const isNew = new Date(hackathon.created_at) > new Date(Date.now() - 24 * 60 * 60 * 1000);
+                  const isExpanded = expandedHackathons.has(hackathon.id);
 
                   return (
-                    <Card key={hackathon.id} className="bg-gradient-to-br from-purple-500/10 to-purple-500/5 border-purple-500/30 backdrop-blur-sm hover:border-purple-500/50 transition-all duration-300">
+                    <Card 
+                      key={hackathon.id} 
+                      className="bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-sm border-border/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/10 relative overflow-hidden"
+                    >
+                      {isNew && (
+                        <div className="absolute top-2 right-2 z-10">
+                          <Badge variant="destructive">NEW</Badge>
+                        </div>
+                      )}
                       <CardHeader>
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
@@ -1445,6 +1464,8 @@ export default function MemberPortal() {
                                 Hackathon
                               </Badge>
                               <span className="text-sm text-muted-foreground">•</span>
+                              <Badge variant="secondary" className="text-xs">Upcoming</Badge>
+                              <span className="text-sm text-muted-foreground">•</span>
                               <span className="text-sm text-muted-foreground">{formatDate(hackathon.start_date)}</span>
                             </div>
                           </div>
@@ -1456,16 +1477,150 @@ export default function MemberPortal() {
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        {hackathon.description && <p className="text-sm text-muted-foreground">{hackathon.description}</p>}
+                        {hackathon.description && !isExpanded && (
+                          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">{hackathon.description}</p>
+                        )}
+                        {isExpanded && (
+                          <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                            {hackathon.description && (
+                              <div>
+                                <p className="text-sm font-medium mb-1">Description</p>
+                                <p className="text-sm text-muted-foreground leading-relaxed">{hackathon.description}</p>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              {hackathon.start_date && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">Start Date</p>
+                                  <p>{formatDate(hackathon.start_date)}</p>
+                                </div>
+                              )}
+                              {hackathon.end_date && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">End Date</p>
+                                  <p>{formatDate(hackathon.end_date)}</p>
+                                </div>
+                              )}
+                              {hackathon.location && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground mb-1">📍 Location</p>
+                                  <p>{hackathon.location}</p>
+                                </div>
+                              )}
+                              {hackathon.max_participants && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">Max Participants</p>
+                                  <p>{hackathon.max_participants}</p>
+                                </div>
+                              )}
+                              {hackathon.registration_deadline && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">Registration Deadline</p>
+                                  <p>{formatDate(hackathon.registration_deadline)}</p>
+                                </div>
+                              )}
+                              {hackathon.payment_required && hackathon.fee_amount && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground mb-1">Fee</p>
+                                  <p className="font-semibold">{hackathon.fee_amount} {hackathon.fee_currency}</p>
+                                </div>
+                              )}
+                              {hackathon.category && (
+                                <div>
+                                  <p className="text-muted-foreground mb-1">Category</p>
+                                  <Badge variant="outline" className="capitalize">{hackathon.category}</Badge>
+                                </div>
+                              )}
+                              {hackathon.tags && Array.isArray(hackathon.tags) && hackathon.tags.length > 0 && (
+                                <div className="col-span-2">
+                                  <p className="text-muted-foreground mb-1">Tags</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {hackathon.tags.filter((tag: any) => tag && typeof tag === 'string').map((tag: string, idx: number) => (
+                                      <Badge key={idx} variant="secondary" className="text-xs">{tag}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {hackathon.registration_link && (
+                              <div>
+                                <Button variant="outline" size="sm" asChild className="w-full">
+                                  <a href={hackathon.registration_link} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="w-4 h-4 mr-2" />
+                                    External Registration Link
+                                  </a>
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {!isExpanded && (
+                          <div className="space-y-2 text-sm">
+                            {hackathon.location && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">📍</span>
+                                <span>{hackathon.location}</span>
+                              </div>
+                            )}
+                            {hackathon.max_participants && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">👥</span>
+                                <span>Max {hackathon.max_participants} participants</span>
+                              </div>
+                            )}
+                            {hackathon.registration_deadline && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">📅</span>
+                                <span>Registration deadline: {formatDate(hackathon.registration_deadline)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex gap-2 pt-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const newExpanded = new Set(expandedHackathons);
+                              if (isExpanded) {
+                                newExpanded.delete(hackathon.id);
+                              } else {
+                                newExpanded.add(hackathon.id);
+                              }
+                              setExpandedHackathons(newExpanded);
+                            }}
+                            className="flex items-center gap-1"
+                          >
+                            {isExpanded ? (
+                              <>
+                                <ChevronDown className="w-4 h-4" />
+                                Less
+                              </>
+                            ) : (
+                              <>
+                                <ChevronRight className="w-4 h-4" />
+                                More Details
+                              </>
+                            )}
+                          </Button>
+                          {!reg ? (
+                            <Button 
+                              variant="default" 
+                              className="flex-1 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-600/90 hover:to-purple-800/90"
+                              onClick={() => setShowHackathonReg(hackathon.id)}
+                            >
+                              Register for Hackathon
+                            </Button>
+                          ) : null}
+                        </div>
                         
                         {!reg ? (
-                          <div>
+                          <div className="mt-2">
                             {hackathon.payment_required ? (
-                              <p className="text-sm mb-3">This hackathon requires payment and registration.</p>
+                              <p className="text-sm text-muted-foreground">This hackathon requires payment and registration.</p>
                             ) : (
-                              <p className="text-sm mb-3">Register to participate in this hackathon.</p>
+                              <p className="text-sm text-muted-foreground">Register to participate in this hackathon.</p>
                             )}
-                            <Button onClick={() => setShowHackathonReg(hackathon.id)}>Register for Hackathon</Button>
                           </div>
                         ) : reg.status === "pending" ? (
                           <div className="space-y-2">
@@ -1752,6 +1907,9 @@ export default function MemberPortal() {
                 hackathonId={showHackathonReg}
                 hackathonTitle={hackathons.find((h) => h.id === showHackathonReg)?.title || "Hackathon"}
                 memberId={member.id}
+                paymentRequired={hackathons.find((h) => h.id === showHackathonReg)?.payment_required || false}
+                feeAmount={hackathons.find((h) => h.id === showHackathonReg)?.fee_amount || 0}
+                feeCurrency={hackathons.find((h) => h.id === showHackathonReg)?.fee_currency || "PKR"}
                 onSuccess={() => {
                   setShowHackathonReg(null);
                   void loadMemberData(localStorage.getItem("shadowmesh_member_token") || "");
@@ -2011,8 +2169,9 @@ export default function MemberPortal() {
                       ) : (
                         <div className="grid gap-4">
                           {hackathonTeams.map((team: any) => {
-                            const isInTeam = userTeam?.id === team.id;
-                            const canJoin = !isInTeam && !userTeam && team.members.length < (team.max_members || 4);
+                            const currentUserTeam = teams.find((t) => t.hackathon_id === selectedHackathonForTeams);
+                            const isInTeam = currentUserTeam?.id === team.id;
+                            const canJoin = !isInTeam && !currentUserTeam && team.members.length < (team.max_members || 4);
                             
                             return (
                               <Card key={team.id} className="p-4">

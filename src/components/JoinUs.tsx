@@ -279,7 +279,7 @@ const JoinUs = () => {
               </TabsList>
 
               <TabsContent value="register">
-                {success ? (
+            {success ? (
               <div className="text-center py-12">
                 <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
@@ -421,9 +421,9 @@ const JoinUs = () => {
                     <a href="#events">View Upcoming Events</a>
                 </Button>
               </div>
-                    <p className="text-xs text-muted-foreground mt-3">Your data will be securely stored and used only for ShadowMesh community and event purposes.</p>
-                  </form>
-                )}
+                <p className="text-xs text-muted-foreground mt-3">Your data will be securely stored and used only for ShadowMesh community and event purposes.</p>
+            </form>
+            )}
               </TabsContent>
 
               <TabsContent value="status">
