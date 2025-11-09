@@ -6,12 +6,44 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Rate limiting: Max 100 requests per IP per minute
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const key = `${ip}:${Math.floor(now / 60000)}`; // Per minute
+  const limit = rateLimitStore.get(key);
+
+  if (!limit || now > limit.resetAt) {
+    rateLimitStore.set(key, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+
+  if (limit.count >= 100) {
+    return false;
+  }
+
+  limit.count++;
+  return true;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+  }
+
+  // Rate limiting
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] || 
+                   req.headers.get('x-real-ip') || 
+                   'unknown';
+  if (!checkRateLimit(clientIp)) {
+    return new Response(
+      JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+      { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 
   const token = req.headers.get('x-admin-token');

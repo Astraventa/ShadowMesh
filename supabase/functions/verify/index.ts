@@ -12,6 +12,27 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// Rate limiting: Max 20 requests per IP per minute
+const verifyRateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function checkVerifyRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const key = `${ip}:${Math.floor(now / 60000)}`;
+  const limit = verifyRateLimitStore.get(key);
+
+  if (!limit || now > limit.resetAt) {
+    verifyRateLimitStore.set(key, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+
+  if (limit.count >= 20) {
+    return false;
+  }
+
+  limit.count++;
+  return true;
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -20,6 +41,17 @@ Deno.serve(async (req) => {
 
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS });
+  }
+
+  // Rate limiting
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0] || 
+                   req.headers.get('x-real-ip') || 
+                   'unknown';
+  if (!checkVerifyRateLimit(clientIp)) {
+    return new Response(
+      JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+      { status: 429, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+    );
   }
 
   try {

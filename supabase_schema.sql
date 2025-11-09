@@ -107,6 +107,35 @@ create table if not exists public.members (
 create index if not exists idx_members_created_at on public.members (created_at desc);
 create index if not exists idx_members_email on public.members (email);
 
+-- Add security columns to members table if they don't exist
+do $$
+begin
+  -- Password fields
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'password_hash') then
+    alter table public.members add column password_hash text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'password_reset_token') then
+    alter table public.members add column password_reset_token text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'password_reset_expires') then
+    alter table public.members add column password_reset_expires timestamptz;
+  end if;
+  
+  -- 2FA fields
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'two_factor_secret') then
+    alter table public.members add column two_factor_secret text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'two_factor_enabled') then
+    alter table public.members add column two_factor_enabled boolean default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'two_factor_otp') then
+    alter table public.members add column two_factor_otp text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'two_factor_otp_expires') then
+    alter table public.members add column two_factor_otp_expires timestamptz;
+  end if;
+end$$;
+
 -- Events table for workshops, hackathons, etc.
 create table if not exists public.events (
   id                uuid primary key default gen_random_uuid(),

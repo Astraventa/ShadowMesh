@@ -135,6 +135,11 @@ export default function MemberPortal() {
   const [isSettingPassword, setIsSettingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockUntil, setLockUntil] = useState<Date | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackType, setFeedbackType] = useState("general");
   const [feedbackSubject, setFeedbackSubject] = useState("");
@@ -760,6 +765,24 @@ export default function MemberPortal() {
       return;
     }
 
+    // Check if account is locked
+    if (isLocked && lockUntil && new Date() < lockUntil) {
+      const minutesLeft = Math.ceil((lockUntil.getTime() - new Date().getTime()) / 60000);
+      toast({ 
+        title: "Account temporarily locked", 
+        description: `Too many failed attempts. Please try again in ${minutesLeft} minute(s).`,
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Reset lock if time has passed
+    if (isLocked && lockUntil && new Date() >= lockUntil) {
+      setIsLocked(false);
+      setLockUntil(null);
+      setFailedAttempts(0);
+    }
+
     try {
       setLoading(true);
       
@@ -801,8 +824,23 @@ export default function MemberPortal() {
           return;
         }
         
-        if (newPassword.length < 6) {
-          toast({ title: "Password too short", description: "Password must be at least 6 characters." });
+        if (newPassword.length < 8) {
+          toast({ title: "Password too short", description: "Password must be at least 8 characters." });
+          return;
+        }
+        
+        // Check password strength
+        const hasUpperCase = /[A-Z]/.test(newPassword);
+        const hasLowerCase = /[a-z]/.test(newPassword);
+        const hasNumbers = /\d/.test(newPassword);
+        const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(newPassword);
+        
+        if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+          toast({ 
+            title: "Weak password", 
+            description: "Password must contain uppercase, lowercase, numbers, and special characters.",
+            variant: "destructive"
+          });
           return;
         }
         
@@ -811,7 +849,7 @@ export default function MemberPortal() {
           return;
         }
 
-        // Hash password (simple hash for now - in production use bcrypt)
+        // Hash password using PBKDF2 (secure key derivation)
         const passwordHash = await hashPassword(newPassword);
         
         // Update member with password
@@ -835,9 +873,38 @@ export default function MemberPortal() {
 
         const isValid = await verifyPassword(loginPassword, memberData.password_hash);
         if (!isValid) {
-          toast({ title: "Invalid password", description: "The password you entered is incorrect." });
+          // Increment failed attempts
+          const newFailedAttempts = failedAttempts + 1;
+          setFailedAttempts(newFailedAttempts);
+          
+          // Lock account after 3 failed attempts
+          if (newFailedAttempts >= 3) {
+            const lockTime = new Date();
+            lockTime.setMinutes(lockTime.getMinutes() + 15); // Lock for 15 minutes
+            setIsLocked(true);
+            setLockUntil(lockTime);
+            setShowForgotPassword(true);
+            
+            toast({ 
+              title: "Account locked", 
+              description: "Too many failed attempts. Account locked for 15 minutes. Use 'Forgot Password' to reset.",
+              variant: "destructive"
+            });
+          } else {
+            toast({ 
+              title: "Invalid password", 
+              description: `Incorrect password. ${3 - newFailedAttempts} attempt(s) remaining.`,
+              variant: "destructive"
+            });
+          }
           return;
         }
+        
+        // Successful login - reset failed attempts
+        setFailedAttempts(0);
+        setIsLocked(false);
+        setLockUntil(null);
+        setShowForgotPassword(false);
       }
 
       // Authentication successful
@@ -847,6 +914,10 @@ export default function MemberPortal() {
       setShowLogin(false);
       setLoginPassword("");
       setLoginCode("");
+      setFailedAttempts(0);
+      setIsLocked(false);
+      setLockUntil(null);
+      setShowForgotPassword(false);
       
       // Load member data
       await loadMemberData(loginCode.trim().toUpperCase());
@@ -858,17 +929,99 @@ export default function MemberPortal() {
   }
 
   async function hashPassword(password: string): Promise<string> {
-    // Simple hash using Web Crypto API (in production, use bcrypt on server)
+    // Enhanced password hashing with PBKDF2 for better security
+    // Using PBKDF2 with 100,000 iterations to resist brute force attacks
     const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const passwordData = encoder.encode(password);
+    
+    // Generate salt from code (deterministic but unique per user)
+    const saltData = encoder.encode(loginCode.trim().toUpperCase() + "shadowmesh_salt");
+    
+    // Import key for PBKDF2
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      passwordData,
+      { name: "PBKDF2" },
+      false,
+      ["deriveBits"]
+    );
+    
+    // Derive key with 100,000 iterations (slows down brute force attacks)
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
+        salt: saltData,
+        iterations: 100000,
+        hash: "SHA-256"
+      },
+      keyMaterial,
+      256
+    );
+    
+    // Convert to hex string
+    const hashArray = Array.from(new Uint8Array(derivedBits));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
   async function verifyPassword(password: string, hash: string): Promise<boolean> {
     const passwordHash = await hashPassword(password);
     return passwordHash === hash;
+  }
+
+  async function handleForgotPassword() {
+    if (!resetEmail.trim()) {
+      toast({ title: "Email required", description: "Please enter your registered email address." });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Call password reset edge function with rate limiting
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/password_reset`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "request",
+          email: resetEmail.trim().toLowerCase(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          toast({ 
+            title: "Too many requests", 
+            description: data.message || "Please try again later.",
+            variant: "destructive"
+          });
+        } else {
+          toast({ 
+            title: "Reset link sent", 
+            description: "If this email is registered, you will receive password reset instructions via email.",
+          });
+        }
+        return;
+      }
+
+      toast({ 
+        title: "Reset link sent", 
+        description: data.message || "If this email is registered, you will receive password reset instructions via email.",
+      });
+      
+    } catch (e: any) {
+      // Still show generic message for security
+      toast({ 
+        title: "Reset link sent", 
+        description: "If this email is registered, you will receive password reset instructions.",
+      });
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function submitFeedback() {
@@ -945,7 +1098,7 @@ export default function MemberPortal() {
             {isSettingPassword ? (
               <>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Set Password (min 6 characters)</label>
+                  <label className="block text-sm font-medium mb-2">Set Password (min 8 characters, must include uppercase, lowercase, numbers, and special characters)</label>
                   <Input
                     type="password"
                     value={newPassword}
@@ -1004,6 +1157,37 @@ export default function MemberPortal() {
               >
                 Cancel
               </Button>
+            )}
+            
+            {showForgotPassword && (
+              <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+                <p className="text-sm text-yellow-400 mb-2">
+                  Account locked after 3 failed attempts. Use forgot password to reset.
+                </p>
+                <div className="space-y-2">
+                  <Input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="Enter your registered email"
+                    disabled={loading}
+                  />
+                  <Button
+                    variant="outline"
+                    className="w-full border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/20"
+                    onClick={handleForgotPassword}
+                    disabled={loading || !resetEmail.trim()}
+                  >
+                    Reset Password
+                  </Button>
+                </div>
+              </div>
+            )}
+            
+            {isLocked && lockUntil && (
+              <p className="text-xs text-destructive text-center mt-2">
+                ⚠️ Account locked. Try again in {Math.ceil((lockUntil.getTime() - new Date().getTime()) / 60000)} minute(s).
+              </p>
             )}
             
             <p className="text-xs text-muted-foreground text-center mt-4">
@@ -1069,6 +1253,15 @@ export default function MemberPortal() {
               >
                 <QrCode className="w-4 h-4 mr-2" />
                 QR Code
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowFeedback(true)}
+                className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Feedback
               </Button>
             </div>
           </div>
@@ -1459,18 +1652,18 @@ export default function MemberPortal() {
                       <CardHeader>
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
-                            <CardTitle className="text-xl mb-2 flex items-center gap-2">
-                              <Trophy className="w-5 h-5 text-purple-400" />
+                            <CardTitle className="text-2xl font-bold mb-2 flex items-center gap-2 text-red-100">
+                              <Trophy className="w-6 h-6 text-amber-400" />
                               {hackathon.title}
                             </CardTitle>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <Badge variant="outline" className="bg-purple-500/20 border-purple-500/30 text-purple-300">
+                            <div className="flex items-center gap-2 flex-wrap text-red-100/80">
+                              <Badge variant="outline" className="bg-red-800/30 border-red-600/50 text-red-200">
                                 Hackathon
                               </Badge>
-                              <span className="text-sm text-muted-foreground">•</span>
-                              <Badge variant="secondary" className="text-xs">Upcoming</Badge>
-                              <span className="text-sm text-muted-foreground">•</span>
-                              <span className="text-sm text-muted-foreground">{formatDate(hackathon.start_date)}</span>
+                              <span className="text-sm">•</span>
+                              <Badge variant="secondary" className="text-xs bg-amber-800/30 text-amber-200 border-amber-600/50">Upcoming</Badge>
+                              <span className="text-sm">•</span>
+                              <span className="text-sm">{formatDate(hackathon.start_date)}</span>
                             </div>
                           </div>
                           {isApproved && (
@@ -1482,7 +1675,7 @@ export default function MemberPortal() {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         {hackathon.description && !isExpanded && (
-                          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">{hackathon.description}</p>
+                          <p className="text-sm text-red-100/80 leading-relaxed line-clamp-2">{hackathon.description}</p>
                         )}
                         {isExpanded && (
                           <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
