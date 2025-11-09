@@ -25,23 +25,36 @@ function getClientIP(): string {
   return `${navigator.userAgent.slice(0, 20)}-${screen.width}x${screen.height}`;
 }
 
-// Client-side TOTP verification (simplified)
-// Note: In production, this should be done server-side via edge function
+// Client-side TOTP verification (RFC 6238 compliant)
 async function verifyTOTPClient(secret: string, code: string): Promise<boolean> {
   try {
-    // Base32 decode
+    // Base32 decode with proper error handling
     const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     let bits = 0;
     let value = 0;
     const output: number[] = [];
     
-    for (let i = 0; i < secret.length; i++) {
-      value = (value << 5) | base32chars.indexOf(secret[i].toUpperCase());
+    // Remove padding and uppercase
+    const cleanSecret = secret.toUpperCase().replace(/=+$/, "");
+    
+    for (let i = 0; i < cleanSecret.length; i++) {
+      const charIndex = base32chars.indexOf(cleanSecret[i]);
+      if (charIndex === -1) {
+        // Invalid character in secret
+        console.error("Invalid base32 character in secret");
+        return false;
+      }
+      value = (value << 5) | charIndex;
       bits += 5;
       if (bits >= 8) {
         output.push((value >>> (bits - 8)) & 255);
         bits -= 8;
       }
+    }
+    
+    if (output.length === 0) {
+      console.error("Invalid secret: empty after decoding");
+      return false;
     }
     
     const key = new Uint8Array(output);
@@ -54,11 +67,13 @@ async function verifyTOTPClient(secret: string, code: string): Promise<boolean> 
       const testCounter = new Uint8Array(8);
       let tempTime = testTime;
       
+      // Convert time to 8-byte big-endian counter
       for (let j = 7; j >= 0; j--) {
         testCounter[j] = tempTime & 0xff;
         tempTime >>>= 8;
       }
       
+      // HMAC-SHA1
       const cryptoKey = await crypto.subtle.importKey(
         "raw",
         key,
@@ -70,6 +85,7 @@ async function verifyTOTPClient(secret: string, code: string): Promise<boolean> 
       const signature = await crypto.subtle.sign("HMAC", cryptoKey, testCounter);
       const sigArray = new Uint8Array(signature);
       
+      // Dynamic truncation (RFC 4226)
       const offset = sigArray[19] & 0x0f;
       const testCode = ((sigArray[offset] & 0x7f) << 24) |
                        ((sigArray[offset + 1] & 0xff) << 16) |
@@ -84,7 +100,8 @@ async function verifyTOTPClient(secret: string, code: string): Promise<boolean> 
     }
     
     return false;
-  } catch {
+  } catch (error) {
+    console.error("TOTP verification error:", error);
     return false;
   }
 }
@@ -241,6 +258,49 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
       saveLoginAttempt(false);
       setUsername("");
       setPassword("");
+    }
+  };
+
+  const handle2FAVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFactorCode.trim() || twoFactorCode.length !== 6) {
+      setError("Please enter a valid 6-digit code");
+      return;
+    }
+
+    setTwoFactorVerifying(true);
+    setError("");
+
+    try {
+      // Get admin 2FA secret from localStorage
+      const admin2FASecret = localStorage.getItem("shadowmesh_admin_2fa_secret");
+      
+      if (!admin2FASecret) {
+        throw new Error("2FA not properly configured");
+      }
+
+      // Verify TOTP code using proper TOTP verification
+      const code = twoFactorCode.trim();
+      if (!/^\d{6}$/.test(code)) {
+        throw new Error("Code must be 6 digits");
+      }
+
+      const isValid = await verifyTOTPClient(admin2FASecret, code);
+      
+      if (!isValid) {
+        throw new Error("Invalid 2FA code. Please enter the current code from your authenticator app.");
+      }
+      
+      // Success - authenticate
+      saveLoginAttempt(true);
+      sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
+      sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
+      onAuthenticated();
+    } catch (e: any) {
+      setError(e.message || "Invalid 2FA code. Please try again.");
+      setTwoFactorCode("");
+    } finally {
+      setTwoFactorVerifying(false);
     }
   };
 
