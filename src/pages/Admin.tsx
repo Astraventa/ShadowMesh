@@ -39,6 +39,104 @@ function formatDate(iso?: string | null) {
 	}
 }
 
+// Client-side TOTP verification (RFC 6238 compliant) - same as AdminFake404
+async function verifyTOTPClient(secret: string, code: string): Promise<boolean> {
+	// CRITICAL: Always return false if code is invalid format
+	if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+		console.error("Invalid code format:", code);
+		return false;
+	}
+
+	if (!secret || secret.length < 16) {
+		console.error("Invalid secret length:", secret?.length);
+		return false;
+	}
+
+	try {
+		// Base32 decode with proper error handling
+		const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+		let bits = 0;
+		let value = 0;
+		const output: number[] = [];
+		
+		// Remove padding and uppercase
+		const cleanSecret = secret.toUpperCase().replace(/=+$/, "").replace(/\s/g, "");
+		
+		if (cleanSecret.length === 0) {
+			console.error("Secret is empty after cleaning");
+			return false;
+		}
+		
+		for (let i = 0; i < cleanSecret.length; i++) {
+			const charIndex = base32chars.indexOf(cleanSecret[i]);
+			if (charIndex === -1) {
+				console.error("Invalid base32 character in secret at position", i, ":", cleanSecret[i]);
+				return false;
+			}
+			value = (value << 5) | charIndex;
+			bits += 5;
+			if (bits >= 8) {
+				output.push((value >>> (bits - 8)) & 255);
+				bits -= 8;
+			}
+		}
+		
+		if (output.length === 0) {
+			console.error("Invalid secret: empty after decoding");
+			return false;
+		}
+		
+		const key = new Uint8Array(output);
+		const timeStep = 30;
+		const now = Math.floor(Date.now() / 1000 / timeStep);
+		
+		// Check current time step and adjacent windows (for clock skew)
+		for (let i = -1; i <= 1; i++) {
+			const testTime = now + i;
+			const testCounter = new Uint8Array(8);
+			let tempTime = testTime;
+			
+			// Convert time to 8-byte big-endian counter
+			for (let j = 7; j >= 0; j--) {
+				testCounter[j] = tempTime & 0xff;
+				tempTime >>>= 8;
+			}
+			
+			// HMAC-SHA1
+			const cryptoKey = await crypto.subtle.importKey(
+				"raw",
+				key,
+				{ name: "HMAC", hash: "SHA-1" },
+				false,
+				["sign"]
+			);
+			
+			const signature = await crypto.subtle.sign("HMAC", cryptoKey, testCounter);
+			const sigArray = new Uint8Array(signature);
+			
+			// Dynamic truncation (RFC 4226)
+			const offset = sigArray[19] & 0x0f;
+			const testCode = ((sigArray[offset] & 0x7f) << 24) |
+							 ((sigArray[offset + 1] & 0xff) << 16) |
+							 ((sigArray[offset + 2] & 0xff) << 8) |
+							 (sigArray[offset + 3] & 0xff);
+			
+			const testCodeStr = (testCode % 1000000).toString().padStart(6, "0");
+			
+			if (testCodeStr === code) {
+				console.log("TOTP match found for time window:", i);
+				return true;
+			}
+		}
+		
+		console.log("No TOTP match found for code:", code);
+		return false;
+	} catch (error) {
+		console.error("TOTP verification error:", error);
+		return false;
+	}
+}
+
 function parseScanPayload(raw: string): { eventId?: string | null; code?: string | null } {
 	if (!raw) return { eventId: null, code: null };
 	const trimmed = raw.trim();
@@ -979,12 +1077,16 @@ const scannerLockRef = useRef(false);
 		try {
 			setTwoFactorVerifying(true);
 			
-			// Simple TOTP verification (basic implementation)
-			// In production, use a proper TOTP library like 'otpauth' or 'otplib'
-			// For now, we'll accept the code if it's 6 digits (user should verify manually)
 			const code = twoFactorCode.trim();
 			if (!/^\d{6}$/.test(code)) {
 				throw new Error("Code must be 6 digits");
+			}
+
+			// Verify TOTP code using the same verification function
+			const isValid = await verifyTOTPClient(twoFactorSecret, code);
+			
+			if (!isValid) {
+				throw new Error("Invalid code. Please enter the current 6-digit code from your authenticator app.");
 			}
 
 			// Store 2FA secret and enabled status in localStorage
@@ -1000,7 +1102,7 @@ const scannerLockRef = useRef(false);
 			
 			toast({ 
 				title: "2FA Enabled", 
-				description: "Two-factor authentication has been enabled for your admin account. Make sure to verify the code works with your authenticator app." 
+				description: "Two-factor authentication has been enabled for your admin account." 
 			});
 		} catch (e: any) {
 			toast({ title: "Verification failed", description: e.message || "Please try again.", variant: "destructive" });

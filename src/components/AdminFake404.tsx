@@ -27,6 +27,17 @@ function getClientIP(): string {
 
 // Client-side TOTP verification (RFC 6238 compliant)
 async function verifyTOTPClient(secret: string, code: string): Promise<boolean> {
+  // CRITICAL: Always return false if code is invalid format
+  if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+    console.error("Invalid code format:", code);
+    return false;
+  }
+
+  if (!secret || secret.length < 16) {
+    console.error("Invalid secret length:", secret?.length);
+    return false;
+  }
+
   try {
     // Base32 decode with proper error handling
     const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -35,13 +46,18 @@ async function verifyTOTPClient(secret: string, code: string): Promise<boolean> 
     const output: number[] = [];
     
     // Remove padding and uppercase
-    const cleanSecret = secret.toUpperCase().replace(/=+$/, "");
+    const cleanSecret = secret.toUpperCase().replace(/=+$/, "").replace(/\s/g, "");
+    
+    if (cleanSecret.length === 0) {
+      console.error("Secret is empty after cleaning");
+      return false;
+    }
     
     for (let i = 0; i < cleanSecret.length; i++) {
       const charIndex = base32chars.indexOf(cleanSecret[i]);
       if (charIndex === -1) {
         // Invalid character in secret
-        console.error("Invalid base32 character in secret");
+        console.error("Invalid base32 character in secret at position", i, ":", cleanSecret[i]);
         return false;
       }
       value = (value << 5) | charIndex;
@@ -95,10 +111,12 @@ async function verifyTOTPClient(secret: string, code: string): Promise<boolean> 
       const testCodeStr = (testCode % 1000000).toString().padStart(6, "0");
       
       if (testCodeStr === code) {
+        console.log("TOTP match found for time window:", i);
         return true;
       }
     }
     
+    console.log("No TOTP match found for code:", code);
     return false;
   } catch (error) {
     console.error("TOTP verification error:", error);
@@ -263,7 +281,11 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
 
   const handle2FAVerification = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!twoFactorCode.trim() || twoFactorCode.length !== 6) {
+    
+    const code = twoFactorCode.trim();
+    
+    // Strict validation
+    if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
       setError("Please enter a valid 6-digit code");
       return;
     }
@@ -275,28 +297,30 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
       // Get admin 2FA secret from localStorage
       const admin2FASecret = localStorage.getItem("shadowmesh_admin_2fa_secret");
       
-      if (!admin2FASecret) {
-        throw new Error("2FA not properly configured");
+      if (!admin2FASecret || admin2FASecret.length < 16) {
+        console.error("2FA secret missing or invalid:", admin2FASecret);
+        throw new Error("2FA not properly configured. Please disable and re-enable 2FA.");
       }
+
+      console.log("Verifying 2FA code:", code, "with secret:", admin2FASecret.substring(0, 4) + "...");
 
       // Verify TOTP code using proper TOTP verification
-      const code = twoFactorCode.trim();
-      if (!/^\d{6}$/.test(code)) {
-        throw new Error("Code must be 6 digits");
-      }
-
       const isValid = await verifyTOTPClient(admin2FASecret, code);
+      
+      console.log("TOTP verification result:", isValid);
       
       if (!isValid) {
         throw new Error("Invalid 2FA code. Please enter the current code from your authenticator app.");
       }
       
       // Success - authenticate
+      console.log("2FA verification successful");
       saveLoginAttempt(true);
       sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
       sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
       onAuthenticated();
     } catch (e: any) {
+      console.error("2FA verification error:", e);
       setError(e.message || "Invalid 2FA code. Please try again.");
       setTwoFactorCode("");
     } finally {
