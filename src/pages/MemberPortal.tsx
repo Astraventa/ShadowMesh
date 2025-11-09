@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import EventRegistration from "@/components/EventRegistration";
@@ -31,6 +31,9 @@ interface Member {
   organization?: string;
   role_title?: string;
   phone_e164?: string;
+  two_factor_enabled?: boolean;
+  two_factor_secret?: string;
+  email_verified?: boolean;
 }
 
 interface Event {
@@ -146,6 +149,11 @@ export default function MemberPortal() {
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackRating, setFeedbackRating] = useState<number | null>(null);
   const [feedbackEventId, setFeedbackEventId] = useState<string | null>(null);
+  const [show2FASetup, setShow2FASetup] = useState(false);
+  const [twoFactorSecret, setTwoFactorSecret] = useState<string | null>(null);
+  const [twoFactorQRCode, setTwoFactorQRCode] = useState<string | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorVerifying, setTwoFactorVerifying] = useState(false);
 
   useEffect(() => {
     // Load viewed hackathons from localStorage (if needed in future)
@@ -936,6 +944,112 @@ export default function MemberPortal() {
   async function verifyPassword(password: string, hash: string, email: string): Promise<boolean> {
     const passwordHash = await hashPassword(password, email);
     return passwordHash === hash;
+  }
+
+  async function handleSetup2FA() {
+    if (!member) return;
+    
+    try {
+      setTwoFactorVerifying(true);
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/two_factor_auth`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "setup",
+          memberId: member.id,
+          email: member.email,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to setup 2FA");
+      }
+
+      setTwoFactorSecret(data.secret);
+      setTwoFactorQRCode(data.qrCodeUri);
+      toast({ title: "2FA Setup", description: "Scan the QR code with your authenticator app." });
+    } catch (e: any) {
+      toast({ title: "Setup failed", description: e.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setTwoFactorVerifying(false);
+    }
+  }
+
+  async function handleEnable2FA() {
+    if (!member || !twoFactorCode.trim()) {
+      toast({ title: "Code required", description: "Please enter the 6-digit code from your authenticator app." });
+      return;
+    }
+
+    try {
+      setTwoFactorVerifying(true);
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/two_factor_auth`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "enable",
+          memberId: member.id,
+          otp: twoFactorCode.trim(),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to enable 2FA");
+      }
+
+      toast({ title: "2FA Enabled", description: "Two-factor authentication is now active on your account." });
+      setShow2FASetup(false);
+      setTwoFactorCode("");
+      setTwoFactorSecret(null);
+      setTwoFactorQRCode(null);
+      // Reload member data
+      await loadMemberDataByEmail(member.email);
+    } catch (e: any) {
+      toast({ title: "Enable failed", description: e.message || "Invalid code. Please try again.", variant: "destructive" });
+    } finally {
+      setTwoFactorVerifying(false);
+    }
+  }
+
+  async function handleDisable2FA() {
+    if (!member) return;
+    
+    if (!confirm("Are you sure you want to disable 2FA? This will reduce your account security.")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/two_factor_auth`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "disable",
+          memberId: member.id,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to disable 2FA");
+      }
+
+      toast({ title: "2FA Disabled", description: "Two-factor authentication has been disabled." });
+      // Reload member data
+      await loadMemberDataByEmail(member.email);
+    } catch (e: any) {
+      toast({ title: "Disable failed", description: e.message || "Please try again.", variant: "destructive" });
+    }
   }
 
   async function handleForgotPassword() {
@@ -2190,6 +2304,93 @@ export default function MemberPortal() {
                   Copy Member ID
                 </Button>
               </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* 2FA Setup Dialog */}
+        {show2FASetup && (
+          <Dialog open={show2FASetup} onOpenChange={setShow2FASetup}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Shield className="w-5 h-5" />
+                  Setup Two-Factor Authentication
+                </DialogTitle>
+                <DialogDescription>
+                  Add an extra layer of security to your account using an authenticator app.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                {!twoFactorQRCode ? (
+                  <div className="text-center space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Click the button below to generate a QR code for your authenticator app.
+                    </p>
+                    <Button
+                      onClick={handleSetup2FA}
+                      disabled={twoFactorVerifying}
+                      className="w-full"
+                    >
+                      {twoFactorVerifying ? "Generating..." : "Generate QR Code"}
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-center space-y-4">
+                      <p className="text-sm font-medium">Step 1: Scan QR Code</p>
+                      <p className="text-xs text-muted-foreground">
+                        Open your authenticator app (Google Authenticator, Authy, Microsoft Authenticator, etc.) and scan this QR code.
+                      </p>
+                      <div className="flex justify-center p-4 bg-white rounded-lg">
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(twoFactorQRCode)}`}
+                          alt="2FA QR Code"
+                          className="w-48 h-48"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Or enter this code manually: <span className="font-mono font-bold">{twoFactorSecret}</span>
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">Step 2: Enter Verification Code</p>
+                      <Input
+                        type="text"
+                        maxLength={6}
+                        value={twoFactorCode}
+                        onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="000000"
+                        className="text-center text-2xl font-mono tracking-widest"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Enter the 6-digit code from your authenticator app.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setShow2FASetup(false);
+                          setTwoFactorCode("");
+                          setTwoFactorSecret(null);
+                          setTwoFactorQRCode(null);
+                        }}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleEnable2FA}
+                        disabled={twoFactorCode.length !== 6 || twoFactorVerifying}
+                        className="flex-1"
+                      >
+                        {twoFactorVerifying ? "Verifying..." : "Enable 2FA"}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
             </DialogContent>
           </Dialog>
         )}

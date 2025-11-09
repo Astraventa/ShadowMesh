@@ -1778,8 +1778,8 @@ const scannerLockRef = useRef(false);
 										<p className="font-medium">{memberDetails.member.email}</p>
 									</div>
 									<div>
-										<label className="text-sm text-muted-foreground">ShadowMesh Code</label>
-										<p className="text-sm">{memberDetails.member.email}</p>
+										<label className="text-sm text-muted-foreground">Email Verified</label>
+										<p className="text-sm">{memberDetails.member.email_verified ? "✓ Verified" : "Not verified"}</p>
 									</div>
 									<div>
 										<label className="text-sm text-muted-foreground">Member Since</label>
