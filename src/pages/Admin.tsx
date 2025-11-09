@@ -11,6 +11,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { QrScanner } from "@yudiel/react-qr-scanner";
+import AdminFake404 from "@/components/AdminFake404";
+import { Shield, QrCode } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
 // Simple token gate using a shared moderator token stored in sessionStorage
 function useAdminToken() {
@@ -116,17 +119,31 @@ const Admin = () => {
 	const { token, save, clear } = useAdminToken();
 
     // Basic username/password gate (client-side only)
-    const [authed, setAuthed] = useState<boolean>(() => sessionStorage.getItem("shadowmesh_admin_basic_auth") === "1");
-    // Keyboard shortcut removed - login now shows directly when not authenticated
-
-    function onLogin(username: string, password: string) {
-        if (username === "zeeshanjay" && password === "haiderjax###") {
-            sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
-            setAuthed(true);
-        } else {
-            toast({ title: "Invalid credentials" });
+    const [authed, setAuthed] = useState<boolean>(() => {
+        const auth = sessionStorage.getItem("shadowmesh_admin_basic_auth");
+        const authTime = sessionStorage.getItem("shadowmesh_admin_authenticated_at");
+        if (auth === "1" && authTime) {
+            // Check if session is still valid (8 hours)
+            const authTimestamp = parseInt(authTime, 10);
+            const now = Date.now();
+            if (now - authTimestamp < 8 * 60 * 60 * 1000) {
+                return true;
+            } else {
+                // Session expired
+                sessionStorage.removeItem("shadowmesh_admin_basic_auth");
+                sessionStorage.removeItem("shadowmesh_admin_authenticated_at");
+            }
         }
-    }
+        return false;
+    });
+
+    // 2FA state
+    const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+    const [twoFactorSecret, setTwoFactorSecret] = useState<string | null>(null);
+    const [twoFactorQRCode, setTwoFactorQRCode] = useState<string | null>(null);
+    const [twoFactorCode, setTwoFactorCode] = useState("");
+    const [twoFactorVerifying, setTwoFactorVerifying] = useState(false);
+    const [twoFactorSetupMode, setTwoFactorSetupMode] = useState(false);
 
 	// Tabs
 	const [tab, setTab] = useState("applications");
@@ -886,20 +903,123 @@ const scannerLockRef = useRef(false);
 
 
 	// Show login screen if not authenticated
+	// Load 2FA status on mount
+	useEffect(() => {
+		if (authed) {
+			// Check if admin has 2FA enabled (stored in localStorage for now)
+			const admin2FA = localStorage.getItem("shadowmesh_admin_2fa_enabled");
+			setTwoFactorEnabled(admin2FA === "true");
+		}
+	}, [authed]);
+
+	async function handleSetup2FA() {
+		try {
+			setTwoFactorVerifying(true);
+			// For admin, we'll use a simple approach - generate secret and QR
+			const response = await fetch(`${SUPABASE_URL}/functions/v1/two_factor_auth`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					action: "setup",
+					email: "admin@shadowmesh.com", // Admin email
+				}),
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.error || "Failed to setup 2FA");
+			}
+
+			setTwoFactorSecret(data.secret);
+			setTwoFactorQRCode(data.qrCodeUri);
+			setTwoFactorSetupMode(true);
+			toast({ title: "2FA Setup", description: "Scan the QR code with your authenticator app." });
+		} catch (e: any) {
+			toast({ title: "Setup failed", description: e.message || "Please try again.", variant: "destructive" });
+		} finally {
+			setTwoFactorVerifying(false);
+		}
+	}
+
+	async function handleEnable2FA() {
+		if (!twoFactorCode.trim() || !twoFactorSecret) {
+			toast({ title: "Code required", description: "Please enter the 6-digit code from your authenticator app." });
+			return;
+		}
+
+		try {
+			setTwoFactorVerifying(true);
+			const response = await fetch(`${SUPABASE_URL}/functions/v1/two_factor_auth`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					action: "verify",
+					email: "admin@shadowmesh.com",
+					code: twoFactorCode.trim(),
+				}),
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data.error || "Invalid code");
+			}
+
+			if (data.valid) {
+				localStorage.setItem("shadowmesh_admin_2fa_enabled", "true");
+				localStorage.setItem("shadowmesh_admin_2fa_secret", twoFactorSecret);
+				setTwoFactorEnabled(true);
+				setTwoFactorSetupMode(false);
+				setTwoFactorSecret(null);
+				setTwoFactorQRCode(null);
+				setTwoFactorCode("");
+				toast({ title: "2FA Enabled", description: "Two-factor authentication has been enabled for your admin account." });
+			} else {
+				throw new Error("Invalid verification code");
+			}
+		} catch (e: any) {
+			toast({ title: "Verification failed", description: e.message || "Please try again.", variant: "destructive" });
+		} finally {
+			setTwoFactorVerifying(false);
+		}
+	}
+
+	async function handleDisable2FA() {
+		try {
+			const response = await fetch(`${SUPABASE_URL}/functions/v1/two_factor_auth`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({
+					action: "disable",
+					email: "admin@shadowmesh.com",
+				}),
+			});
+
+			if (!response.ok) {
+				throw new Error("Failed to disable 2FA");
+			}
+
+			localStorage.removeItem("shadowmesh_admin_2fa_enabled");
+			localStorage.removeItem("shadowmesh_admin_2fa_secret");
+			setTwoFactorEnabled(false);
+			setTwoFactorSecret(null);
+			setTwoFactorQRCode(null);
+			toast({ title: "2FA Disabled", description: "Two-factor authentication has been disabled." });
+		} catch (e: any) {
+			toast({ title: "Failed to disable 2FA", description: e.message || "Please try again.", variant: "destructive" });
+		}
+	}
+
 	if (!authed) {
-		return (
-			<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">
-				<Card className="w-full max-w-md">
-					<CardHeader>
-						<CardTitle>Administrator Login</CardTitle>
-						<CardDescription>Enter your credentials to access the admin dashboard</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<LoginForm onLogin={onLogin} />
-					</CardContent>
-				</Card>
-			</div>
-		);
+		return <AdminFake404 onAuthenticated={() => setAuthed(true)} />;
 	}
 
 	return (
@@ -949,6 +1069,7 @@ const scannerLockRef = useRef(false);
                         <TabsTrigger value="events">Events</TabsTrigger>
                         <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
                         <TabsTrigger value="feedback">Feedback</TabsTrigger>
+                        <TabsTrigger value="settings">Settings</TabsTrigger>
 					</TabsList>
 
 					<TabsContent value="applications">
@@ -1491,6 +1612,169 @@ const scannerLockRef = useRef(false);
 									<Button variant="outline" disabled={!feedbacksHasMore || feedbacksLoading} onClick={() => void loadFeedbacks(false)}>
 										{feedbacksLoading ? "Loading..." : feedbacksHasMore ? "Load more" : "No more"}
 									</Button>
+								</div>
+							</CardContent>
+						</Card>
+					</TabsContent>
+
+					<TabsContent value="settings">
+						<Card>
+							<CardHeader>
+								<CardTitle className="flex items-center gap-2">
+									<Shield className="w-5 h-5" />
+									Security Settings
+								</CardTitle>
+								<CardDescription>Manage your admin account security settings</CardDescription>
+							</CardHeader>
+							<CardContent className="space-y-6">
+								{/* Two-Factor Authentication Section */}
+								<div className="border rounded-lg p-6 space-y-4">
+									<div className="flex items-center justify-between">
+										<div>
+											<h3 className="font-semibold text-lg flex items-center gap-2">
+												<Shield className="w-5 h-5" />
+												Two-Factor Authentication (2FA)
+											</h3>
+											<p className="text-sm text-muted-foreground mt-1">
+												Add an extra layer of security to your admin account
+											</p>
+										</div>
+										<Badge variant={twoFactorEnabled ? "secondary" : "outline"}>
+											{twoFactorEnabled ? "Enabled" : "Disabled"}
+										</Badge>
+									</div>
+
+									{!twoFactorEnabled && !twoFactorSetupMode && (
+										<div className="space-y-4">
+											<p className="text-sm text-muted-foreground">
+												Two-factor authentication adds an additional security layer. When enabled, you'll need to enter a code from your authenticator app in addition to your password.
+											</p>
+											<Button
+												onClick={handleSetup2FA}
+												disabled={twoFactorVerifying}
+												className="w-full sm:w-auto"
+											>
+												{twoFactorVerifying ? "Setting up..." : "Enable 2FA"}
+											</Button>
+										</div>
+									)}
+
+									{twoFactorSetupMode && twoFactorQRCode && (
+										<div className="space-y-4">
+											<div className="bg-muted/50 p-4 rounded-lg border space-y-3">
+												<p className="text-sm font-medium">Scan this QR code with your authenticator app:</p>
+												<div className="flex justify-center p-4 bg-white rounded-lg">
+													<QRCodeSVG value={twoFactorQRCode} size={200} />
+												</div>
+												<p className="text-xs text-muted-foreground text-center">
+													Use apps like Google Authenticator, Authy, or Microsoft Authenticator
+												</p>
+											</div>
+
+											<div className="space-y-2">
+												<label className="text-sm font-medium">Enter 6-digit code from your app</label>
+												<Input
+													type="text"
+													value={twoFactorCode}
+													onChange={(e) => {
+														const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+														setTwoFactorCode(val);
+													}}
+													placeholder="000000"
+													maxLength={6}
+													className="text-center text-2xl tracking-widest font-mono"
+												/>
+											</div>
+
+											<div className="flex gap-2">
+												<Button
+													onClick={handleEnable2FA}
+													disabled={twoFactorCode.length !== 6 || twoFactorVerifying}
+													className="flex-1"
+												>
+													{twoFactorVerifying ? "Verifying..." : "Verify & Enable"}
+												</Button>
+												<Button
+													variant="outline"
+													onClick={() => {
+														setTwoFactorSetupMode(false);
+														setTwoFactorSecret(null);
+														setTwoFactorQRCode(null);
+														setTwoFactorCode("");
+													}}
+												>
+													Cancel
+												</Button>
+											</div>
+										</div>
+									)}
+
+									{twoFactorEnabled && !twoFactorSetupMode && (
+										<div className="space-y-4">
+											<div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+												<p className="text-sm text-green-700 dark:text-green-400 flex items-center gap-2">
+													<Shield className="w-4 h-4" />
+													Two-factor authentication is enabled for your admin account.
+												</p>
+											</div>
+											<Button
+												variant="destructive"
+												onClick={handleDisable2FA}
+												className="w-full sm:w-auto"
+											>
+												Disable 2FA
+											</Button>
+										</div>
+									)}
+								</div>
+
+								{/* Session Management */}
+								<div className="border rounded-lg p-6 space-y-4">
+									<h3 className="font-semibold text-lg">Session Management</h3>
+									<div className="space-y-2">
+										<p className="text-sm text-muted-foreground">
+											Your current session will expire after 8 hours of inactivity.
+										</p>
+										<Button
+											variant="outline"
+											onClick={() => {
+												sessionStorage.removeItem("shadowmesh_admin_basic_auth");
+												sessionStorage.removeItem("shadowmesh_admin_authenticated_at");
+												window.location.reload();
+											}}
+										>
+											Logout
+										</Button>
+									</div>
+								</div>
+
+								{/* Security Information */}
+								<div className="border rounded-lg p-6 space-y-4 bg-muted/30">
+									<h3 className="font-semibold text-lg">Security Features</h3>
+									<ul className="space-y-2 text-sm text-muted-foreground">
+										<li className="flex items-start gap-2">
+											<span className="text-green-500">✓</span>
+											<span>Rate limiting: Maximum 5 login attempts per minute</span>
+										</li>
+										<li className="flex items-start gap-2">
+											<span className="text-green-500">✓</span>
+											<span>Account lockout: 15 minutes after 5 failed attempts</span>
+										</li>
+										<li className="flex items-start gap-2">
+											<span className="text-green-500">✓</span>
+											<span>Session timeout: 8 hours</span>
+										</li>
+										<li className="flex items-start gap-2">
+											<span className="text-green-500">✓</span>
+											<span>Fake 404 page with secret click mechanism</span>
+										</li>
+										{twoFactorEnabled && (
+											<li className="flex items-start gap-2">
+												<span className="text-green-500">✓</span>
+												<span>Two-factor authentication enabled</span>
+											</li>
+										)}
+									</ul>
 								</div>
 							</CardContent>
 						</Card>
