@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { QrScanner } from "@yudiel/react-qr-scanner";
 import AdminFake404 from "@/components/AdminFake404";
-import { Shield, QrCode } from "lucide-react";
+import { Shield, QrCode, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 // Simple token gate using a shared moderator token stored in sessionStorage
@@ -151,6 +151,13 @@ const Admin = () => {
 
 	// Filters/search
 	const [search, setSearch] = useState("");
+	const [eventsFilter, setEventsFilter] = useState<string>("all");
+	const [hackathonsFilter, setHackathonsFilter] = useState<string>("all");
+	
+	// Loading states for actions
+	const [moderatingId, setModeratingId] = useState<string | null>(null);
+	const [savingEvent, setSavingEvent] = useState(false);
+	const [moderatingHackathonId, setModeratingHackathonId] = useState<string | null>(null);
 
 	// Data state - separate for each status
 	const [appsPending, setAppsPending] = useState<JoinRow[]>([]);
@@ -366,7 +373,7 @@ const scannerLockRef = useRef(false);
 				},
 				body: JSON.stringify({
 					type: "hackathon_registrations",
-					status: "all",
+					status: hackathonsFilter !== "all" ? hackathonsFilter : undefined,
 					search: search.trim() || undefined,
 					page,
 					pageSize: PAGE_SIZE,
@@ -433,6 +440,7 @@ const scannerLockRef = useRef(false);
                 body: JSON.stringify({
                     type: "events",
                     search: search.trim() || undefined,
+                    event_type: eventsFilter !== "all" ? eventsFilter : undefined,
                 }),
             });
             if (!res.ok) {
@@ -672,6 +680,7 @@ const scannerLockRef = useRef(false);
 
 	async function moderateHackathon(id: string, action: "approve" | "reject", reason?: string) {
         if (!token) return;
+		setModeratingHackathonId(id);
 		try {
 			const res = await fetch(`${SUPABASE_URL}/functions/v1/moderate_hackathon`, {
 				method: "POST",
@@ -686,7 +695,9 @@ const scannerLockRef = useRef(false);
 			toast({ title: `Hackathon registration ${action}d` });
 			void loadHackathonRegs(true);
 		} catch (e: any) {
-			toast({ title: "Moderation failed", description: e.message || String(e) });
+			toast({ title: "Moderation failed", description: e.message || String(e), variant: "destructive" });
+		} finally {
+			setModeratingHackathonId(null);
 		}
 	}
 
@@ -714,6 +725,7 @@ const scannerLockRef = useRef(false);
 			return;
 		}
 
+		setSavingEvent(true);
 		try {
 			const eventData: any = {
 				title: eventFormData.title.trim(),
@@ -879,6 +891,7 @@ const scannerLockRef = useRef(false);
 			toast({ title: "Admin token required", description: "Set the moderator token to perform actions." });
 			return;
 		}
+		setModeratingId(id);
 		try {
 			const res = await fetch(`${SUPABASE_URL}/functions/v1/moderate`, {
 				method: "POST",
@@ -889,15 +902,28 @@ const scannerLockRef = useRef(false);
 				},
 				body: JSON.stringify({ id, action, reason }),
 			});
-			if (!res.ok) throw new Error(await res.text());
-			toast({ title: `Marked ${action}` });
+			if (!res.ok) {
+				const errorText = await res.text();
+				throw new Error(errorText);
+			}
+			const result = await res.json();
+			toast({ 
+				title: `Application ${action}d`, 
+				description: action === "approve" ? "Welcome email has been sent to the member." : "Rejection email has been sent." 
+			});
 			// Reload all status lists
 			void loadApps("pending", true);
 			void loadApps("approved", true);
 			void loadApps("rejected", true);
 			if (action === "approve") void loadMembers(true);
 		} catch (e: any) {
-			toast({ title: "Moderation failed", description: e.message || String(e) });
+			toast({ 
+				title: "Moderation failed", 
+				description: e.message || String(e),
+				variant: "destructive"
+			});
+		} finally {
+			setModeratingId(null);
 		}
 	}
 
@@ -1083,8 +1109,29 @@ const scannerLockRef = useRef(false);
 														<TableCell className="capitalize">{r.affiliation}</TableCell>
 														<TableCell className="text-right space-x-2">
 															<Button size="sm" variant="outline" onClick={() => { setDetail(r); setOpenDetail(true); }}>View</Button>
-															<Button size="sm" variant="secondary" onClick={() => void moderate(r.id, "approve")}>Approve</Button>
-													<Button size="sm" variant="destructive" onClick={() => { setRejectingId(r.id); setRejectOpen(true); }}>Reject</Button>
+															<Button 
+																size="sm" 
+																variant="secondary" 
+																onClick={() => void moderate(r.id, "approve")}
+																disabled={moderatingId === r.id}
+															>
+																{moderatingId === r.id ? (
+																	<>
+																		<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+																		Processing...
+																	</>
+																) : (
+																	"Approve"
+																)}
+															</Button>
+													<Button 
+														size="sm" 
+														variant="destructive" 
+														onClick={() => { setRejectingId(r.id); setRejectOpen(true); }}
+														disabled={moderatingId === r.id}
+													>
+														Reject
+													</Button>
 															<Button size="sm" variant="ghost" onClick={() => void deleteItem("application", r.id)}>Delete</Button>
 														</TableCell>
 													</TableRow>
@@ -1227,9 +1274,10 @@ const scannerLockRef = useRef(false);
 							<CardHeader>
 								<div className="flex items-center justify-between">
 									<CardTitle>Events & Hackathons ({events.length})</CardTitle>
-									<Button onClick={() => {
-										setEditingEvent(null);
-										setEventFormData({
+									<Button 
+										onClick={() => {
+											setEditingEvent(null);
+											setEventFormData({
 											title: "",
 											description: "",
 											event_type: "workshop",
@@ -1433,11 +1481,32 @@ const scannerLockRef = useRef(false);
 														<TableCell className="text-right space-x-2">
 															{reg.status === "pending" && (
 																<>
-																	<Button size="sm" variant="secondary" onClick={() => void moderateHackathon(reg.id, "approve")}>Approve</Button>
-																	<Button size="sm" variant="destructive" onClick={() => {
-																		setHackRejectingId(reg.id);
-																		setHackRejectOpen(true);
-																	}}>Reject</Button>
+																	<Button 
+																		size="sm" 
+																		variant="secondary" 
+																		onClick={() => void moderateHackathon(reg.id, "approve")}
+																		disabled={moderatingHackathonId === reg.id}
+																	>
+																		{moderatingHackathonId === reg.id ? (
+																			<>
+																				<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+																				Processing...
+																			</>
+																		) : (
+																			"Approve"
+																		)}
+																	</Button>
+																	<Button 
+																		size="sm" 
+																		variant="destructive" 
+																		onClick={() => {
+																			setHackRejectingId(reg.id);
+																			setHackRejectOpen(true);
+																		}}
+																		disabled={moderatingHackathonId === reg.id}
+																	>
+																		Reject
+																	</Button>
 																</>
 															)}
 															{reg.payment_proof_url && (

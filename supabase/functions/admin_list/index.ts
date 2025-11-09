@@ -144,9 +144,11 @@ Deno.serve(async (req) => {
       if (status && status !== 'all') {
         url += `&status=eq.${status}`;
       }
+      // Note: PostgREST doesn't support nested field searches in or() clauses
+      // So we'll search only on transaction_id for now, or fetch and filter client-side
       if (search && search.trim()) {
         const s = encodeURIComponent(`%${search.trim()}%`);
-        url += `&or=(transaction_id.ilike.${s},members.full_name.ilike.${s},members.email.ilike.${s})`;
+        url += `&transaction_id.ilike.${s}`;
       }
 
       const res = await fetch(url, {
