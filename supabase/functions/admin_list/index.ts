@@ -261,6 +261,10 @@ Deno.serve(async (req) => {
       });
     } else if (type === 'events') {
       let url = `${SUPABASE_URL}/rest/v1/events?select=*&order=start_date.desc`;
+      const eventType = payload?.event_type as string | undefined;
+      if (eventType && eventType !== 'all') {
+        url += `&event_type=eq.${eventType}`;
+      }
       if (search && search.trim()) {
         const s = encodeURIComponent(`%${search.trim()}%`);
         url += `&title.ilike.${s}`;
