@@ -1227,15 +1227,16 @@ const scannerLockRef = useRef(false);
 											<TableHead>Name</TableHead>
 											<TableHead>Email</TableHead>
 											<TableHead>Cohort</TableHead>
-											<TableHead>Code</TableHead>
 											<TableHead>Status</TableHead>
+											<TableHead>Portal Access</TableHead>
+											<TableHead>From Email</TableHead>
 											<TableHead className="text-right">Actions</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
 										{members.length === 0 && !membersLoading ? (
 											<TableRow>
-												<TableCell colSpan={7} className="text-center text-muted-foreground">No members yet</TableCell>
+												<TableCell colSpan={8} className="text-center text-muted-foreground">No members yet</TableCell>
 											</TableRow>
 										) : (
 											members.map((m) => (
@@ -1243,10 +1244,7 @@ const scannerLockRef = useRef(false);
 													<TableCell>{formatDate(m.created_at)}</TableCell>
 													<TableCell>{m.full_name}</TableCell>
 													<TableCell>{m.email}</TableCell>
-											<TableCell>{m.cohort || "-"}</TableCell>
-										<TableCell>
-											<span className="text-xs text-muted-foreground">{m.email || "-"}</span>
-										</TableCell>
+													<TableCell>{m.cohort || "-"}</TableCell>
 											<TableCell>
 														<Badge variant="secondary">{m.status || "active"}</Badge>
 													</TableCell>
