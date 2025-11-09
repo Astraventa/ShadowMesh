@@ -1,4 +1,4 @@
-import { Sparkles, Copy, CheckCircle2, Shield, KeyRound } from "lucide-react";
+import { Sparkles, CheckCircle2, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -113,40 +113,7 @@ const JoinUs = () => {
     }
   }
 
-  async function checkStatus() {
-    if (!checkToken.trim()) {
-      toast({ title: "Enter your ShadowMesh code", description: "Use the code shown after submission or in your email." });
-      return;
-    }
-    setCheckingStatus(true);
-    setCheckResult(null);
-    try {
-      const payloadKey = checkToken.includes("-") ? "verification_token" : "code";
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ [payloadKey]: checkToken.trim() }),
-      });
-      if (res.ok) {
-        const info = await res.json();
-        setCheckResult(info);
-      } else {
-        const text = await res.text();
-        if (text === "not_found") {
-          setCheckResult({ status: "not_found" });
-        } else {
-          throw new Error(text);
-        }
-      }
-    } catch (e: any) {
-      toast({ title: "Check failed", description: e.message || "Please try again." });
-    } finally {
-      setCheckingStatus(false);
-    }
-  }
+  // checkStatus function removed - industry level approach, users notified via email
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
