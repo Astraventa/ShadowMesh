@@ -207,17 +207,31 @@ serve(async (req) => {
         const issuer = "ShadowMesh Admin";
         const totpUri = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?secret=${newSecret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 
-        // Store secret but don't enable yet (wait for verification)
-        const { error: updateError } = await supabase
+        // Upsert secret but don't enable yet (wait for verification)
+        // This will create the record if it doesn't exist, or update if it does
+        const { data: upsertedData, error: upsertError } = await supabase
           .from("admin_settings")
-          .update({
+          .upsert({
+            username: ADMIN_USERNAME,
             two_factor_secret: newSecret,
             two_factor_enabled: false,
             updated_at: new Date().toISOString(),
+          }, {
+            onConflict: "username"
           })
-          .eq("username", ADMIN_USERNAME);
+          .select()
+          .single();
 
-        if (updateError) throw updateError;
+        if (upsertError) {
+          console.error("Error upserting admin settings:", upsertError);
+          throw upsertError;
+        }
+
+        console.log("2FA setup - secret stored:", {
+          username: ADMIN_USERNAME,
+          hasSecret: !!upsertedData?.two_factor_secret,
+          enabled: upsertedData?.two_factor_enabled
+        });
 
         return new Response(
           JSON.stringify({
@@ -247,6 +261,19 @@ serve(async (req) => {
           );
         }
 
+        // Verify secret exists in database before enabling
+        if (!adminSettings?.two_factor_secret || adminSettings.two_factor_secret !== secret) {
+          console.error("Secret mismatch:", {
+            dbSecret: adminSettings?.two_factor_secret ? "exists" : "missing",
+            providedSecret: secret ? "exists" : "missing",
+            match: adminSettings?.two_factor_secret === secret
+          });
+          return new Response(
+            JSON.stringify({ error: "Secret mismatch. Please restart 2FA setup." }),
+            { status: 400, headers: corsHeaders() }
+          );
+        }
+
         // Enable 2FA
         const { data: updatedData, error: enableError } = await supabase
           .from("admin_settings")
@@ -264,10 +291,16 @@ serve(async (req) => {
           throw enableError;
         }
 
+        if (!updatedData) {
+          console.error("No data returned after enabling 2FA");
+          throw new Error("Failed to update 2FA status");
+        }
+
         console.log("2FA enabled successfully:", {
           username: ADMIN_USERNAME,
-          enabled: updatedData?.two_factor_enabled,
-          hasSecret: !!updatedData?.two_factor_secret
+          enabled: updatedData.two_factor_enabled,
+          hasSecret: !!updatedData.two_factor_secret,
+          recordId: updatedData.id
         });
 
         return new Response(
