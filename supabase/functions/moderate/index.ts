@@ -102,7 +102,13 @@ Deno.serve(async (req) => {
     if (action === 'approve' && app?.email && !app.welcome_email_sent && newMemberId) {
       const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
       const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('RESEND_FROM') || 'noreply@shadowmesh.org';
-      const BASE_URL = Deno.env.get('BASE_URL') || 'https://shadowmesh.org';
+      const BASE_URL = Deno.env.get('BASE_URL') || Deno.env.get('SUPABASE_URL')?.replace('/rest/v1', '') || 'https://shadowmesh.org';
+      
+      if (!RESEND_API_KEY) {
+        console.error('RESEND_API_KEY not configured. Welcome email will not be sent.');
+        console.error('Please configure RESEND_API_KEY in Supabase Edge Function environment variables.');
+        console.error('Application approved but email not sent. Member ID:', newMemberId);
+      }
       
       if (RESEND_API_KEY) {
         // Generate password setup token
