@@ -25,6 +25,70 @@ function getClientIP(): string {
   return `${navigator.userAgent.slice(0, 20)}-${screen.width}x${screen.height}`;
 }
 
+// Client-side TOTP verification (simplified)
+// Note: In production, this should be done server-side via edge function
+async function verifyTOTPClient(secret: string, code: string): Promise<boolean> {
+  try {
+    // Base32 decode
+    const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let bits = 0;
+    let value = 0;
+    const output: number[] = [];
+    
+    for (let i = 0; i < secret.length; i++) {
+      value = (value << 5) | base32chars.indexOf(secret[i].toUpperCase());
+      bits += 5;
+      if (bits >= 8) {
+        output.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+    
+    const key = new Uint8Array(output);
+    const timeStep = 30;
+    const now = Math.floor(Date.now() / 1000 / timeStep);
+    
+    // Check current time step and adjacent windows (for clock skew)
+    for (let i = -1; i <= 1; i++) {
+      const testTime = now + i;
+      const testCounter = new Uint8Array(8);
+      let tempTime = testTime;
+      
+      for (let j = 7; j >= 0; j--) {
+        testCounter[j] = tempTime & 0xff;
+        tempTime >>>= 8;
+      }
+      
+      const cryptoKey = await crypto.subtle.importKey(
+        "raw",
+        key,
+        { name: "HMAC", hash: "SHA-1" },
+        false,
+        ["sign"]
+      );
+      
+      const signature = await crypto.subtle.sign("HMAC", cryptoKey, testCounter);
+      const sigArray = new Uint8Array(signature);
+      
+      const offset = sigArray[19] & 0x0f;
+      const testCode = ((sigArray[offset] & 0x7f) << 24) |
+                       ((sigArray[offset + 1] & 0xff) << 16) |
+                       ((sigArray[offset + 2] & 0xff) << 8) |
+                       (sigArray[offset + 3] & 0xff);
+      
+      const testCodeStr = (testCode % 1000000).toString().padStart(6, "0");
+      
+      if (testCodeStr === code) {
+        return true;
+      }
+    }
+    
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function AdminFake404({ onAuthenticated }: AdminFake404Props) {
   const navigate = useNavigate();
   const [secretClicks, setSecretClicks] = useState(0);

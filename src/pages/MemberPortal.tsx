@@ -157,6 +157,8 @@ export default function MemberPortal() {
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [needs2FA, setNeeds2FA] = useState(false);
+  const [pendingMemberData, setPendingMemberData] = useState<any>(null);
 
   useEffect(() => {
     // Load viewed hackathons from localStorage (if needed in future)
@@ -897,13 +899,22 @@ export default function MemberPortal() {
         return;
       }
       
-      // Successful login - reset failed attempts
+      // Successful password verification - reset failed attempts
       setFailedAttempts(0);
       setIsLocked(false);
       setLockUntil(null);
       setShowForgotPassword(false);
 
-      // Authentication successful
+      // Check if 2FA is enabled
+      if (memberData.two_factor_enabled) {
+        // Require 2FA code
+        setNeeds2FA(true);
+        setPendingMemberData(memberData);
+        setLoginPassword(""); // Clear password for security
+        return;
+      }
+
+      // No 2FA, proceed with login
       setMember(memberData);
       localStorage.setItem("shadowmesh_member_email", loginEmail.trim().toLowerCase());
       localStorage.setItem("shadowmesh_authenticated", "true");
@@ -1181,15 +1192,69 @@ export default function MemberPortal() {
                 <KeyRound className="w-8 h-8 text-primary" />
               </div>
             </div>
-            <CardTitle className="text-2xl text-center">ShadowMesh Portal</CardTitle>
+            <CardTitle className="text-2xl text-center">
+              {needs2FA ? "Two-Factor Authentication" : "ShadowMesh Portal"}
+            </CardTitle>
             <CardDescription className="text-center">
-              {isSettingPassword && setupToken 
-                ? "Set up your password to access your member dashboard"
-                : "Enter your email and password to access your member dashboard"}
+              {needs2FA
+                ? "Enter the 6-digit code from your authenticator app"
+                : isSettingPassword && setupToken 
+                  ? "Set up your password to access your member dashboard"
+                  : "Enter your email and password to access your member dashboard"}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!isSettingPassword && (
+            {needs2FA ? (
+              <>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+                    <Shield className="w-4 h-4" />
+                    2FA Code
+                  </label>
+                  <Input
+                    type="text"
+                    value={twoFactorCode}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                      setTwoFactorCode(val);
+                    }}
+                    placeholder="000000"
+                    maxLength={6}
+                    disabled={twoFactorVerifying}
+                    autoComplete="one-time-code"
+                    className="text-center text-2xl tracking-widest font-mono"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && twoFactorCode.length === 6) {
+                        handle2FALogin();
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground text-center">
+                    Enter the 6-digit code from your authenticator app (Google Authenticator, Authy, etc.)
+                  </p>
+                </div>
+                <Button
+                  className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                  onClick={handle2FALogin}
+                  disabled={twoFactorCode.length !== 6 || twoFactorVerifying || loading}
+                >
+                  {twoFactorVerifying ? "Verifying..." : "Verify & Login"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setNeeds2FA(false);
+                    setTwoFactorCode("");
+                    setPendingMemberData(null);
+                    setLoginEmail("");
+                    setLoginPassword("");
+                  }}
+                >
+                  Back to Login
+                </Button>
+              </>
+            ) : !isSettingPassword && (
               <div>
                 <label className="block text-sm font-medium mb-2">Email Address</label>
                 <Input
