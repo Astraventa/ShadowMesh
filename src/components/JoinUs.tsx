@@ -13,15 +13,13 @@ import { useToast } from "@/components/ui/use-toast";
 
 const JoinUs = () => {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<"register" | "status">("register");
+  const [activeTab] = useState<"register">("register");
   const [affiliation, setAffiliation] = useState<string>("student");
   const [phone, setPhone] = useState<string>("");
   const [phoneError, setPhoneError] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [applicationId, setApplicationId] = useState<string | null>(null);
-  const [secretCode, setSecretCode] = useState<string | null>(null);
-  const [statusInfo, setStatusInfo] = useState<{ status: string; reviewed_at?: string; decision_reason?: string } | null>(null);
 
   // Controlled inputs
   const [fullName, setFullName] = useState("");
@@ -38,17 +36,13 @@ const JoinUs = () => {
   const [organization, setOrganization] = useState("");
   const [roleTitle, setRoleTitle] = useState("");
 
-  // Status check
-  const [checkToken, setCheckToken] = useState("");
-  const [checkingStatus, setCheckingStatus] = useState(false);
-  const [checkResult, setCheckResult] = useState<{ status: string; reviewed_at?: string; decision_reason?: string } | null>(null);
+  // Status check removed - industry level approach
 
   // Honeypot
   const [honeypot, setHoneypot] = useState("");
 
   // Success dialog
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
-  const [codeCopied, setCodeCopied] = useState(false);
 
   // Typewriter effect for the right panel
   const phrases = [
@@ -211,11 +205,7 @@ const JoinUs = () => {
       if (error) throw error;
 
       setApplicationId(data?.id || null);
-      const rawCode = data?.verification_token || null;
-      const normalizedCode = rawCode ? String(rawCode).toUpperCase() : null;
-      setSecretCode(normalizedCode);
-      setCheckToken(normalizedCode || "");
-      localStorage.setItem('shadowmesh_join_submission', JSON.stringify({ id: data?.id, code: normalizedCode, token: data?.verification_token, ts: Date.now() }));
+      localStorage.setItem('shadowmesh_join_submission', JSON.stringify({ id: data?.id, ts: Date.now() }));
 
       try {
         await fetch(`${SUPABASE_URL}/functions/v1/notify`, {
@@ -268,55 +258,32 @@ const JoinUs = () => {
         <div className="grid md:grid-cols-2 gap-10 items-start">
           {/* Form (Left) */}
           <div className="glass-panel p-8 rounded-2xl glow-border left-glow-edge">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "register" | "status")}>
-              <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="register">Register</TabsTrigger>
-                <TabsTrigger value="status">Check Status</TabsTrigger>
-              </TabsList>
-
+            <Tabs value={activeTab}>
               <TabsContent value="register">
             {success ? (
               <div className="text-center py-12">
                 <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center animate-pulse">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
                 </div>
-                <h3 className="text-2xl font-bold mb-2">Application submitted</h3>
-                {applicationId && <p className="text-xs text-muted-foreground mb-2">Application ID: <span className="text-foreground">{applicationId}</span></p>}
-                <p className="text-muted-foreground mb-4">Verification in process — you’ll be notified soon.</p>
-                {secretCode && (
-                  <Card className="max-w-sm mx-auto mb-6 bg-primary/5 border-primary/20">
-                    <CardContent className="py-4 text-center">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide">Your ShadowMesh Code</p>
-                      <p className="text-2xl font-mono mt-2 text-foreground">{secretCode}</p>
-                      <p className="text-xs text-muted-foreground mt-2">Keep this code safe – use it for status checks, event access, and verification.</p>
-                    </CardContent>
-                  </Card>
-                )}
-                <div className="flex gap-3 justify-center">
-                  <Button size="sm" variant="outline" onClick={() => { localStorage.removeItem('shadowmesh_join_submission'); setSuccess(false); setApplicationId(null); setSecretCode(null); setStatusInfo(null); }}>New Application</Button>
-                  {secretCode && (
-                    <Button size="sm" variant="glow" onClick={async () => {
-                      try {
-                        const res = await fetch(`${SUPABASE_URL}/functions/v1/verify`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ code: secretCode })
-                        });
-                        if (res.ok) {
-                          const info = await res.json();
-                          if (info.secret_code) {
-                            info.secret_code = String(info.secret_code).toUpperCase();
-                            setSecretCode(info.secret_code);
-                          }
-                          setStatusInfo(info);
-                        } else {
-                          setStatusInfo({ status: 'pending' });
-                        }
-                      } catch {
-                        setStatusInfo({ status: 'pending' });
-                      }
-                    }}>Check Status</Button>
-                  )}
+                <h3 className="text-2xl font-bold mb-2">Application Submitted Successfully</h3>
+                <p className="text-muted-foreground mb-4">
+                  Your application is <strong>under verification</strong>. You will be notified via email once a decision is made.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  If approved, you'll receive a welcome email with instructions to set up your password and access the member portal.
+                </p>
+                <div className="mt-6">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => { 
+                      localStorage.removeItem('shadowmesh_join_submission'); 
+                      setSuccess(false); 
+                      setApplicationId(null);
+                    }}
+                  >
+                    Submit Another Application
+                  </Button>
                 </div>
                 {statusInfo && (
                   <div className="mt-4 text-sm text-muted-foreground">
@@ -420,67 +387,6 @@ const JoinUs = () => {
             </form>
             )}
               </TabsContent>
-
-              <TabsContent value="status">
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">ShadowMesh Code</label>
-                    <Input
-                      value={checkToken}
-                      onChange={(e) => setCheckToken(e.target.value.toUpperCase())}
-                      placeholder="e.g., SMAB12CD"
-                      className="bg-background/50 border-border focus:border-primary transition-colors"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">Use the code shown after registration (also emailed). This code unlocks status checks and event access.</p>
-                  </div>
-                  <Button type="button" size="lg" variant="cyber" className="w-full" onClick={checkStatus} disabled={checkingStatus}>
-                    {checkingStatus ? "Checking..." : "Check Status"}
-                  </Button>
-                  {checkResult && (
-                    <Card className="p-6 mt-4">
-                      {checkResult.status === "not_found" ? (
-                        <div className="text-center">
-                          <p className="text-destructive font-medium">Application not found</p>
-                          <p className="text-sm text-muted-foreground mt-2">Double-check your verification token or register first.</p>
-                        </div>
-                      ) : checkResult.status === "approved" ? (
-                        <div className="text-center space-y-3">
-                          <Badge variant="secondary" className="text-base px-4 py-2">✓ Approved</Badge>
-                          <p className="text-foreground font-medium">Congratulations! You're now a member of ShadowMesh.</p>
-                          <p className="text-sm text-muted-foreground">Check your email for the welcome message and password setup link.</p>
-                          <Button
-                            variant="glow"
-                            className="mt-4"
-                            onClick={() => {
-                              window.location.href = "/member-portal";
-                            }}
-                          >
-                            Go to Member Portal
-                          </Button>
-                        </div>
-                      ) : checkResult.status === "rejected" ? (
-                        <div className="text-center space-y-3">
-                          <Badge variant="destructive" className="text-base px-4 py-2">Rejected</Badge>
-                          <p className="text-foreground">Your application was not approved at this time.</p>
-                          {checkResult.decision_reason && (
-                            <Card className="p-4 bg-destructive/10 border-destructive/20 mt-3">
-                              <p className="text-sm font-medium mb-1">Reason:</p>
-                              <p className="text-sm text-muted-foreground">{checkResult.decision_reason}</p>
-                            </Card>
-                          )}
-                          <p className="text-sm text-muted-foreground mt-3">You're welcome to re-apply in the future.</p>
-                        </div>
-                      ) : (
-                        <div className="text-center space-y-3">
-                          <Badge variant="outline" className="text-base px-4 py-2">Pending</Badge>
-                          <p className="text-foreground">Your application is under review.</p>
-                          <p className="text-sm text-muted-foreground">We'll notify you via email once a decision is made.</p>
-                        </div>
-                      )}
-                    </Card>
-                  )}
-                </div>
-              </TabsContent>
             </Tabs>
           </div>
 
@@ -505,7 +411,7 @@ const JoinUs = () => {
         <p className="text-center text-sm text-muted-foreground mt-6">By joining, you'll get access to exclusive workshops, mentorship, and networking opportunities.</p>
       </div>
 
-      {/* Success Dialog */}
+      {/* Success Dialog - Industry Level Approach */}
       <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -514,80 +420,33 @@ const JoinUs = () => {
             </div>
             <DialogTitle className="text-2xl text-center">Application Submitted Successfully!</DialogTitle>
             <DialogDescription className="text-center pt-2">
-              Your application is under review. We'll notify you via email once a decision is made.
+              Your application is <strong>under verification</strong>. You will be notified via email once a decision is made.
             </DialogDescription>
           </DialogHeader>
           
-          {secretCode && (
-            <div className="space-y-4 py-4">
-              <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/30">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-2 mb-3">
-                    <KeyRound className="w-5 h-5 text-primary" />
-                    <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Your ShadowMesh Code</p>
-                  </div>
-                  <div className="flex items-center justify-between gap-3 bg-background/50 rounded-lg p-3 border border-primary/20">
-                    <p className="text-3xl font-mono font-bold text-foreground tracking-wider">{secretCode}</p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        navigator.clipboard.writeText(secretCode);
-                        setCodeCopied(true);
-                        setTimeout(() => setCodeCopied(false), 2000);
-                      }}
-                      className="shrink-0"
-                    >
-                      {codeCopied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="space-y-3 rounded-lg bg-muted/50 p-4 border border-border">
-                <div className="flex items-start gap-3">
-                  <Shield className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold mb-1">Why This Code Matters</p>
-                    <p className="text-xs text-muted-foreground">
-                      This unique code is your key to accessing ShadowMesh services. Keep it safe and secure.
-                    </p>
+          <div className="space-y-4 py-4">
+            <div className="rounded-lg bg-muted/50 p-4 border border-border">
+              <div className="flex items-start gap-3">
+                <Shield className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold mb-1">What Happens Next?</p>
+                  <div className="space-y-2 text-xs text-muted-foreground mt-2">
+                    <p>• Your application will be reviewed by our team</p>
+                    <p>• You'll receive an email notification with the decision</p>
+                    <p>• If approved, you'll get a welcome email with password setup instructions</p>
+                    <p>• You can then access the member portal and register for events</p>
                   </div>
                 </div>
-                <div className="space-y-2 text-xs text-muted-foreground pl-8">
-                  <p>• Use it to check your application status</p>
-                  <p>• Required for event registration and attendance</p>
-                  <p>• Access your member portal after approval</p>
-                  <p>• Verify your identity for workshops and hackathons</p>
-                </div>
-              </div>
-
-              <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
-                <p className="text-xs font-medium text-destructive mb-1">⚠️ Important Security Notice</p>
-                <p className="text-xs text-muted-foreground">
-                  Never share this code publicly. Store it securely - you won't be able to recover it if lost. 
-                  We recommend saving it in a password manager or writing it down in a safe place.
-                </p>
               </div>
             </div>
-          )}
+          </div>
 
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowSuccessDialog(false);
-                setActiveTab("status");
-              }}
-            >
-              Check Status
-            </Button>
+          <DialogFooter>
             <Button
               onClick={() => {
                 setShowSuccessDialog(false);
-                setActiveTab("status");
               }}
-              className="flex-1"
+              className="w-full"
             >
               Got it, thanks!
             </Button>
