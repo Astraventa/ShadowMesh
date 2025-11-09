@@ -175,10 +175,10 @@ const Events = () => {
     },
   ];
 
-  const visible =
-    activeCategory === "all"
-      ? events
-      : events.filter((e) => e.category === activeCategory);
+  // Use Supabase events if available, otherwise fallback
+  const displayEvents = events.length > 0 ? visible : fallbackEvents.filter((e) => 
+    activeCategory === "all" || e.category === activeCategory
+  );
 
   return (
     <section id="events" className="py-24 md:py-32 relative">
