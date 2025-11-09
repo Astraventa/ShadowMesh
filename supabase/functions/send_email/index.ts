@@ -20,9 +20,20 @@ serve(async (req) => {
   try {
     const { type, to, subject, html, text, otp, resetToken, resetLink } = await req.json();
 
-    if (!RESEND_API_KEY) {
+    if (!to || !type) {
       return new Response(
-        JSON.stringify({ error: "Resend API key not configured" }),
+        JSON.stringify({ error: "Email address and type are required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!RESEND_API_KEY) {
+      console.error("RESEND_API_KEY not configured in environment variables");
+      return new Response(
+        JSON.stringify({ 
+          error: "Email service not configured",
+          message: "Please configure RESEND_API_KEY in Supabase environment variables"
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

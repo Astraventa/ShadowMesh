@@ -850,7 +850,8 @@ export default function MemberPortal() {
         }
 
         // Hash password using PBKDF2 (secure key derivation)
-        const passwordHash = await hashPassword(newPassword);
+        // Use member's secret_code for consistent salt generation
+        const passwordHash = await hashPassword(newPassword, memberData.secret_code || memberData.id);
         
         // Update member with password
         const { error: updateError } = await supabase
@@ -871,7 +872,8 @@ export default function MemberPortal() {
           return;
         }
 
-        const isValid = await verifyPassword(loginPassword, memberData.password_hash);
+        // Verify password using member's secret_code for consistent salt
+        const isValid = await verifyPassword(loginPassword, memberData.password_hash, memberData.secret_code || memberData.id);
         if (!isValid) {
           // Increment failed attempts
           const newFailedAttempts = failedAttempts + 1;
@@ -928,14 +930,15 @@ export default function MemberPortal() {
     }
   }
 
-  async function hashPassword(password: string): Promise<string> {
+  async function hashPassword(password: string, memberIdOrCode: string): Promise<string> {
     // Enhanced password hashing with PBKDF2 for better security
     // Using PBKDF2 with 100,000 iterations to resist brute force attacks
     const encoder = new TextEncoder();
     const passwordData = encoder.encode(password);
     
-    // Generate salt from code (deterministic but unique per user)
-    const saltData = encoder.encode(loginCode.trim().toUpperCase() + "shadowmesh_salt");
+    // Generate salt from member ID or code (deterministic but unique per user)
+    // Use memberIdOrCode to ensure consistent salt generation
+    const saltData = encoder.encode((memberIdOrCode || loginCode || "").trim().toUpperCase() + "shadowmesh_salt");
     
     // Import key for PBKDF2
     const keyMaterial = await crypto.subtle.importKey(
@@ -963,8 +966,8 @@ export default function MemberPortal() {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  async function verifyPassword(password: string, hash: string): Promise<boolean> {
-    const passwordHash = await hashPassword(password);
+  async function verifyPassword(password: string, hash: string, memberIdOrCode: string): Promise<boolean> {
+    const passwordHash = await hashPassword(password, memberIdOrCode);
     return passwordHash === hash;
   }
 

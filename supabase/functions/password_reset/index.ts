@@ -86,25 +86,34 @@ serve(async (req) => {
           .eq("id", member.id);
 
         // Send email via Resend
-        const resetLink = `https://shadowmesh.org/reset-password?token=${resetToken}`;
+        const resetLink = `${SUPABASE_URL.replace('/rest/v1', '')}/reset-password?token=${resetToken}`;
         
-        const emailResponse = await fetch(`${SUPABASE_URL}/functions/v1/send_email`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
-          },
-          body: JSON.stringify({
-            type: "password_reset",
-            to: member.email,
-            resetToken,
-            resetLink,
-          }),
-        });
+        try {
+          const emailResponse = await fetch(`${SUPABASE_URL}/functions/v1/send_email`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+            },
+            body: JSON.stringify({
+              type: "password_reset",
+              to: member.email,
+              resetToken,
+              resetLink,
+            }),
+          });
 
-        // Log email send attempt (don't fail if email fails)
-        if (!emailResponse.ok) {
-          console.error("Failed to send reset email:", await emailResponse.text());
+          // Log email send attempt
+          if (!emailResponse.ok) {
+            const errorText = await emailResponse.text();
+            console.error("Failed to send reset email:", errorText);
+            // Still return success to user (security: don't reveal if email exists)
+          } else {
+            console.log("Password reset email sent successfully to:", member.email);
+          }
+        } catch (emailError) {
+          console.error("Error calling send_email function:", emailError);
+          // Still return success to user (security)
         }
       }
 
