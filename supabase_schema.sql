@@ -136,6 +136,17 @@ begin
   if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'two_factor_otp_expires') then
     alter table public.members add column two_factor_otp_expires timestamptz;
   end if;
+  
+  -- Portal access tracking
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'portal_accessed') then
+    alter table public.members add column portal_accessed boolean default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'first_portal_access_at') then
+    alter table public.members add column first_portal_access_at timestamptz;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'joined_from_email') then
+    alter table public.members add column joined_from_email boolean default false;
+  end if;
 end$$;
 
 -- Events table for workshops, hackathons, etc.

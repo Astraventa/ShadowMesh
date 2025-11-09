@@ -1250,6 +1250,31 @@ const scannerLockRef = useRef(false);
 											<TableCell>
 														<Badge variant="secondary">{m.status || "active"}</Badge>
 													</TableCell>
+													<TableCell>
+														{m.portal_accessed ? (
+															<Badge variant="secondary" className="bg-green-500/20 text-green-700 dark:text-green-400">
+																✓ Accessed
+															</Badge>
+														) : (
+															<Badge variant="outline" className="text-muted-foreground">
+																Not Yet
+															</Badge>
+														)}
+														{m.first_portal_access_at && (
+															<p className="text-xs text-muted-foreground mt-1">
+																{formatDate(m.first_portal_access_at)}
+															</p>
+														)}
+													</TableCell>
+													<TableCell>
+														{m.joined_from_email ? (
+															<Badge variant="secondary" className="bg-blue-500/20 text-blue-700 dark:text-blue-400">
+																✓ Email
+															</Badge>
+														) : (
+															<span className="text-muted-foreground text-sm">-</span>
+														)}
+													</TableCell>
 													<TableCell className="text-right space-x-2">
 														<Button size="sm" variant="outline" onClick={() => void loadMemberDetails(m.id)}>View Details</Button>
 														<Button size="sm" variant="destructive" onClick={() => { setDeleteMemberId(m.id); setDeleteMemberOpen(true); }}>Delete</Button>

@@ -217,6 +217,22 @@ export default function MemberPortal() {
       localStorage.setItem("shadowmesh_member_email", email.trim().toLowerCase());
       localStorage.setItem("shadowmesh_authenticated", "true");
 
+      // Track portal access - mark as accessed if not already
+      if (!memberData.portal_accessed) {
+        const params = new URLSearchParams(window.location.search);
+        const setupParam = params.get("setup");
+        const joinedFromEmail = !!setupParam; // If setup token exists, user came from email
+        
+        await supabase
+          .from("members")
+          .update({
+            portal_accessed: true,
+            first_portal_access_at: new Date().toISOString(),
+            joined_from_email: joinedFromEmail
+          })
+          .eq("id", memberData.id);
+      }
+
       // Load events (workshops and other events, excluding hackathons)
       // Show all active events, not just future ones
       const { data: eventsData, error: eventsError } = await supabase

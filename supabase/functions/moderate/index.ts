@@ -84,7 +84,9 @@ Deno.serve(async (req) => {
             organization: app.organization || null,
             role_title: app.role_title || null,
             phone_e164: app.phone_e164 || null,
-            welcome_email_sent: false
+            welcome_email_sent: false,
+            portal_accessed: false,
+            joined_from_email: false
           })
         });
         if (memberRes.ok) {
@@ -166,7 +168,7 @@ Deno.serve(async (req) => {
         `;
 
         try {
-          await fetch(`${SUPABASE_URL}/functions/v1/send_email`, {
+          const emailResponse = await fetch(`${SUPABASE_URL}/functions/v1/send_email`, {
             method: 'POST',
             headers: { 
               'Authorization': `Bearer ${SERVICE_KEY}`, 
@@ -179,6 +181,14 @@ Deno.serve(async (req) => {
               html: emailHtml
             })
           });
+          
+          if (!emailResponse.ok) {
+            const errorText = await emailResponse.text();
+            console.error('Failed to send welcome email:', errorText);
+            // Log error but don't fail approval
+          } else {
+            console.log('Welcome email sent successfully to:', app.email);
+          }
         } catch (emailError) {
           console.error('Failed to send welcome email:', emailError);
           // Don't fail the approval if email fails
