@@ -1098,20 +1098,7 @@ const scannerLockRef = useRef(false);
 													<TableCell>{m.email}</TableCell>
 											<TableCell>{m.cohort || "-"}</TableCell>
 										<TableCell>
-											{m.email ? (
-												<Button size="sm" variant="outline" onClick={() => {
-													if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-														navigator.clipboard.writeText(m.secret_code);
-														toast({ title: "Code copied", description: m.secret_code });
-													} else {
-														toast({ title: "Copy unavailable", description: m.secret_code });
-													}
-												}}>
-													<span className="font-mono text-xs">{m.secret_code}</span>
-												</Button>
-											) : (
-												<span className="text-muted-foreground">-</span>
-											)}
+											<span className="text-xs text-muted-foreground">{m.email || "-"}</span>
 										</TableCell>
 											<TableCell>
 														<Badge variant="secondary">{m.status || "active"}</Badge>
