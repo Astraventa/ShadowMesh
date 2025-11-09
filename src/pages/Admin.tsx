@@ -1027,12 +1027,26 @@ const scannerLockRef = useRef(false);
 
 
 	// Show login screen if not authenticated
-	// Load 2FA status on mount
+	// Load 2FA status on mount from server
 	useEffect(() => {
 		if (authed) {
-			// Check if admin has 2FA enabled (stored in localStorage for now)
-			const admin2FA = localStorage.getItem("shadowmesh_admin_2fa_enabled");
-			setTwoFactorEnabled(admin2FA === "true");
+			// Check if admin has 2FA enabled from server
+			fetch(`${SUPABASE_URL}/functions/v1/admin_2fa`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({ action: "check_status" }),
+			})
+				.then(res => res.json())
+				.then(data => {
+					setTwoFactorEnabled(data.enabled ?? false);
+				})
+				.catch(err => {
+					console.error("Failed to load 2FA status:", err);
+					setTwoFactorEnabled(false);
+				});
 		}
 	}, [authed]);
 
@@ -1040,25 +1054,25 @@ const scannerLockRef = useRef(false);
 		try {
 			setTwoFactorVerifying(true);
 			
-			// Generate TOTP secret client-side for admin (32 character base32-like string)
-			const generateSecret = () => {
-				const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; // Base32 alphabet
-				let secret = "";
-				for (let i = 0; i < 32; i++) {
-					secret += chars.charAt(Math.floor(Math.random() * chars.length));
-				}
-				return secret;
-			};
+			// Get secret and QR code from server
+			const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_2fa`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({ action: "setup" }),
+			});
 
-			const secret = generateSecret();
-			const email = "admin@shadowmesh.com";
-			const issuer = "ShadowMesh Admin";
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || "Failed to setup 2FA");
+			}
+
+			const data = await response.json();
 			
-			// Generate TOTP URI for QR code
-			const totpUri = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
-
-			setTwoFactorSecret(secret);
-			setTwoFactorQRCode(totpUri);
+			setTwoFactorSecret(data.secret);
+			setTwoFactorQRCode(data.qrCode);
 			setTwoFactorSetupMode(true);
 			toast({ title: "2FA Setup", description: "Scan the QR code with your authenticator app." });
 		} catch (e: any) {
@@ -1082,17 +1096,26 @@ const scannerLockRef = useRef(false);
 				throw new Error("Code must be 6 digits");
 			}
 
-			// Verify TOTP code using the same verification function
-			const isValid = await verifyTOTPClient(twoFactorSecret, code);
-			
-			if (!isValid) {
-				throw new Error("Invalid code. Please enter the current 6-digit code from your authenticator app.");
+			// Verify and enable 2FA via server
+			const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_2fa`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({ action: "enable", code, secret: twoFactorSecret }),
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || "Failed to enable 2FA");
 			}
 
-			// Store 2FA secret and enabled status in localStorage
-			// Note: In production, this should be stored securely server-side
-			localStorage.setItem("shadowmesh_admin_2fa_enabled", "true");
-			localStorage.setItem("shadowmesh_admin_2fa_secret", twoFactorSecret);
+			const data = await response.json();
+			
+			if (!data.success) {
+				throw new Error("Failed to enable 2FA");
+			}
 			
 			setTwoFactorEnabled(true);
 			setTwoFactorSetupMode(false);
@@ -1113,9 +1136,21 @@ const scannerLockRef = useRef(false);
 
 	async function handleDisable2FA() {
 		try {
-			// Remove 2FA from localStorage (client-side only for admin)
-			localStorage.removeItem("shadowmesh_admin_2fa_enabled");
-			localStorage.removeItem("shadowmesh_admin_2fa_secret");
+			// Disable 2FA via server
+			const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_2fa`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+				},
+				body: JSON.stringify({ action: "disable" }),
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || "Failed to disable 2FA");
+			}
+
 			setTwoFactorEnabled(false);
 			setTwoFactorSecret(null);
 			setTwoFactorQRCode(null);

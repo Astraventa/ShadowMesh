@@ -622,6 +622,27 @@ create policy p_contact_insert
 -- Frontend usage: submit via supabase-js; store E.164 phone in phone_e164 when valid.
 -- Keepalive: ping a tiny function to avoid cold starts on free tier.
 
+-- Admin table for storing admin 2FA settings (server-side)
+create table if not exists public.admin_settings (
+  id uuid primary key default gen_random_uuid(),
+  username text not null unique,
+  two_factor_secret text,
+  two_factor_enabled boolean default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- RLS for admin_settings (only accessible via edge functions with admin token)
+alter table public.admin_settings enable row level security;
+
+-- Policy: Only service role can access (edge functions will use service role)
+create policy p_admin_settings_service_role
+  on public.admin_settings
+  for all
+  to service_role
+  using (true)
+  with check (true);
+
 -- 9) Idempotent sanity checks (optional) -------------------------------------
 do $$
 begin

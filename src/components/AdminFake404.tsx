@@ -258,15 +258,42 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
 
     // Validate credentials
     if (username === "zeeshanjay" && password === "haiderjax###") {
-      // Check if 2FA is enabled
-      const admin2FAEnabled = localStorage.getItem("shadowmesh_admin_2fa_enabled") === "true";
-      
-      if (admin2FAEnabled) {
-        // Require 2FA code
-        setNeeds2FA(true);
-        saveLoginAttempt(true); // Don't count as failed, just need 2FA
-      } else {
-        // No 2FA, authenticate directly
+      // Check if 2FA is enabled from server
+      try {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin_2fa`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ action: "check_status" }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.enabled) {
+            // Require 2FA code
+            setNeeds2FA(true);
+            saveLoginAttempt(true); // Don't count as failed, just need 2FA
+          } else {
+            // No 2FA, authenticate directly
+            saveLoginAttempt(true);
+            sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
+            sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
+            onAuthenticated();
+          }
+        } else {
+          // If check fails, assume no 2FA (fallback)
+          console.warn("Failed to check 2FA status, proceeding without 2FA");
+          saveLoginAttempt(true);
+          sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
+          sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
+          onAuthenticated();
+        }
+      } catch (error) {
+        console.error("Error checking 2FA status:", error);
+        // Fallback: proceed without 2FA if check fails
         saveLoginAttempt(true);
         sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
         sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
@@ -294,22 +321,24 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
     setError("");
 
     try {
-      // Get admin 2FA secret from localStorage
-      const admin2FASecret = localStorage.getItem("shadowmesh_admin_2fa_secret");
-      
-      if (!admin2FASecret || admin2FASecret.length < 16) {
-        console.error("2FA secret missing or invalid:", admin2FASecret);
-        throw new Error("2FA not properly configured. Please disable and re-enable 2FA.");
+      // Verify 2FA code via server (edge function)
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin_2fa`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ action: "verify", code }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Invalid 2FA code");
       }
 
-      console.log("Verifying 2FA code:", code, "with secret:", admin2FASecret.substring(0, 4) + "...");
-
-      // Verify TOTP code using proper TOTP verification
-      const isValid = await verifyTOTPClient(admin2FASecret, code);
+      const data = await response.json();
       
-      console.log("TOTP verification result:", isValid);
-      
-      if (!isValid) {
+      if (!data.success) {
         throw new Error("Invalid 2FA code. Please enter the current code from your authenticator app.");
       }
       
