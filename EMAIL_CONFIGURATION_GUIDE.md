@@ -14,14 +14,25 @@ The welcome email functionality requires **RESEND_API_KEY** to be configured in 
 
 ### Step 2: Configure in Supabase
 1. Go to your Supabase project dashboard
-2. Navigate to **Edge Functions** → **Settings** → **Environment Variables**
+2. Navigate to **Edge Functions** → **Settings** → **Environment Variables** (or **Secrets**)
 3. Add the following environment variables:
 
+**Required:**
+- `RESEND_API_KEY` = your Resend API key (starts with `re_...`)
+- `RESEND_FROM_EMAIL` = your verified email domain (e.g., `noreply@yourdomain.com`)
+- `BASE_URL` = your production domain (e.g., `https://shadowmesh.org` or your Vercel/Netlify URL)
+
+**Example values:**
 ```
-RESEND_API_KEY=re_your_api_key_here
-RESEND_FROM_EMAIL=noreply@yourdomain.com
-BASE_URL=https://your-domain.com
+RESEND_API_KEY=re_abc123xyz...
+RESEND_FROM_EMAIL=noreply@shadowmesh.org
+BASE_URL=https://shadowmesh-six.vercel.app
 ```
+
+**Important:** 
+- `BASE_URL` is used to generate password setup links in welcome emails
+- If not set, it will try to use `SUPABASE_URL` or default to `https://shadowmesh.org`
+- Make sure `BASE_URL` matches your actual production domain
 
 **Important Notes:**
 - `RESEND_FROM_EMAIL`: Must be a verified domain in Resend
