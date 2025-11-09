@@ -122,8 +122,24 @@ serve(async (req) => {
     if (!resendResponse.ok) {
       const error = await resendResponse.text();
       console.error("Resend API error:", error);
+      
+      // Provide helpful error message
+      let errorMessage = "Failed to send email";
+      try {
+        const errorJson = JSON.parse(error);
+        if (errorJson.message) {
+          errorMessage = errorJson.message;
+        }
+      } catch {
+        // Keep default message
+      }
+      
       return new Response(
-        JSON.stringify({ error: "Failed to send email", details: error }),
+        JSON.stringify({ 
+          error: "Email service not configured",
+          message: "Please configure RESEND_API_KEY in Supabase environment variables. " + errorMessage,
+          details: error 
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
