@@ -285,12 +285,6 @@ const JoinUs = () => {
                     Submit Another Application
                   </Button>
                 </div>
-                {statusInfo && (
-                  <div className="mt-4 text-sm text-muted-foreground">
-                    <p>Status: <span className="text-foreground font-medium">{statusInfo.status}</span></p>
-                    {statusInfo.decision_reason && <p>Notes: {statusInfo.decision_reason}</p>}
-                  </div>
-                )}
               </div>
             ) : (
               <form className="space-y-6" onSubmit={onSubmit}>
