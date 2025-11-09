@@ -131,9 +131,20 @@ serve(async (req) => {
     switch (action) {
       case "check_status": {
         // Check if 2FA is enabled (for login flow)
+        const enabled = adminSettings?.two_factor_enabled === true;
+        console.log("Admin 2FA check_status:", {
+          username: ADMIN_USERNAME,
+          enabled,
+          hasSecret: !!adminSettings?.two_factor_secret,
+          adminSettings: adminSettings ? {
+            id: adminSettings.id,
+            two_factor_enabled: adminSettings.two_factor_enabled,
+            has_secret: !!adminSettings.two_factor_secret
+          } : null
+        });
         return new Response(
           JSON.stringify({
-            enabled: adminSettings?.two_factor_enabled ?? false,
+            enabled: enabled,
           }),
           { headers: { "Content-Type": "application/json" } }
         );
@@ -187,16 +198,27 @@ serve(async (req) => {
         }
 
         // Enable 2FA
-        const { error: enableError } = await supabase
+        const { data: updatedData, error: enableError } = await supabase
           .from("admin_settings")
           .update({
             two_factor_enabled: true,
             updated_at: new Date().toISOString(),
           })
           .eq("username", ADMIN_USERNAME)
-          .eq("two_factor_secret", secret); // Ensure secret matches
+          .eq("two_factor_secret", secret) // Ensure secret matches
+          .select()
+          .single();
 
-        if (enableError) throw enableError;
+        if (enableError) {
+          console.error("Error enabling 2FA:", enableError);
+          throw enableError;
+        }
+
+        console.log("2FA enabled successfully:", {
+          username: ADMIN_USERNAME,
+          enabled: updatedData?.two_factor_enabled,
+          hasSecret: !!updatedData?.two_factor_secret
+        });
 
         return new Response(
           JSON.stringify({ success: true, message: "2FA enabled successfully" }),

@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Lock, Shield } from "lucide-react";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabaseClient";
 
 interface AdminFake404Props {
   onAuthenticated: () => void;
@@ -260,32 +261,36 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
     if (username === "zeeshanjay" && password === "haiderjax###") {
       // Check if 2FA is enabled from server
       try {
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin_2fa`, {
+        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+          throw new Error("Supabase configuration missing");
+        }
+
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_2fa`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
           },
           body: JSON.stringify({ action: "check_status" }),
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          
-          if (data.enabled) {
-            // Require 2FA code
-            setNeeds2FA(true);
-            saveLoginAttempt(true); // Don't count as failed, just need 2FA
-          } else {
-            // No 2FA, authenticate directly
-            saveLoginAttempt(true);
-            sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
-            sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
-            onAuthenticated();
-          }
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("2FA check failed:", response.status, errorText);
+          throw new Error(`Failed to check 2FA status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("2FA status check result:", data);
+        
+        if (data.enabled === true) {
+          // Require 2FA code
+          console.log("2FA is enabled, requiring code");
+          setNeeds2FA(true);
+          saveLoginAttempt(true); // Don't count as failed, just need 2FA
         } else {
-          // If check fails, assume no 2FA (fallback)
-          console.warn("Failed to check 2FA status, proceeding without 2FA");
+          // No 2FA, authenticate directly
+          console.log("2FA is disabled, authenticating directly");
           saveLoginAttempt(true);
           sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
           sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
@@ -293,11 +298,10 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
         }
       } catch (error) {
         console.error("Error checking 2FA status:", error);
-        // Fallback: proceed without 2FA if check fails
-        saveLoginAttempt(true);
-        sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
-        sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
-        onAuthenticated();
+        // SECURITY: If 2FA check fails, we MUST require 2FA to be safe
+        // Don't allow login without verifying 2FA status
+        setError("Unable to verify 2FA status. Please try again or contact support.");
+        // Do NOT authenticate - fail securely
       }
     } else {
       saveLoginAttempt(false);
@@ -321,12 +325,16 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
     setError("");
 
     try {
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        throw new Error("Supabase configuration missing");
+      }
+
       // Verify 2FA code via server (edge function)
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin_2fa`, {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_2fa`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
         },
         body: JSON.stringify({ action: "verify", code }),
       });
