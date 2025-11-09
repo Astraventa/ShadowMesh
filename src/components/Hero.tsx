@@ -1,8 +1,35 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import heroBg from "@/assets/hero-cyber-bg.jpg";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 const Hero = () => {
+  const [isMember, setIsMember] = useState(false);
+
+  useEffect(() => {
+    // Check if user is authenticated
+    const authenticated = localStorage.getItem("shadowmesh_authenticated");
+    const memberEmail = localStorage.getItem("shadowmesh_member_email");
+    
+    if (authenticated === "true" && memberEmail) {
+      // Verify member still exists
+      supabase
+        .from("members")
+        .select("id, email")
+        .eq("email", memberEmail)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setIsMember(true);
+          }
+        })
+        .catch(() => {
+          setIsMember(false);
+        });
+    }
+  }, []);
+
   return (
     <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden">
       {/* Background Image */}
