@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import EventRegistration from "@/components/EventRegistration";
@@ -154,6 +154,9 @@ export default function MemberPortal() {
   const [twoFactorQRCode, setTwoFactorQRCode] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorVerifying, setTwoFactorVerifying] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     // Load viewed hackathons from localStorage (if needed in future)
@@ -1204,40 +1207,70 @@ export default function MemberPortal() {
               <>
                 <div>
                   <label className="block text-sm font-medium mb-2">Set Password (min 8 characters, must include uppercase, lowercase, numbers, and special characters)</label>
-                  <Input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password"
-                    disabled={loading}
-                  />
+                  <div className="relative">
+                    <Input
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter new password"
+                      disabled={loading}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Confirm Password</label>
-                  <Input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm password"
-                    disabled={loading}
-                  />
+                  <div className="relative">
+                    <Input
+                      type={showConfirmPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm password"
+                      disabled={loading}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
               </>
             ) : (
               <div>
                 <label className="block text-sm font-medium mb-2">Password</label>
-                <Input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  disabled={loading}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleLogin();
-                    }
-                  }}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    disabled={loading}
+                    className="pr-10"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleLogin();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
             )}
             

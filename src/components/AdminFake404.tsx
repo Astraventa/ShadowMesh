@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Lock } from "lucide-react";
+import { AlertCircle, Lock, Shield } from "lucide-react";
 
 interface AdminFake404Props {
   onAuthenticated: () => void;
@@ -37,6 +37,11 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
   const [remainingAttempts, setRemainingAttempts] = useState(MAX_ATTEMPTS);
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const secretAreaRef = useRef<HTMLDivElement>(null);
+  
+  // 2FA state
+  const [needs2FA, setNeeds2FA] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorVerifying, setTwoFactorVerifying] = useState(false);
 
   // Load login attempts from localStorage
   const getLoginAttempts = (): LoginAttempt[] => {
@@ -154,10 +159,20 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
 
     // Validate credentials
     if (username === "zeeshanjay" && password === "haiderjax###") {
-      saveLoginAttempt(true);
-      sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
-      sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
-      onAuthenticated();
+      // Check if 2FA is enabled
+      const admin2FAEnabled = localStorage.getItem("shadowmesh_admin_2fa_enabled") === "true";
+      
+      if (admin2FAEnabled) {
+        // Require 2FA code
+        setNeeds2FA(true);
+        saveLoginAttempt(true); // Don't count as failed, just need 2FA
+      } else {
+        // No 2FA, authenticate directly
+        saveLoginAttempt(true);
+        sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
+        sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
+        onAuthenticated();
+      }
     } else {
       saveLoginAttempt(false);
       setUsername("");
@@ -215,13 +230,18 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
             <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
               <Lock className="w-8 h-8 text-primary" />
             </div>
-            <DialogTitle className="text-2xl text-center">Admin Authentication</DialogTitle>
+            <DialogTitle className="text-2xl text-center">
+              {needs2FA ? "Two-Factor Authentication" : "Admin Authentication"}
+            </DialogTitle>
             <DialogDescription className="text-center">
-              Enter your credentials to access the admin portal
+              {needs2FA 
+                ? "Enter the 6-digit code from your authenticator app"
+                : "Enter your credentials to access the admin portal"}
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          {!needs2FA ? (
+            <form onSubmit={handleLogin} className="space-y-4">
             {error && (
               <Alert variant={isLocked ? "destructive" : "default"}>
                 <AlertCircle className="h-4 w-4" />
@@ -292,6 +312,62 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
               </Button>
             </DialogFooter>
           </form>
+          ) : (
+            <form onSubmit={handle2FAVerification} className="space-y-4">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <label htmlFor="2fa-code" className="text-sm font-medium flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  2FA Code
+                </label>
+                <Input
+                  id="2fa-code"
+                  type="text"
+                  value={twoFactorCode}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    setTwoFactorCode(val);
+                  }}
+                  placeholder="000000"
+                  maxLength={6}
+                  disabled={twoFactorVerifying}
+                  autoComplete="one-time-code"
+                  className="bg-background text-center text-2xl tracking-widest font-mono"
+                  required
+                />
+                <p className="text-xs text-muted-foreground text-center">
+                  Enter the 6-digit code from your authenticator app (Google Authenticator, Authy, etc.)
+                </p>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setNeeds2FA(false);
+                    setTwoFactorCode("");
+                    setError("");
+                  }}
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={twoFactorCode.length !== 6 || twoFactorVerifying}
+                  className="flex-1"
+                >
+                  {twoFactorVerifying ? "Verifying..." : "Verify & Login"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>
