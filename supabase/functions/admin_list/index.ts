@@ -242,15 +242,29 @@ Deno.serve(async (req) => {
       
       // Get registration counts for each event
       const eventsWithCounts = await Promise.all((Array.isArray(eventsData) ? eventsData : []).map(async (event: any) => {
-        // Fetch all registrations for this event and count them
-        const countRes = await fetch(`${SUPABASE_URL}/rest/v1/event_registrations?select=id&event_id=eq.${event.id}`, {
-          headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
-        });
         let count = 0;
-        if (countRes.ok) {
-          const registrations = await countRes.json();
-          count = Array.isArray(registrations) ? registrations.length : 0;
+        
+        // Check if this is a hackathon (event_type === 'hackathon')
+        if (event.event_type === 'hackathon') {
+          // For hackathons, count from hackathon_registrations table
+          const hackathonCountRes = await fetch(`${SUPABASE_URL}/rest/v1/hackathon_registrations?select=id&hackathon_id=eq.${event.id}`, {
+            headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+          });
+          if (hackathonCountRes.ok) {
+            const hackathonRegs = await hackathonCountRes.json();
+            count = Array.isArray(hackathonRegs) ? hackathonRegs.length : 0;
+          }
+        } else {
+          // For regular events, count from event_registrations table
+          const countRes = await fetch(`${SUPABASE_URL}/rest/v1/event_registrations?select=id&event_id=eq.${event.id}`, {
+            headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+          });
+          if (countRes.ok) {
+            const registrations = await countRes.json();
+            count = Array.isArray(registrations) ? registrations.length : 0;
+          }
         }
+        
         return {
           ...event,
           registration_count: count

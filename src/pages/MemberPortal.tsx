@@ -1445,8 +1445,12 @@ export default function MemberPortal() {
                   return (
                     <Card 
                       key={hackathon.id} 
-                      className="bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-sm border-border/50 hover:border-purple-500/50 transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/10 relative overflow-hidden"
+                      className="bg-gradient-to-br from-red-950/90 via-red-900/80 to-amber-950/90 backdrop-blur-sm border-red-800/50 hover:border-red-600/70 transition-all duration-300 hover:shadow-lg hover:shadow-red-600/20 relative overflow-hidden"
                     >
+                      {/* Fire Animation */}
+                      <div className="absolute top-0 right-0 w-16 h-16 pointer-events-none opacity-60">
+                        <div className="fire-animation"></div>
+                      </div>
                       {isNew && (
                         <div className="absolute top-2 right-2 z-10">
                           <Badge variant="destructive">NEW</Badge>
@@ -1557,21 +1561,21 @@ export default function MemberPortal() {
                         {!isExpanded && (
                           <div className="space-y-2 text-sm">
                             {hackathon.location && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">📍</span>
+                              <div className="flex items-center gap-2 text-red-100/90">
+                                <span>📍</span>
                                 <span>{hackathon.location}</span>
                               </div>
                             )}
-                            {hackathon.max_participants && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">👥</span>
-                                <span>Max {hackathon.max_participants} participants</span>
+                            {hackathon.registration_deadline && (
+                              <div className="flex items-center gap-2 text-red-100/90">
+                                <span>📅</span>
+                                <span>Registration deadline: {formatDate(hackathon.registration_deadline)}</span>
                               </div>
                             )}
-                            {hackathon.registration_deadline && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">📅</span>
-                                <span>Registration deadline: {formatDate(hackathon.registration_deadline)}</span>
+                            {hackathon.max_participants && (
+                              <div className="flex items-center gap-2 text-red-100/90">
+                                <span>👥</span>
+                                <span>Max {hackathon.max_participants} participants</span>
                               </div>
                             )}
                           </div>
@@ -1655,25 +1659,43 @@ export default function MemberPortal() {
                                 </Button>
                               </div>
                             ) : (
-                              <div className="p-4 bg-muted rounded space-y-3">
-                                <div>
-                                  <p className="font-medium mb-2">Your Team: {userTeam.team_name}</p>
+                              <div className="space-y-3">
+                                <div 
+                                  className="p-4 bg-gradient-to-r from-red-900/40 to-amber-900/40 border border-red-700/50 rounded-lg cursor-pointer hover:from-red-900/60 hover:to-amber-900/60 transition-all duration-200"
+                                  onClick={() => {
+                                    setSelectedHackathonForTeams(hackathon.id);
+                                    void loadHackathonTeamsAndPlayers(hackathon.id);
+                                    setShowJoinTeam(hackathon.id);
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="font-bold text-lg text-red-200 flex items-center gap-2">
+                                      <Users className="w-5 h-5" />
+                                      {userTeam.team_name}
+                                    </p>
+                                    <Badge variant="secondary" className="bg-red-800/50 text-red-200 border-red-700/50">
+                                      {userTeam.members.length}/4
+                                    </Badge>
+                                  </div>
                                   <div className="space-y-1">
                                     {userTeam.members.map((m) => (
-                                      <p key={m.member_id} className="text-sm">
-                                        {m.full_name} {m.role === "leader" && "(Leader)"}
+                                      <p key={m.member_id} className="text-sm text-red-100/80">
+                                        {m.role === "leader" && "👑 "}{m.full_name}
                                       </p>
                                     ))}
                                   </div>
-                                  <p className="text-xs text-muted-foreground mt-2">
-                                    {userTeam.members.length}/4 members
-                                  </p>
+                                  <p className="text-xs text-red-300/60 mt-2 italic">Click to view team details</p>
                                 </div>
                                 {userTeam.members.length < 4 && (
-                                  <Button variant="outline" size="sm" className="w-full" onClick={() => {
-                                    setShowFindTeammates(hackathon.id);
-                                    void loadHackathonRegisteredMembers(hackathon.id);
-                                  }}>
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="w-full border-red-700/50 text-red-200 hover:bg-red-900/40" 
+                                    onClick={() => {
+                                      setShowFindTeammates(hackathon.id);
+                                      void loadHackathonRegisteredMembers(hackathon.id);
+                                    }}
+                                  >
                                     <Users className="w-4 h-4 mr-2" />
                                     Invite More Members
                                   </Button>
