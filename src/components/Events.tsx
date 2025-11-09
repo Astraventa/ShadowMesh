@@ -217,30 +217,30 @@ const Events = () => {
             <p className="text-muted-foreground">No events available at the moment. Check back soon!</p>
           </div>
         ) : (
-          <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
+        <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
             {displayEvents.map((event, index) => {
               // Handle both Supabase events and fallback events
               const isSupabaseEvent = 'id' in event && typeof event.id === 'string';
               const Icon = isSupabaseEvent ? getIcon(getEventCategory(event.event_type, event.tags)) : (event as any).icon;
               const category = isSupabaseEvent ? getEventCategory(event.event_type, event.tags) : (event as any).category;
               
-              return (
-                <div
+            return (
+              <div
                   key={isSupabaseEvent ? event.id : (event as any).id}
-                  className="glass-panel-premium p-6 rounded-2xl animate-fade-in-up"
-                  style={{ animationDelay: `${index * 0.08}s` }}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <span className="inline-flex items-center gap-2 text-sm text-foreground/90">
-                      <Icon className="w-5 h-5 text-primary" />
+                className="glass-panel-premium p-6 rounded-2xl animate-fade-in-up"
+                style={{ animationDelay: `${index * 0.08}s` }}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <span className="inline-flex items-center gap-2 text-sm text-foreground/90">
+                    <Icon className="w-5 h-5 text-primary" />
                       {category.toUpperCase()}
-                    </span>
-                    <Badge variant="secondary" className="text-xs">
+                  </span>
+                  <Badge variant="secondary" className="text-xs">
                       {isSupabaseEvent ? getBadgeText(event) : (event as any).badge}
-                    </Badge>
-                  </div>
+                  </Badge>
+                </div>
 
-                  <h3 className="text-xl font-bold leading-tight mb-2">{event.title}</h3>
+                <h3 className="text-xl font-bold leading-tight mb-2">{event.title}</h3>
                   <p className="text-sm text-muted-foreground mb-4">
                     {event.description || (event as any).description}
                   </p>
@@ -260,12 +260,12 @@ const Events = () => {
                     </div>
                   ) : (
                     <>
-                      <ul className="text-sm text-foreground/90 space-y-2 mb-4 list-disc list-inside">
+                <ul className="text-sm text-foreground/90 space-y-2 mb-4 list-disc list-inside">
                         {(event as any).points?.map((p: string, i: number) => (
-                          <li key={i}>{p}</li>
-                        ))}
-                      </ul>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground mb-5">
+                    <li key={i}>{p}</li>
+                  ))}
+                </ul>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground mb-5">
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="w-4 h-4 text-primary" />
                           {(event as any).date}
@@ -274,24 +274,24 @@ const Events = () => {
                           <MapPin className="w-4 h-4 text-secondary" />
                           {(event as any).location}
                         </span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
+                </div>
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
                         <span>Audience: <span className="text-foreground/90 font-medium">{(event as any).audience}</span></span>
                         <span>Fee: <span className="text-foreground/90 font-medium">{(event as any).fee}</span></span>
-                      </div>
+                </div>
                     </>
                   )}
 
-                  <Button variant="glow" className="w-full" asChild>
+                <Button variant="glow" className="w-full" asChild>
                     <a href={isSupabaseEvent ? "#join" : (event as any).registrationLink}>
-                      Register Now
-                      <ExternalLink className="w-4 h-4 ml-2" />
-                    </a>
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
+                    Register Now
+                    <ExternalLink className="w-4 h-4 ml-2" />
+                  </a>
+                </Button>
+              </div>
+            );
+          })}
+        </div>
         )}
       </div>
     </section>

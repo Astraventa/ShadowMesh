@@ -86,20 +86,70 @@ function generateSecret(): string {
   return secret;
 }
 
+// Helper to add CORS headers to responses
+function corsHeaders(additionalHeaders: Record<string, string> = {}) {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Content-Type": "application/json",
+    ...additionalHeaders,
+  };
+}
+
 serve(async (req) => {
   try {
+    // Handle CORS preflight
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        },
+      });
+    }
+
+    // Only allow POST requests
+    if (req.method !== "POST") {
+      return new Response(
+        JSON.stringify({ error: "Method not allowed" }),
+        { 
+          status: 405, 
+          headers: corsHeaders()
+        }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(
         JSON.stringify({ error: "Missing Supabase configuration" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        { status: 500, headers: corsHeaders() }
       );
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { action, code, secret } = await req.json();
+    
+    // Safely parse request body
+    let body: any = {};
+    try {
+      const bodyText = await req.text();
+      if (bodyText) {
+        body = JSON.parse(bodyText);
+      }
+    } catch (parseError) {
+      console.error("Failed to parse request body:", parseError);
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON in request body" }),
+        { status: 400, headers: corsHeaders() }
+      );
+    }
+
+    const { action, code, secret } = body;
 
     // Get or create admin settings
     let { data: adminSettings, error: fetchError } = await supabase
@@ -146,7 +196,7 @@ serve(async (req) => {
           JSON.stringify({
             enabled: enabled,
           }),
-          { headers: { "Content-Type": "application/json" } }
+          { headers: corsHeaders() }
         );
       }
 
@@ -174,7 +224,7 @@ serve(async (req) => {
             secret: newSecret,
             qrCode: totpUri,
           }),
-          { headers: { "Content-Type": "application/json" } }
+          { headers: corsHeaders() }
         );
       }
 
@@ -183,7 +233,7 @@ serve(async (req) => {
         if (!code || !secret) {
           return new Response(
             JSON.stringify({ error: "Code and secret are required" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
+            { status: 400, headers: corsHeaders() }
           );
         }
 
@@ -193,7 +243,7 @@ serve(async (req) => {
         if (!isValid) {
           return new Response(
             JSON.stringify({ error: "Invalid code. Please enter the current code from your authenticator app." }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
+            { status: 400, headers: corsHeaders() }
           );
         }
 
@@ -222,7 +272,7 @@ serve(async (req) => {
 
         return new Response(
           JSON.stringify({ success: true, message: "2FA enabled successfully" }),
-          { headers: { "Content-Type": "application/json" } }
+          { headers: corsHeaders() }
         );
       }
 
@@ -231,14 +281,14 @@ serve(async (req) => {
         if (!code) {
           return new Response(
             JSON.stringify({ error: "Code is required" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
+            { status: 400, headers: corsHeaders() }
           );
         }
 
         if (!adminSettings?.two_factor_secret) {
           return new Response(
             JSON.stringify({ error: "2FA not configured" }),
-            { status: 400, headers: { "Content-Type": "application/json" } }
+            { status: 400, headers: corsHeaders() }
           );
         }
 
@@ -247,13 +297,13 @@ serve(async (req) => {
         if (!isValid) {
           return new Response(
             JSON.stringify({ error: "Invalid 2FA code" }),
-            { status: 401, headers: { "Content-Type": "application/json" } }
+            { status: 401, headers: corsHeaders() }
           );
         }
 
         return new Response(
           JSON.stringify({ success: true, message: "2FA verified successfully" }),
-          { headers: { "Content-Type": "application/json" } }
+          { headers: corsHeaders() }
         );
       }
 
@@ -272,21 +322,21 @@ serve(async (req) => {
 
         return new Response(
           JSON.stringify({ success: true, message: "2FA disabled successfully" }),
-          { headers: { "Content-Type": "application/json" } }
+          { headers: corsHeaders() }
         );
       }
 
       default:
         return new Response(
           JSON.stringify({ error: "Invalid action" }),
-          { status: 400, headers: { "Content-Type": "application/json" } }
+          { status: 400, headers: corsHeaders() }
         );
     }
   } catch (error: any) {
     console.error("Admin 2FA error:", error);
     return new Response(
       JSON.stringify({ error: error.message || "Internal server error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      { status: 500, headers: corsHeaders() }
     );
   }
 });
