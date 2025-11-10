@@ -81,10 +81,10 @@ const Hero = () => {
           {isMember ? (
             <a href="/member-portal" className="cyber-btn-gradient px-8 py-3 rounded-lg font-bold text-lg shadow-lg hover:scale-105 transition-transform flex items-center gap-2">
               <LogIn className="w-5 h-5" />
-              Member Portal
+              Go to Dashboard
             </a>
           ) : (
-          <a href="#join" className="cyber-btn-gradient px-8 py-3 rounded-lg font-bold text-lg shadow-lg hover:scale-105 transition-transform">Join the Network</a>
+          <a href="#join" className="cyber-btn-gradient px-8 py-3 rounded-lg font-bold text-lg shadow-lg hover:scale-105 transition-transform">Apply to Join</a>
           )}
           <a href="#events" className="glass-btn-glow px-8 py-3 rounded-lg font-bold text-lg border-2 border-primary shadow-lg hover:border-accent hover:scale-105 transition-transform">Explore Events</a>
         </div>
