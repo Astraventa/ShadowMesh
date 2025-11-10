@@ -2098,6 +2098,16 @@ export default function MemberPortal() {
                         ) : reg.status === "approved" ? (
                           <div className="space-y-4">
                             <Badge variant="secondary">✓ Approved for Hackathon</Badge>
+                            <Button 
+                              variant="default" 
+                              className="w-full bg-gradient-to-r from-green-600 to-green-800 hover:from-green-600/90 hover:to-green-800/90"
+                              asChild
+                            >
+                              <Link to={`/hackathons/${hackathon.id}`}>
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                Go to Hackathon Dashboard
+                              </Link>
+                            </Button>
                             
                             {/* Action Buttons */}
                             {!userTeam ? (
