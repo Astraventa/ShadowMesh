@@ -130,17 +130,6 @@ Deno.serve(async (req) => {
           })
         });
 
-        // Mark welcome email as sent
-        await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}`, {
-          method: 'PATCH',
-          headers: {
-            'apikey': SERVICE_KEY,
-            'Authorization': `Bearer ${SERVICE_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ welcome_email_sent: true })
-        });
-
         // Send welcome email with password setup link
         const setupLink = `${BASE_URL}/member-portal?setup=${setupToken}`;
         const emailHtml = `
@@ -194,6 +183,19 @@ Deno.serve(async (req) => {
             // Log error but don't fail approval
           } else {
             console.log('Welcome email sent successfully to:', app.email);
+            // Mark welcome email as sent ONLY after successful email send
+            const markRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': SERVICE_KEY,
+                'Authorization': `Bearer ${SERVICE_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ welcome_email_sent: true })
+            });
+            if (!markRes.ok) {
+              console.error('Failed to mark welcome_email_sent flag:', await markRes.text());
+            }
           }
         } catch (emailError) {
           console.error('Failed to send welcome email:', emailError);

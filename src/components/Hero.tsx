@@ -11,22 +11,25 @@ const Hero = () => {
     // Check if user is authenticated
     const authenticated = localStorage.getItem("shadowmesh_authenticated");
     const memberEmail = localStorage.getItem("shadowmesh_member_email");
-    
+
     if (authenticated === "true" && memberEmail) {
-      // Verify member still exists
-      supabase
-        .from("members")
-        .select("id, email")
-        .eq("email", memberEmail)
-        .single()
-        .then(({ data }) => {
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from("members")
+            .select("id, email")
+            .eq("email", memberEmail)
+            .single();
+
           if (data) {
             setIsMember(true);
+          } else {
+            setIsMember(false);
           }
-        })
-        .catch(() => {
+        } catch (_err) {
           setIsMember(false);
-        });
+        }
+      })();
     }
   }, []);
 
@@ -81,7 +84,7 @@ const Hero = () => {
           {isMember ? (
             <a href="/member-portal" className="cyber-btn-gradient px-8 py-3 rounded-lg font-bold text-lg shadow-lg hover:scale-105 transition-transform flex items-center gap-2">
               <LogIn className="w-5 h-5" />
-              Go to Dashboard
+              Member Portal
             </a>
           ) : (
           <a href="#join" className="cyber-btn-gradient px-8 py-3 rounded-lg font-bold text-lg shadow-lg hover:scale-105 transition-transform">Apply to Join</a>
