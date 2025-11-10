@@ -182,10 +182,11 @@ serve(async (req) => {
       case "check_status": {
         // Check if 2FA is enabled (for login flow)
         const enabled = adminSettings?.two_factor_enabled === true;
+        const hasSecret = !!adminSettings?.two_factor_secret;
         console.log("Admin 2FA check_status:", {
           username: ADMIN_USERNAME,
           enabled,
-          hasSecret: !!adminSettings?.two_factor_secret,
+          hasSecret,
           adminSettings: adminSettings ? {
             id: adminSettings.id,
             two_factor_enabled: adminSettings.two_factor_enabled,
@@ -195,6 +196,7 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({
             enabled: enabled,
+            hasSecret: hasSecret,
           }),
           { headers: corsHeaders() }
         );

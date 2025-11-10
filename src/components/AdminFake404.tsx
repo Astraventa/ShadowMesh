@@ -283,7 +283,8 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
         const data = await response.json();
         console.log("2FA status check result:", data);
         
-        if (data.enabled === true) {
+        // If 2FA is enabled or a secret exists (configured), require code
+        if (data.enabled === true || data.hasSecret === true) {
           // Require 2FA code
           console.log("2FA is enabled, requiring code");
           setNeeds2FA(true);
