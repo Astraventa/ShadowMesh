@@ -1932,14 +1932,18 @@ export default function MemberPortal() {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         {hackathon.description && !isExpanded && (
-                          <p className="text-sm text-pink-100/80 leading-relaxed line-clamp-2">{hackathon.description}</p>
+                          <p className="text-sm leading-relaxed line-clamp-2 text-pink-200/90 drop-shadow-[0_0_8px_rgba(236,72,153,0.25)]">
+                            {hackathon.description}
+                          </p>
                         )}
                         {isExpanded && (
                           <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
                             {hackathon.description && (
                               <div>
                                 <p className="text-sm font-medium mb-1">Description</p>
-                                <p className="text-sm text-muted-foreground leading-relaxed">{hackathon.description}</p>
+                                <p className="text-sm leading-relaxed text-pink-200/90 drop-shadow-[0_0_8px_rgba(236,72,153,0.25)]">
+                                  {hackathon.description}
+                                </p>
                               </div>
                             )}
                             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -1953,12 +1957,6 @@ export default function MemberPortal() {
                                 <div>
                                   <p className="text-muted-foreground mb-1">End Date</p>
                                   <p>{formatDate(hackathon.end_date)}</p>
-                                </div>
-                              )}
-                              {hackathon.location && (
-                                <div className="col-span-2">
-                                  <p className="text-muted-foreground mb-1">📍 Location</p>
-                                  <p>{hackathon.location}</p>
                                 </div>
                               )}
                               {hackathon.max_participants && (
