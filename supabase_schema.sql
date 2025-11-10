@@ -707,6 +707,13 @@ begin
   if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='results_published_at') then
     alter table public.events add column results_published_at timestamptz;
   end if;
+  -- Submission page configuration
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='submission_page_enabled') then
+    alter table public.events add column submission_page_enabled boolean default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='submission_fields') then
+    alter table public.events add column submission_fields jsonb; -- JSON config for submission form fields
+  end if;
 end$$;
 
 -- Hackathon submissions (team or individual)

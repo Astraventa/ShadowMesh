@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { QrScanner } from "@yudiel/react-qr-scanner";
 import AdminFake404 from "@/components/AdminFake404";
-import { Shield, QrCode, Loader2 } from "lucide-react";
+import { Shield, QrCode, Loader2, BookOpen, FileText, Upload } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 // Simple token gate using a shared moderator token stored in sessionStorage
@@ -285,6 +285,17 @@ const [attendanceEventId, setAttendanceEventId] = useState<string | null>(null);
 const [attendanceData, setAttendanceData] = useState<any>(null);
 const [showEventForm, setShowEventForm] = useState(false);
 const [editingEvent, setEditingEvent] = useState<any | null>(null);
+// Hackathon management
+const [selectedHackathon, setSelectedHackathon] = useState<any | null>(null);
+const [showHackathonManage, setShowHackathonManage] = useState(false);
+const [showAddResource, setShowAddResource] = useState(false);
+const [showSubmissionConfig, setShowSubmissionConfig] = useState(false);
+const [resourceTitle, setResourceTitle] = useState("");
+const [resourceUrl, setResourceUrl] = useState("");
+const [resourceDescription, setResourceDescription] = useState("");
+const [hackathonResources, setHackathonResources] = useState<any[]>([]);
+const [submissionPageEnabled, setSubmissionPageEnabled] = useState(false);
+const [submissionFields, setSubmissionFields] = useState<any>(null);
 const [eventFormData, setEventFormData] = useState({
 	title: "",
 	description: "",
@@ -901,16 +912,209 @@ const scannerLockRef = useRef(false);
 
 	async function deleteEvent(id: string) {
 		try {
+			// First, get event type to determine if it's a hackathon
+			const { data: eventData } = await supabase
+				.from("events")
+				.select("event_type")
+				.eq("id", id)
+				.single();
+
+			// If it's a hackathon, cascade delete all related data
+			if (eventData?.event_type === "hackathon") {
+				// Delete hackathon resources
+				await supabase
+					.from("hackathon_resources")
+					.delete()
+					.eq("hackathon_id", id);
+
+				// Delete hackathon submissions
+				await supabase
+					.from("hackathon_submissions")
+					.delete()
+					.eq("hackathon_id", id);
+
+				// Delete hackathon results
+				await supabase
+					.from("hackathon_results")
+					.delete()
+					.eq("hackathon_id", id);
+
+				// Delete hackathon invites
+				await supabase
+					.from("hackathon_invites")
+					.delete()
+					.eq("hackathon_id", id);
+
+				// Delete team members (cascade will handle teams)
+				const { data: teams } = await supabase
+					.from("hackathon_teams")
+					.select("id")
+					.eq("hackathon_id", id);
+
+				if (teams) {
+					for (const team of teams) {
+						await supabase
+							.from("team_members")
+							.delete()
+							.eq("team_id", team.id);
+						await supabase
+							.from("team_requests")
+							.delete()
+							.eq("team_id", team.id);
+					}
+				}
+
+				// Delete hackathon teams
+				await supabase
+					.from("hackathon_teams")
+					.delete()
+					.eq("hackathon_id", id);
+
+				// Delete hackathon registrations
+				await supabase
+					.from("hackathon_registrations")
+					.delete()
+					.eq("hackathon_id", id);
+			}
+
+			// Delete event registrations
+			await supabase
+				.from("event_registrations")
+				.delete()
+				.eq("event_id", id);
+
+			// Delete event check-ins
+			await supabase
+				.from("event_checkins")
+				.delete()
+				.eq("event_id", id);
+
+			// Finally, delete the event itself
 			const { error } = await supabase
 				.from("events")
 				.delete()
 				.eq("id", id);
 
 			if (error) throw error;
-			toast({ title: "Event deleted", description: "The event has been deleted." });
+			toast({ title: "Event deleted", description: "The event and all related data have been deleted." });
 			void loadEvents(true);
 		} catch (e: any) {
 			toast({ title: "Delete failed", description: e.message || String(e) });
+		}
+	}
+
+	// Hackathon management functions
+	async function addHackathonResource() {
+		if (!selectedHackathon || !resourceTitle.trim() || !resourceUrl.trim()) {
+			toast({ title: "Fields required", description: "Please enter title and URL." });
+			return;
+		}
+
+		try {
+			// First create the resource
+			const { data: resourceData, error: resourceError } = await supabase
+				.from("member_resources")
+				.insert({
+					title: resourceTitle.trim(),
+					description: resourceDescription.trim() || null,
+					resource_type: "link",
+					content_url: resourceUrl.trim(),
+					access_level: "member",
+					is_active: true
+				})
+				.select()
+				.single();
+
+			if (resourceError) throw resourceError;
+
+			// Link it to hackathon
+			const { error: linkError } = await supabase
+				.from("hackathon_resources")
+				.insert({
+					hackathon_id: selectedHackathon.id,
+					resource_id: resourceData.id,
+					display_order: hackathonResources.length
+				});
+
+			if (linkError) throw linkError;
+
+			toast({ title: "Resource added", description: "Resource has been added to the hackathon." });
+			setResourceTitle("");
+			setResourceUrl("");
+			setResourceDescription("");
+			setShowAddResource(false);
+			
+			// Reload resources
+			const { data: resData } = await supabase
+				.from("hackathon_resources")
+				.select(`
+					*,
+					member_resources(*)
+				`)
+				.eq("hackathon_id", selectedHackathon.id)
+				.order("display_order");
+			if (resData) {
+				setHackathonResources(resData);
+			}
+		} catch (e: any) {
+			toast({ title: "Failed to add resource", description: e.message || String(e) });
+		}
+	}
+
+	async function deleteHackathonResource(resourceId: string, hackathonResourceId: string) {
+		if (!selectedHackathon) return;
+		try {
+			// Delete from hackathon_resources
+			await supabase
+				.from("hackathon_resources")
+				.delete()
+				.eq("id", hackathonResourceId);
+
+			// Optionally delete the resource itself if not used elsewhere
+			await supabase
+				.from("member_resources")
+				.delete()
+				.eq("id", resourceId);
+
+			toast({ title: "Resource deleted", description: "Resource has been removed." });
+			
+			// Reload resources
+			const { data: resData } = await supabase
+				.from("hackathon_resources")
+				.select(`
+					*,
+					member_resources(*)
+				`)
+				.eq("hackathon_id", selectedHackathon.id)
+				.order("display_order");
+			if (resData) {
+				setHackathonResources(resData);
+			}
+		} catch (e: any) {
+			toast({ title: "Failed to delete resource", description: e.message || String(e) });
+		}
+	}
+
+	async function saveSubmissionConfig() {
+		if (!selectedHackathon) return;
+
+		try {
+			const { error } = await supabase
+				.from("events")
+				.update({
+					submission_page_enabled: submissionPageEnabled,
+					submission_fields: submissionFields || null,
+					updated_at: new Date().toISOString()
+				})
+				.eq("id", selectedHackathon.id);
+
+			if (error) throw error;
+
+			toast({ title: "Submission page updated", description: "Submission page configuration has been saved." });
+			setShowSubmissionConfig(false);
+			void loadEvents(true);
+		} catch (e: any) {
+			toast({ title: "Failed to save", description: e.message || String(e) });
 		}
 	}
 
@@ -1510,6 +1714,32 @@ const scannerLockRef = useRef(false);
 														</Badge>
 													</TableCell>
 													<TableCell className="text-right space-x-2">
+														{event.event_type === "hackathon" && (
+															<Button 
+																size="sm" 
+																variant="default"
+																onClick={async () => {
+																	setSelectedHackathon(event);
+																	// Load hackathon resources
+																	const { data: resData } = await supabase
+																		.from("hackathon_resources")
+																		.select(`
+																			*,
+																			member_resources(*)
+																		`)
+																		.eq("hackathon_id", event.id)
+																		.order("display_order");
+																	if (resData) {
+																		setHackathonResources(resData);
+																	}
+																	setSubmissionPageEnabled(event.submission_page_enabled || false);
+																	setSubmissionFields(event.submission_fields || null);
+																	setShowHackathonManage(true);
+																}}
+															>
+																Manage
+															</Button>
+														)}
 														<Button size="sm" variant="outline" onClick={() => {
 															setEditingEvent(event);
 															setEventFormData({
@@ -1538,7 +1768,7 @@ const scannerLockRef = useRef(false);
 															Edit
 														</Button>
 														<Button size="sm" variant="ghost" onClick={() => {
-															if (confirm(`Delete "${event.title}"? This cannot be undone.`)) {
+															if (confirm(`Delete "${event.title}"? This will delete all related data (registrations, teams, submissions, resources). This cannot be undone.`)) {
 																void deleteEvent(event.id);
 															}
 														}}>
@@ -2651,6 +2881,198 @@ const scannerLockRef = useRef(false);
 						<Button onClick={() => void saveEvent()}>
 							{editingEvent ? "Update Event" : "Create Event"}
 						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Hackathon Management Dialog */}
+			<Dialog open={showHackathonManage} onOpenChange={setShowHackathonManage}>
+				<DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+					<DialogHeader>
+						<DialogTitle className="text-2xl">Manage Hackathon: {selectedHackathon?.title}</DialogTitle>
+						<DialogDescription>Manage resources, submission page, and hackathon settings</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-6 py-4">
+						{/* Action Buttons */}
+						<div className="grid grid-cols-3 gap-4">
+							<Button 
+								variant="outline" 
+								className="h-24 flex flex-col items-center justify-center gap-2"
+								onClick={() => {
+									setShowAddResource(true);
+									setShowHackathonManage(false);
+								}}
+							>
+								<BookOpen className="w-6 h-6" />
+								<span>Add Resource</span>
+							</Button>
+							<Button 
+								variant="outline" 
+								className="h-24 flex flex-col items-center justify-center gap-2"
+								onClick={() => {
+									setEditingEvent(selectedHackathon);
+									setEventFormData({
+										title: selectedHackathon?.title || "",
+										description: selectedHackathon?.description || "",
+										event_type: selectedHackathon?.event_type || "hackathon",
+										start_date: selectedHackathon?.start_date ? new Date(selectedHackathon.start_date).toISOString().slice(0, 16) : "",
+										end_date: selectedHackathon?.end_date ? new Date(selectedHackathon.end_date).toISOString().slice(0, 16) : "",
+										location: selectedHackathon?.location || "",
+										registration_link: selectedHackathon?.registration_link || "",
+										max_participants: selectedHackathon?.max_participants?.toString() || "",
+										fee_amount: selectedHackathon?.fee_amount?.toString() || "0",
+										fee_currency: selectedHackathon?.fee_currency || "PKR",
+										payment_required: selectedHackathon?.payment_required || false,
+										notify_members: selectedHackathon?.notify_members || false,
+										category: selectedHackathon?.category || "none",
+										tags: Array.isArray(selectedHackathon?.tags) ? selectedHackathon.tags.join(", ") : selectedHackathon?.tags || "",
+										image_url: selectedHackathon?.image_url || "",
+										registration_deadline: selectedHackathon?.registration_deadline ? new Date(selectedHackathon.registration_deadline).toISOString().slice(0, 16) : "",
+										status: selectedHackathon?.status || "upcoming",
+										is_active: selectedHackathon?.is_active ?? true,
+										is_member_only: selectedHackathon?.is_member_only ?? true,
+									});
+									setShowEventForm(true);
+									setShowHackathonManage(false);
+								}}
+							>
+								<FileText className="w-6 h-6" />
+								<span>Update Details</span>
+							</Button>
+							<Button 
+								variant="outline" 
+								className="h-24 flex flex-col items-center justify-center gap-2"
+								onClick={() => {
+									setShowSubmissionConfig(true);
+									setShowHackathonManage(false);
+								}}
+							>
+								<Upload className="w-6 h-6" />
+								<span>Configure Submission</span>
+							</Button>
+						</div>
+
+						{/* Resources List */}
+						<div>
+							<h3 className="font-semibold text-lg mb-4">Hackathon Resources</h3>
+							{hackathonResources.length === 0 ? (
+								<p className="text-muted-foreground">No resources added yet.</p>
+							) : (
+								<div className="space-y-2">
+									{hackathonResources.map((hr: any) => (
+										<div key={hr.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+											<div>
+												<p className="font-medium">{hr.member_resources?.title || "Resource"}</p>
+												{hr.member_resources?.description && (
+													<p className="text-sm text-muted-foreground">{hr.member_resources.description}</p>
+												)}
+												{hr.member_resources?.content_url && (
+													<a href={hr.member_resources.content_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">
+														{hr.member_resources.content_url}
+													</a>
+												)}
+											</div>
+											<Button 
+												size="sm" 
+												variant="ghost"
+												onClick={() => {
+													if (confirm("Delete this resource?")) {
+														deleteHackathonResource(hr.resource_id, hr.id);
+													}
+												}}
+											>
+												Delete
+											</Button>
+										</div>
+									))}
+								</div>
+							)}
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setShowHackathonManage(false)}>Close</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Add Resource Dialog */}
+			<Dialog open={showAddResource} onOpenChange={setShowAddResource}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Add Resource</DialogTitle>
+						<DialogDescription>Add a link, dataset, or resource for this hackathon</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4">
+						<div>
+							<label className="block text-sm font-medium mb-2">Title</label>
+							<Input
+								value={resourceTitle}
+								onChange={(e) => setResourceTitle(e.target.value)}
+								placeholder="Resource title"
+							/>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-2">URL / Link</label>
+							<Input
+								value={resourceUrl}
+								onChange={(e) => setResourceUrl(e.target.value)}
+								placeholder="https://example.com/resource"
+								type="url"
+							/>
+						</div>
+						<div>
+							<label className="block text-sm font-medium mb-2">Description (optional)</label>
+							<Textarea
+								value={resourceDescription}
+								onChange={(e) => setResourceDescription(e.target.value)}
+								placeholder="Brief description of the resource"
+								rows={3}
+							/>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setShowAddResource(false)}>Cancel</Button>
+						<Button onClick={addHackathonResource} disabled={!resourceTitle.trim() || !resourceUrl.trim()}>
+							Add Resource
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Configure Submission Page Dialog */}
+			<Dialog open={showSubmissionConfig} onOpenChange={setShowSubmissionConfig}>
+				<DialogContent className="max-w-2xl">
+					<DialogHeader>
+						<DialogTitle>Configure Submission Page</DialogTitle>
+						<DialogDescription>Enable and configure the submission page for this hackathon</DialogDescription>
+					</DialogHeader>
+					<div className="space-y-4">
+						<div className="flex items-center space-x-2">
+							<input
+								type="checkbox"
+								id="submission_enabled"
+								checked={submissionPageEnabled}
+								onChange={(e) => setSubmissionPageEnabled(e.target.checked)}
+								className="rounded"
+							/>
+							<label htmlFor="submission_enabled" className="text-sm font-medium">
+								Enable Submission Page
+							</label>
+						</div>
+						{submissionPageEnabled && (
+							<div className="p-4 bg-muted rounded-lg">
+								<p className="text-sm text-muted-foreground mb-4">
+									Submission page will be available to approved participants. You can configure custom fields later.
+								</p>
+								<p className="text-xs text-muted-foreground">
+									Default fields: Title, Description, Project URL, Video URL
+								</p>
+							</div>
+						)}
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setShowSubmissionConfig(false)}>Cancel</Button>
+						<Button onClick={saveSubmissionConfig}>Save Configuration</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>

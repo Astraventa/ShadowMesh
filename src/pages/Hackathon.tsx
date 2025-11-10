@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
   Calendar, 
   MapPin, 
@@ -20,11 +23,15 @@ import {
   ExternalLink,
   FileText,
   Video,
-  Link as LinkIcon
+  Link as LinkIcon,
+  UserPlus,
+  Search,
+  X,
+  Send,
+  User
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import HackathonRegistration from "@/components/HackathonRegistration";
-import EventRegistration from "@/components/EventRegistration";
 
 interface Hackathon {
   id: string;
@@ -47,6 +54,7 @@ interface Hackathon {
   fee_amount?: number;
   fee_currency?: string;
   max_participants?: number;
+  submission_page_enabled?: boolean;
 }
 
 interface Registration {
@@ -61,6 +69,7 @@ interface Team {
   hackathon_id: string;
   team_leader_id: string;
   status: string;
+  max_members: number;
   members: Array<{ member_id: string; full_name: string; email: string; role: string }>;
 }
 
@@ -74,6 +83,21 @@ interface Submission {
   created_at: string;
 }
 
+interface Resource {
+  id: string;
+  title: string;
+  description?: string;
+  content_url?: string;
+  resource_type: string;
+}
+
+interface SinglePlayer {
+  id: string;
+  full_name: string;
+  email: string;
+  area_of_interest?: string;
+}
+
 export default function Hackathon() {
   const { hackathonId } = useParams<{ hackathonId: string }>();
   const navigate = useNavigate();
@@ -84,9 +108,19 @@ export default function Hackathon() {
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
   const [submission, setSubmission] = useState<Submission | null>(null);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [allTeams, setAllTeams] = useState<Team[]>([]);
+  const [singlePlayers, setSinglePlayers] = useState<SinglePlayer[]>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [showRegistration, setShowRegistration] = useState(false);
+  
+  // Team management states
+  const [showCreateTeam, setShowCreateTeam] = useState(false);
+  const [teamName, setTeamName] = useState("");
+  const [showFindTeammates, setShowFindTeammates] = useState(false);
+  const [showJoinTeam, setShowJoinTeam] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     async function loadHackathonData() {
@@ -99,7 +133,6 @@ export default function Hackathon() {
       try {
         setLoading(true);
 
-        // Check authentication
         const authenticated = localStorage.getItem("shadowmesh_authenticated");
         const memberEmail = localStorage.getItem("shadowmesh_member_email");
         
@@ -109,7 +142,6 @@ export default function Hackathon() {
           return;
         }
 
-        // Get member ID
         const { data: memberData } = await supabase
           .from("members")
           .select("id")
@@ -124,7 +156,6 @@ export default function Hackathon() {
 
         setMemberId(memberData.id);
 
-        // Load hackathon
         const { data: hackathonData, error: hackathonError } = await supabase
           .from("events")
           .select("*")
@@ -138,7 +169,6 @@ export default function Hackathon() {
 
         setHackathon(hackathonData as Hackathon);
 
-        // Load registration
         const { data: regData } = await supabase
           .from("hackathon_registrations")
           .select("*")
@@ -150,44 +180,70 @@ export default function Hackathon() {
           setRegistration(regData as Registration);
         }
 
-        // Load team (if user is in one)
-        const { data: teamData } = await supabase
-          .from("hackathon_teams")
-          .select(`
-            *,
-            team_members(
-              member_id,
-              role,
-              members(id, full_name, email)
-            )
-          `)
-          .eq("hackathon_id", hackathonId)
-          .or(`team_leader_id.eq.${memberData.id},team_members.member_id.eq.${memberData.id}`)
-          .single();
+        if (regData?.status === "approved") {
+          // Load team
+          const { data: teamData } = await supabase
+            .from("hackathon_teams")
+            .select(`
+              *,
+              team_members(
+                member_id,
+                role,
+                members(id, full_name, email)
+              )
+            `)
+            .eq("hackathon_id", hackathonId)
+            .or(`team_leader_id.eq.${memberData.id},team_members.member_id.eq.${memberData.id}`)
+            .single();
 
-        if (teamData) {
-          const formattedTeam = {
-            ...teamData,
-            members: (teamData.team_members || []).map((tm: any) => ({
-              member_id: tm.member_id,
-              full_name: tm.members?.full_name || "",
-              email: tm.members?.email || "",
-              role: tm.role
-            }))
-          };
-          setTeam(formattedTeam as Team);
-        }
+          if (teamData) {
+            const formattedTeam = {
+              ...teamData,
+              members: (teamData.team_members || []).map((tm: any) => ({
+                member_id: tm.member_id,
+                full_name: tm.members?.full_name || "",
+                email: tm.members?.email || "",
+                role: tm.role
+              }))
+            };
+            setTeam(formattedTeam as Team);
+          }
 
-        // Load submission (if exists)
-        const { data: subData } = await supabase
-          .from("hackathon_submissions")
-          .select("*")
-          .eq("hackathon_id", hackathonId)
-          .or(`member_id.eq.${memberData.id}${teamData ? `,team_id.eq.${teamData.id}` : ""}`)
-          .single();
+          // Load all teams and single players
+          await loadTeamsAndPlayers(hackathonId, memberData.id);
 
-        if (subData) {
-          setSubmission(subData as Submission);
+          // Load submission
+          const { data: subData } = await supabase
+            .from("hackathon_submissions")
+            .select("*")
+            .eq("hackathon_id", hackathonId)
+            .or(`member_id.eq.${memberData.id}${teamData ? `,team_id.eq.${teamData.id}` : ""}`)
+            .single();
+
+          if (subData) {
+            setSubmission(subData as Submission);
+          }
+
+          // Load resources
+          const { data: resData } = await supabase
+            .from("hackathon_resources")
+            .select(`
+              *,
+              member_resources(*)
+            `)
+            .eq("hackathon_id", hackathonId)
+            .order("display_order");
+
+          if (resData) {
+            const formattedResources = resData.map((r: any) => ({
+              id: r.member_resources?.id || r.resource_id,
+              title: r.member_resources?.title || "Resource",
+              description: r.member_resources?.description,
+              content_url: r.member_resources?.content_url,
+              resource_type: r.member_resources?.resource_type || "link"
+            }));
+            setResources(formattedResources);
+          }
         }
 
       } catch (error: any) {
@@ -201,6 +257,142 @@ export default function Hackathon() {
 
     loadHackathonData();
   }, [hackathonId, navigate, toast]);
+
+  async function loadTeamsAndPlayers(hackathonId: string, currentMemberId: string) {
+    try {
+      // Get all approved registrations
+      const { data: approvedRegs } = await supabase
+        .from("hackathon_registrations")
+        .select("member_id, members(id, full_name, email, area_of_interest)")
+        .eq("hackathon_id", hackathonId)
+        .eq("status", "approved");
+
+      // Get all teams
+      const { data: teamsData } = await supabase
+        .from("hackathon_teams")
+        .select(`
+          *,
+          team_members(
+            member_id,
+            role,
+            members(id, full_name, email)
+          )
+        `)
+        .eq("hackathon_id", hackathonId)
+        .eq("status", "forming");
+
+      if (teamsData) {
+        const formattedTeams = teamsData.map((t: any) => ({
+          ...t,
+          members: (t.team_members || []).map((tm: any) => ({
+            member_id: tm.member_id,
+            full_name: tm.members?.full_name || "",
+            email: tm.members?.email || "",
+            role: tm.role
+          }))
+        }));
+        setAllTeams(formattedTeams as Team[]);
+
+        // Get team member IDs
+        const teamMemberIds = new Set<string>();
+        teamsData.forEach((t: any) => {
+          if (t.team_leader_id) teamMemberIds.add(t.team_leader_id);
+          (t.team_members || []).forEach((tm: any) => {
+            if (tm.member_id) teamMemberIds.add(tm.member_id);
+          });
+        });
+
+        // Get single players
+        const singlePlayers = (approvedRegs || [])
+          .filter((r: any) => !teamMemberIds.has(r.member_id) && r.member_id !== currentMemberId)
+          .map((r: any) => ({
+            id: r.member_id,
+            full_name: r.members?.full_name || "",
+            email: r.members?.email || "",
+            area_of_interest: r.members?.area_of_interest || ""
+          }));
+        setSinglePlayers(singlePlayers);
+      }
+    } catch (error: any) {
+      console.error("Error loading teams:", error);
+    }
+  }
+
+  async function createTeam() {
+    if (!memberId || !hackathonId || !teamName.trim()) {
+      toast({ title: "Team name required", description: "Please enter a team name." });
+      return;
+    }
+
+    try {
+      const { data: teamData, error } = await supabase
+        .from("hackathon_teams")
+        .insert({
+          hackathon_id: hackathonId,
+          team_name: teamName.trim(),
+          team_leader_id: memberId,
+          status: "forming",
+          max_members: 4
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Add leader to team_members
+      await supabase
+        .from("team_members")
+        .insert({
+          team_id: teamData.id,
+          member_id: memberId,
+          role: "leader"
+        });
+
+      toast({ title: "Team created!", description: "You can now invite teammates." });
+      setShowCreateTeam(false);
+      setTeamName("");
+      window.location.reload();
+    } catch (e: any) {
+      toast({ title: "Failed to create team", description: e.message });
+    }
+  }
+
+  async function joinTeam(teamId: string) {
+    if (!memberId) return;
+
+    try {
+      // Check if team has space
+      const { data: teamData } = await supabase
+        .from("hackathon_teams")
+        .select("id, max_members, team_members(count)")
+        .eq("id", teamId)
+        .single();
+
+      const { data: members } = await supabase
+        .from("team_members")
+        .select("member_id")
+        .eq("team_id", teamId);
+
+      if (members && members.length >= (teamData?.max_members || 4)) {
+        toast({ title: "Team full", description: "This team has reached maximum capacity." });
+        return;
+      }
+
+      await supabase
+        .from("team_members")
+        .insert({
+          team_id: teamId,
+          member_id: memberId,
+          role: "member"
+        });
+
+      toast({ title: "Joined team!", description: "You've successfully joined the team." });
+      setShowJoinTeam(null);
+      window.location.reload();
+    } catch (e: any) {
+      toast({ title: "Failed to join team", description: e.message });
+    }
+  }
 
   if (loading) {
     return (
@@ -243,49 +435,60 @@ export default function Hackathon() {
   
   const isStarted = now >= startDate;
   const isEnded = endDate ? now >= endDate : false;
-  const canSubmit = isStarted && !isEnded && (submissionDeadline ? now <= submissionDeadline : true);
+  const canSubmit = isStarted && !isEnded && (submissionDeadline ? now <= submissionDeadline : true) && hackathon.submission_page_enabled;
   const registrationClosed = registrationDeadline ? now > registrationDeadline : false;
   const resultsPublished = hackathon.results_published_at ? new Date(hackathon.results_published_at) <= now : false;
 
+  const filteredTeams = allTeams.filter(t => 
+    t.team_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.members.some(m => m.full_name.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const filteredPlayers = singlePlayers.filter(p =>
+    p.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (p.area_of_interest && p.area_of_interest.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
+      {/* Header - More Spacious */}
+      <div className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
+        <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <Button variant="ghost" asChild>
+            <Button variant="ghost" asChild className="text-base">
               <Link to="/member-portal" className="flex items-center gap-2">
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-5 h-5" />
                 Back to Portal
               </Link>
             </Button>
-            <Badge variant={hackathon.status === "ongoing" ? "default" : "secondary"}>
+            <Badge variant={hackathon.status === "ongoing" ? "default" : "secondary"} className="text-sm px-4 py-1.5">
               {hackathon.status.toUpperCase()}
             </Badge>
           </div>
         </div>
       </div>
 
-      {/* Hero Section */}
-      <div className="bg-gradient-to-br from-purple-950/90 via-red-900/80 to-amber-950/90 border-b border-purple-800/50">
-        <div className="container mx-auto px-4 py-12">
-          <div className="flex items-start gap-4 mb-6">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
-              <Trophy className="w-8 h-8 text-amber-950" />
+      {/* Hero Section - More Spacious and Premium */}
+      <div className="bg-gradient-to-br from-purple-950/95 via-red-900/85 to-amber-950/95 border-b border-purple-800/30">
+        <div className="container mx-auto px-6 py-16">
+          <div className="flex items-start gap-6 mb-8">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-2xl">
+              <Trophy className="w-10 h-10 text-amber-950" />
             </div>
             <div className="flex-1">
-              <h1 className="text-4xl md:text-5xl font-bold mb-3 text-white">{hackathon.title}</h1>
-              <div className="flex flex-wrap items-center gap-3 mb-4">
-                <Badge className="bg-purple-600 text-white">HACKATHON</Badge>
+              <h1 className="text-5xl md:text-6xl font-extrabold mb-4 text-white leading-tight">{hackathon.title}</h1>
+              <div className="flex flex-wrap items-center gap-3 mb-6">
+                <Badge className="bg-purple-600 text-white text-sm px-3 py-1">HACKATHON</Badge>
                 {hackathon.category && (
-                  <Badge variant="outline" className="border-purple-400 text-purple-200">
+                  <Badge variant="outline" className="border-purple-400 text-purple-200 text-sm px-3 py-1">
                     {hackathon.category.toUpperCase()}
                   </Badge>
                 )}
                 {hackathon.tags && hackathon.tags.length > 0 && (
                   <>
                     {hackathon.tags.slice(0, 3).map((tag, idx) => (
-                      <Badge key={idx} variant="secondary" className="bg-purple-800/50 text-purple-200">
+                      <Badge key={idx} variant="secondary" className="bg-purple-800/50 text-purple-200 text-sm px-3 py-1">
                         {tag}
                       </Badge>
                     ))}
@@ -293,60 +496,60 @@ export default function Hackathon() {
                 )}
               </div>
               {hackathon.description && (
-                <p className="text-purple-100/90 text-lg leading-relaxed max-w-3xl">
+                <p className="text-purple-100/90 text-xl leading-relaxed max-w-4xl mb-8">
                   {hackathon.description}
                 </p>
               )}
             </div>
           </div>
 
-          {/* Stats Row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
-            <Card className="bg-purple-900/30 border-purple-700/50 backdrop-blur-sm">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 text-purple-200">
-                  <Calendar className="w-5 h-5" />
+          {/* Stats Row - More Spacious */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-12">
+            <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-xl">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-3 text-purple-200">
+                  <Calendar className="w-6 h-6 text-purple-300" />
                   <div>
-                    <p className="text-xs text-purple-300">Start Date</p>
-                    <p className="font-semibold">{formatDate(hackathon.start_date)}</p>
+                    <p className="text-sm text-purple-300/80 mb-1">Start Date</p>
+                    <p className="font-bold text-lg">{formatDate(hackathon.start_date)}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
             {hackathon.end_date && (
-              <Card className="bg-purple-900/30 border-purple-700/50 backdrop-blur-sm">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 text-purple-200">
-                    <Clock className="w-5 h-5" />
+              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-xl">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 text-purple-200">
+                    <Clock className="w-6 h-6 text-purple-300" />
                     <div>
-                      <p className="text-xs text-purple-300">End Date</p>
-                      <p className="font-semibold">{formatDate(hackathon.end_date)}</p>
+                      <p className="text-sm text-purple-300/80 mb-1">End Date</p>
+                      <p className="font-bold text-lg">{formatDate(hackathon.end_date)}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             )}
             {hackathon.location && (
-              <Card className="bg-purple-900/30 border-purple-700/50 backdrop-blur-sm">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 text-purple-200">
-                    <MapPin className="w-5 h-5" />
+              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-xl">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 text-purple-200">
+                    <MapPin className="w-6 h-6 text-purple-300" />
                     <div>
-                      <p className="text-xs text-purple-300">Location</p>
-                      <p className="font-semibold">{hackathon.location}</p>
+                      <p className="text-sm text-purple-300/80 mb-1">Location</p>
+                      <p className="font-bold text-lg">{hackathon.location}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             )}
             {hackathon.max_participants && (
-              <Card className="bg-purple-900/30 border-purple-700/50 backdrop-blur-sm">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 text-purple-200">
-                    <Users className="w-5 h-5" />
+              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-xl">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 text-purple-200">
+                    <Users className="w-6 h-6 text-purple-300" />
                     <div>
-                      <p className="text-xs text-purple-300">Max Participants</p>
-                      <p className="font-semibold">{hackathon.max_participants}</p>
+                      <p className="text-sm text-purple-300/80 mb-1">Max Participants</p>
+                      <p className="font-bold text-lg">{hackathon.max_participants}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -356,10 +559,10 @@ export default function Hackathon() {
 
           {/* Registration Status */}
           {!isApproved && !isPending && !isRejected && !registrationClosed && (
-            <div className="mt-6">
+            <div className="mt-10">
               <Button 
                 size="lg" 
-                className="bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-600/90 hover:to-purple-800/90"
+                className="bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-600/90 hover:to-purple-800/90 text-lg px-8 py-6"
                 onClick={() => setShowRegistration(true)}
               >
                 Register for Hackathon
@@ -367,20 +570,20 @@ export default function Hackathon() {
             </div>
           )}
           {isPending && (
-            <div className="mt-6">
-              <Badge variant="outline" className="bg-yellow-900/30 border-yellow-600 text-yellow-200">
+            <div className="mt-10">
+              <Badge variant="outline" className="bg-yellow-900/30 border-yellow-600 text-yellow-200 text-base px-4 py-2">
                 Registration Pending Approval
               </Badge>
             </div>
           )}
           {isRejected && (
-            <div className="mt-6">
-              <Badge variant="destructive">Registration Rejected</Badge>
+            <div className="mt-10">
+              <Badge variant="destructive" className="text-base px-4 py-2">Registration Rejected</Badge>
             </div>
           )}
           {registrationClosed && !registration && (
-            <div className="mt-6">
-              <Badge variant="secondary" className="bg-gray-800 text-gray-300">
+            <div className="mt-10">
+              <Badge variant="secondary" className="bg-gray-800 text-gray-300 text-base px-4 py-2">
                 Registration Closed
               </Badge>
             </div>
@@ -388,131 +591,301 @@ export default function Hackathon() {
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content - More Spacious */}
       {isApproved ? (
-        <div className="container mx-auto px-4 py-8">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5 bg-muted/50 backdrop-blur-sm">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="teams">Teams</TabsTrigger>
-              <TabsTrigger value="resources">Resources</TabsTrigger>
-              <TabsTrigger value="submissions">Submissions</TabsTrigger>
-              {resultsPublished && <TabsTrigger value="results">Results</TabsTrigger>}
+        <div className="container mx-auto px-6 py-12">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+            <TabsList className="grid w-full grid-cols-5 bg-muted/50 backdrop-blur-sm h-14 p-1.5">
+              <TabsTrigger value="overview" className="text-base">Overview</TabsTrigger>
+              <TabsTrigger value="teams" className="text-base">Teams</TabsTrigger>
+              <TabsTrigger value="resources" className="text-base">Resources</TabsTrigger>
+              <TabsTrigger value="submissions" className="text-base">Submissions</TabsTrigger>
+              {resultsPublished && <TabsTrigger value="results" className="text-base">Results</TabsTrigger>}
             </TabsList>
 
             {/* Overview Tab */}
-            <TabsContent value="overview" className="space-y-6">
+            <TabsContent value="overview" className="space-y-8">
               {hackathon.details_markdown && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Details</CardTitle>
+                <Card className="shadow-xl border-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-2xl">Details</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.details_markdown }} />
+                    <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.details_markdown }} />
                   </CardContent>
                 </Card>
               )}
 
               {hackathon.schedule_markdown && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Schedule</CardTitle>
+                <Card className="shadow-xl border-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-2xl">Schedule</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.schedule_markdown }} />
+                    <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.schedule_markdown }} />
                   </CardContent>
                 </Card>
               )}
 
               {hackathon.rules_markdown && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Rules & Guidelines</CardTitle>
+                <Card className="shadow-xl border-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-2xl">Rules & Guidelines</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.rules_markdown }} />
+                    <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.rules_markdown }} />
                   </CardContent>
                 </Card>
               )}
             </TabsContent>
 
-            {/* Teams Tab */}
-            <TabsContent value="teams">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Team Management</CardTitle>
-                  <CardDescription>
-                    {hasTeam ? "Manage your team or find teammates" : "Create or join a team to participate"}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {hasTeam ? (
-                    <div className="space-y-4">
-                      <div className="p-4 bg-muted rounded-lg">
-                        <h3 className="font-semibold mb-2">{team.team_name}</h3>
-                        <p className="text-sm text-muted-foreground mb-4">Team Members:</p>
-                        <div className="space-y-2">
-                          {team.members.map((member) => (
-                            <div key={member.member_id} className="flex items-center justify-between p-2 bg-background rounded">
-                              <div>
-                                <p className="font-medium">{member.full_name}</p>
-                                <p className="text-xs text-muted-foreground">{member.email}</p>
-                              </div>
-                              <Badge>{member.role === "leader" ? "Leader" : "Member"}</Badge>
-                            </div>
-                          ))}
+            {/* Teams Tab - Premium Team Management */}
+            <TabsContent value="teams" className="space-y-8">
+              {hasTeam ? (
+                <Card className="shadow-xl border-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-2xl flex items-center gap-3">
+                      <Users className="w-6 h-6" />
+                      Your Team: {team.team_name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid gap-4">
+                      {team.members.map((member) => (
+                        <div key={member.member_id} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
+                          <div>
+                            <p className="font-semibold text-lg">{member.full_name}</p>
+                            <p className="text-sm text-muted-foreground">{member.email}</p>
+                          </div>
+                          <Badge variant={member.role === "leader" ? "default" : "secondary"}>
+                            {member.role === "leader" ? "Leader" : "Member"}
+                          </Badge>
                         </div>
-                      </div>
-                      <Button variant="outline" onClick={() => navigate("/member-portal")}>
-                        Manage Team in Portal
+                      ))}
+                    </div>
+                    {team.members.length < team.max_members && (
+                      <Button 
+                        variant="outline" 
+                        className="w-full"
+                        onClick={() => {
+                          setShowFindTeammates(true);
+                          if (hackathonId) loadTeamsAndPlayers(hackathonId, memberId!);
+                        }}
+                      >
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        Invite Teammates
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card className="shadow-xl border-2">
+                    <CardHeader className="pb-4">
+                      <CardTitle className="text-2xl flex items-center gap-3">
+                        <Users className="w-6 h-6" />
+                        Create Team
+                      </CardTitle>
+                      <CardDescription>Start your own team and invite members</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button 
+                        className="w-full" 
+                        size="lg"
+                        onClick={() => setShowCreateTeam(true)}
+                      >
+                        Create New Team
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  <Card className="shadow-xl border-2">
+                    <CardHeader className="pb-4">
+                      <CardTitle className="text-2xl flex items-center gap-3">
+                        <UserPlus className="w-6 h-6" />
+                        Join Team
+                      </CardTitle>
+                      <CardDescription>Browse and join existing teams</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button 
+                        variant="outline" 
+                        className="w-full" 
+                        size="lg"
+                        onClick={() => {
+                          setShowJoinTeam("browse");
+                          if (hackathonId) loadTeamsAndPlayers(hackathonId, memberId!);
+                        }}
+                      >
+                        Browse Teams
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              {/* All Teams Section */}
+              {showJoinTeam === "browse" && (
+                <Card className="shadow-xl border-2">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-2xl">Available Teams</CardTitle>
+                      <Button variant="ghost" size="sm" onClick={() => setShowJoinTeam(null)}>
+                        <X className="w-4 h-4" />
                       </Button>
                     </div>
+                    <div className="relative mt-4">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                      <Input
+                        placeholder="Search teams..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {filteredTeams.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">No teams found</p>
+                    ) : (
+                      filteredTeams.map((t) => (
+                        <div key={t.id} className="p-4 bg-muted/50 rounded-lg border">
+                          <div className="flex items-center justify-between mb-3">
+                            <div>
+                              <h3 className="font-semibold text-lg">{t.team_name}</h3>
+                              <p className="text-sm text-muted-foreground">
+                                {t.members.length} / {t.max_members} members
+                              </p>
+                            </div>
+                            {t.members.length < t.max_members && (
+                              <Button size="sm" onClick={() => joinTeam(t.id)}>
+                                Join
+                              </Button>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {t.members.map((m) => (
+                              <Badge key={m.member_id} variant="secondary">
+                                {m.full_name}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Single Players Section */}
+              <Card className="shadow-xl border-2">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-2xl flex items-center gap-3">
+                    <User className="w-6 h-6" />
+                    Single Players
+                  </CardTitle>
+                  <CardDescription>Players looking for teams</CardDescription>
+                  <div className="relative mt-4">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                    <Input
+                      placeholder="Search players..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {filteredPlayers.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8 col-span-2">No single players found</p>
+                    ) : (
+                      filteredPlayers.map((player) => (
+                        <div key={player.id} className="p-4 bg-muted/50 rounded-lg border">
+                          <p className="font-semibold">{player.full_name}</p>
+                          <p className="text-sm text-muted-foreground">{player.email}</p>
+                          {player.area_of_interest && (
+                            <Badge variant="outline" className="mt-2">
+                              {player.area_of_interest}
+                            </Badge>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Resources Tab */}
+            <TabsContent value="resources" className="space-y-6">
+              <Card className="shadow-xl border-2">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-2xl flex items-center gap-3">
+                    <BookOpen className="w-6 h-6" />
+                    Hackathon Resources
+                  </CardTitle>
+                  <CardDescription>Resources and materials for this hackathon</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {resources.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-12">No resources available yet</p>
                   ) : (
-                    <div className="text-center py-8">
-                      <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground mb-4">You're not in a team yet.</p>
-                      <Button onClick={() => navigate("/member-portal")}>
-                        Create or Join Team
-                      </Button>
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {resources.map((resource) => (
+                        <Card key={resource.id} className="border">
+                          <CardHeader>
+                            <CardTitle className="text-lg">{resource.title}</CardTitle>
+                            {resource.description && (
+                              <CardDescription>{resource.description}</CardDescription>
+                            )}
+                          </CardHeader>
+                          <CardContent>
+                            {resource.content_url && (
+                              <Button variant="outline" asChild className="w-full">
+                                <a href={resource.content_url} target="_blank" rel="noopener noreferrer">
+                                  <ExternalLink className="w-4 h-4 mr-2" />
+                                  Open Resource
+                                </a>
+                              </Button>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
                     </div>
                   )}
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Resources Tab */}
-            <TabsContent value="resources">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Hackathon Resources</CardTitle>
-                  <CardDescription>Resources and materials for this hackathon</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Resources will be displayed here.</p>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
             {/* Submissions Tab */}
-            <TabsContent value="submissions">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Submission</CardTitle>
+            <TabsContent value="submissions" className="space-y-6">
+              <Card className="shadow-xl border-2">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-2xl flex items-center gap-3">
+                    <Upload className="w-6 h-6" />
+                    Submission
+                  </CardTitle>
                   <CardDescription>
                     {hasSubmission ? "View or update your submission" : "Submit your hackathon project"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {hasSubmission ? (
-                    <div className="space-y-4">
-                      <div className="p-4 bg-muted rounded-lg">
-                        <h3 className="font-semibold mb-2">{submission.title}</h3>
+                  {!hackathon.submission_page_enabled ? (
+                    <div className="text-center py-12">
+                      <AlertCircle className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-xl font-semibold mb-2">Submission Page Not Available</h3>
+                      <p className="text-muted-foreground">The submission page will be available soon.</p>
+                    </div>
+                  ) : hasSubmission ? (
+                    <div className="space-y-6">
+                      <div className="p-6 bg-muted/50 rounded-lg border">
+                        <h3 className="font-semibold text-xl mb-3">{submission.title}</h3>
                         {submission.description && (
-                          <p className="text-sm text-muted-foreground mb-4">{submission.description}</p>
+                          <p className="text-muted-foreground mb-4">{submission.description}</p>
                         )}
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-3">
                           {submission.artifact_url && (
-                            <Button variant="outline" size="sm" asChild>
+                            <Button variant="outline" asChild>
                               <a href={submission.artifact_url} target="_blank" rel="noopener noreferrer">
                                 <ExternalLink className="w-4 h-4 mr-2" />
                                 View Project
@@ -520,7 +893,7 @@ export default function Hackathon() {
                             </Button>
                           )}
                           {submission.video_url && (
-                            <Button variant="outline" size="sm" asChild>
+                            <Button variant="outline" asChild>
                               <a href={submission.video_url} target="_blank" rel="noopener noreferrer">
                                 <Video className="w-4 h-4 mr-2" />
                                 Watch Demo
@@ -539,19 +912,19 @@ export default function Hackathon() {
                       )}
                     </div>
                   ) : (
-                    <div className="text-center py-8">
+                    <div className="text-center py-12">
                       {canSubmit ? (
                         <>
-                          <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                          <p className="text-muted-foreground mb-4">Submit your hackathon project</p>
-                          <Button onClick={() => toast({ title: "Submit project", description: "Submission form coming soon!" })}>
+                          <Upload className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground mb-6 text-lg">Submit your hackathon project</p>
+                          <Button size="lg" onClick={() => toast({ title: "Submit project", description: "Submission form coming soon!" })}>
                             Submit Project
                           </Button>
                         </>
                       ) : (
                         <>
-                          <Clock className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                          <p className="text-muted-foreground">
+                          <Clock className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground text-lg">
                             {!isStarted ? "Submissions will open when the hackathon starts." : "Submission deadline has passed."}
                           </p>
                         </>
@@ -564,14 +937,14 @@ export default function Hackathon() {
 
             {/* Results Tab */}
             {resultsPublished && (
-              <TabsContent value="results">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Results</CardTitle>
+              <TabsContent value="results" className="space-y-6">
+                <Card className="shadow-xl border-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-2xl">Results</CardTitle>
                     <CardDescription>Hackathon winners and rankings</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-muted-foreground">Results will be displayed here once published.</p>
+                    <p className="text-muted-foreground text-center py-12">Results will be displayed here once published.</p>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -579,12 +952,12 @@ export default function Hackathon() {
           </Tabs>
         </div>
       ) : (
-        <div className="container mx-auto px-4 py-8">
-          <Card>
-            <CardContent className="pt-6 text-center">
-              <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h2 className="text-xl font-bold mb-2">Registration Required</h2>
-              <p className="text-muted-foreground mb-4">
+        <div className="container mx-auto px-6 py-12">
+          <Card className="shadow-xl border-2 max-w-2xl mx-auto">
+            <CardContent className="pt-12 pb-12 text-center">
+              <AlertCircle className="w-16 h-16 text-muted-foreground mx-auto mb-6" />
+              <h2 className="text-2xl font-bold mb-3">Registration Required</h2>
+              <p className="text-muted-foreground mb-6 text-lg">
                 {isPending 
                   ? "Your registration is pending approval. You'll be notified once approved."
                   : isRejected
@@ -593,7 +966,7 @@ export default function Hackathon() {
                 }
               </p>
               {!registration && !registrationClosed && (
-                <Button onClick={() => setShowRegistration(true)}>
+                <Button size="lg" onClick={() => setShowRegistration(true)}>
                   Register Now
                 </Button>
               )}
@@ -601,6 +974,30 @@ export default function Hackathon() {
           </Card>
         </div>
       )}
+
+      {/* Create Team Dialog */}
+      <Dialog open={showCreateTeam} onOpenChange={setShowCreateTeam}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Team</DialogTitle>
+            <DialogDescription>Create a new team for this hackathon</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Team Name</label>
+              <Input
+                value={teamName}
+                onChange={(e) => setTeamName(e.target.value)}
+                placeholder="Enter team name"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateTeam(false)}>Cancel</Button>
+            <Button onClick={createTeam} disabled={!teamName.trim()}>Create Team</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Registration Dialog */}
       {showRegistration && hackathonId && memberId && (
@@ -619,7 +1016,7 @@ export default function Hackathon() {
                 feeCurrency={hackathon.fee_currency || "PKR"}
                 onSuccess={() => {
                   setShowRegistration(false);
-                  window.location.reload(); // Reload to show updated status
+                  window.location.reload();
                 }}
               />
             </CardContent>
@@ -629,4 +1026,3 @@ export default function Hackathon() {
     </div>
   );
 }
-
