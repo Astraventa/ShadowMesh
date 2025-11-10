@@ -300,12 +300,25 @@ Deno.serve(async (req) => {
           }
         } else {
           // For regular events, count from event_registrations table
-          const countRes = await fetch(`${SUPABASE_URL}/rest/v1/event_registrations?select=id&event_id=eq.${event.id}`, {
-            headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
-          });
-          if (countRes.ok) {
-            const registrations = await countRes.json();
-            count = Array.isArray(registrations) ? registrations.length : 0;
+          try {
+            const countRes = await fetch(`${SUPABASE_URL}/rest/v1/event_registrations?select=id&event_id=eq.${event.id}`, {
+              headers: { 
+                'apikey': SERVICE_KEY, 
+                'Authorization': `Bearer ${SERVICE_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+              },
+            });
+            if (countRes.ok) {
+              const registrations = await countRes.json();
+              count = Array.isArray(registrations) ? registrations.length : 0;
+              console.log(`Event ${event.id} (${event.title}): Found ${count} registrations`);
+            } else {
+              const errorText = await countRes.text();
+              console.error(`Failed to fetch event registrations for ${event.id} (${event.title}): Status ${countRes.status}, ${errorText}`);
+            }
+          } catch (err) {
+            console.error(`Error counting event registrations for ${event.id} (${event.title}):`, err);
           }
         }
         
