@@ -4,7 +4,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
-const RESEND_FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") || "noreply@shadowmesh.org";
+// Prefer configured sender; avoid no-reply to improve deliverability
+const RESEND_FROM_EMAIL =
+  Deno.env.get("RESEND_FROM_EMAIL") ||
+  Deno.env.get("RESEND_FROM") ||
+  "team@cavexa.online";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,7 +22,7 @@ serve(async (req) => {
   }
 
   try {
-    const { type, to, subject, html, text, otp, resetToken, resetLink } = await req.json();
+    const { type, to, subject, html, text, otp, resetToken, resetLink, from } = await req.json();
 
     if (!to || !type) {
       return new Response(
@@ -117,7 +121,8 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: RESEND_FROM_EMAIL,
+        // Allow request to override From (must be verified in Resend)
+        from: from || RESEND_FROM_EMAIL,
         to: to,
         subject: emailSubject,
         html: emailHtml,

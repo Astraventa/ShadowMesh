@@ -101,8 +101,8 @@ Deno.serve(async (req) => {
     // Send welcome email via send_email edge function (only on approve, and only once)
     if (action === 'approve' && app?.email && !app.welcome_email_sent && newMemberId) {
       const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-      const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('RESEND_FROM') || 'noreply@shadowmesh.org';
-      const BASE_URL = Deno.env.get('BASE_URL') || Deno.env.get('SUPABASE_URL')?.replace('/rest/v1', '') || 'https://shadowmesh.org';
+      const RESEND_FROM = Deno.env.get('RESEND_FROM_EMAIL') || Deno.env.get('RESEND_FROM') || 'team@cavexa.online';
+      const BASE_URL = Deno.env.get('BASE_URL') || Deno.env.get('SUPABASE_URL')?.replace('/rest/v1', '') || 'https://shadowmesh-six.vercel.app';
       
       if (!RESEND_API_KEY) {
         console.error('RESEND_API_KEY not configured. Welcome email will not be sent.');
@@ -173,7 +173,8 @@ Deno.serve(async (req) => {
               type: 'welcome',
               to: app.email,
               subject: 'Welcome to ShadowMesh - Set Up Your Password',
-              html: emailHtml
+              html: emailHtml,
+              from: RESEND_FROM
             })
           });
           
