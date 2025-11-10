@@ -285,12 +285,18 @@ Deno.serve(async (req) => {
         // Check if this is a hackathon (event_type === 'hackathon')
         if (event.event_type === 'hackathon') {
           // For hackathons, count from hackathon_registrations table
-          const hackathonCountRes = await fetch(`${SUPABASE_URL}/rest/v1/hackathon_registrations?select=id&hackathon_id=eq.${event.id}`, {
-            headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
-          });
-          if (hackathonCountRes.ok) {
-            const hackathonRegs = await hackathonCountRes.json();
-            count = Array.isArray(hackathonRegs) ? hackathonRegs.length : 0;
+          try {
+            const hackathonCountRes = await fetch(`${SUPABASE_URL}/rest/v1/hackathon_registrations?select=id&hackathon_id=eq.${event.id}`, {
+              headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+            });
+            if (hackathonCountRes.ok) {
+              const hackathonRegs = await hackathonCountRes.json();
+              count = Array.isArray(hackathonRegs) ? hackathonRegs.length : 0;
+            } else {
+              console.error(`Failed to fetch hackathon registrations for ${event.id}:`, await hackathonCountRes.text());
+            }
+          } catch (err) {
+            console.error(`Error counting hackathon registrations for ${event.id}:`, err);
           }
         } else {
           // For regular events, count from event_registrations table

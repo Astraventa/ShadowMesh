@@ -452,43 +452,43 @@ export default function Hackathon() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-      {/* Header - More Spacious */}
+      {/* Header - Compact */}
       <div className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4">
+        <div className="container mx-auto px-4 py-2">
           <div className="flex items-center justify-between">
-            <Button variant="ghost" asChild className="text-base">
+            <Button variant="ghost" asChild size="sm">
               <Link to="/member-portal" className="flex items-center gap-2">
-                <ArrowLeft className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
                 Back to Portal
               </Link>
             </Button>
-            <Badge variant={hackathon.status === "ongoing" ? "default" : "secondary"} className="text-sm px-4 py-1.5">
+            <Badge variant={hackathon.status === "ongoing" ? "default" : "secondary"} className="text-xs px-3 py-0.5">
               {hackathon.status.toUpperCase()}
             </Badge>
           </div>
         </div>
       </div>
 
-      {/* Hero Section - More Spacious and Premium */}
+      {/* Hero Section - More Compact and Professional */}
       <div className="bg-gradient-to-br from-purple-950/95 via-red-900/85 to-amber-950/95 border-b border-purple-800/30">
-        <div className="container mx-auto px-6 py-16">
-          <div className="flex items-start gap-6 mb-8">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-2xl">
-              <Trophy className="w-10 h-10 text-amber-950" />
+        <div className="container mx-auto px-4 py-6">
+          <div className="flex items-start gap-4 mb-4">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg flex-shrink-0">
+              <Trophy className="w-6 h-6 text-amber-950" />
             </div>
-            <div className="flex-1">
-              <h1 className="text-5xl md:text-6xl font-extrabold mb-4 text-white leading-tight">{hackathon.title}</h1>
-              <div className="flex flex-wrap items-center gap-3 mb-6">
-                <Badge className="bg-purple-600 text-white text-sm px-3 py-1">HACKATHON</Badge>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-3xl md:text-4xl font-bold mb-2 text-white leading-tight truncate">{hackathon.title}</h1>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <Badge className="bg-purple-600 text-white text-xs px-2 py-0.5">HACKATHON</Badge>
                 {hackathon.category && (
-                  <Badge variant="outline" className="border-purple-400 text-purple-200 text-sm px-3 py-1">
+                  <Badge variant="outline" className="border-purple-400 text-purple-200 text-xs px-2 py-0.5">
                     {hackathon.category.toUpperCase()}
                   </Badge>
                 )}
                 {hackathon.tags && hackathon.tags.length > 0 && (
                   <>
                     {hackathon.tags.slice(0, 3).map((tag, idx) => (
-                      <Badge key={idx} variant="secondary" className="bg-purple-800/50 text-purple-200 text-sm px-3 py-1">
+                      <Badge key={idx} variant="secondary" className="bg-purple-800/50 text-purple-200 text-xs px-2 py-0.5">
                         {tag}
                       </Badge>
                     ))}
@@ -496,60 +496,60 @@ export default function Hackathon() {
                 )}
               </div>
               {hackathon.description && (
-                <p className="text-purple-100/90 text-xl leading-relaxed max-w-4xl mb-8">
+                <p className="text-purple-100/90 text-sm leading-relaxed max-w-3xl mb-4 line-clamp-2">
                   {hackathon.description}
                 </p>
               )}
             </div>
           </div>
 
-          {/* Stats Row - More Spacious */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-12">
-            <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-xl">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3 text-purple-200">
-                  <Calendar className="w-6 h-6 text-purple-300" />
-                  <div>
-                    <p className="text-sm text-purple-300/80 mb-1">Start Date</p>
-                    <p className="font-bold text-lg">{formatDate(hackathon.start_date)}</p>
+          {/* Stats Row - Compact */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+            <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-lg">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 text-purple-200">
+                  <Calendar className="w-4 h-4 text-purple-300 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-purple-300/80 mb-0.5">Start Date</p>
+                    <p className="font-semibold text-sm truncate">{formatDate(hackathon.start_date)}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
             {hackathon.end_date && (
-              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-xl">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-3 text-purple-200">
-                    <Clock className="w-6 h-6 text-purple-300" />
-                    <div>
-                      <p className="text-sm text-purple-300/80 mb-1">End Date</p>
-                      <p className="font-bold text-lg">{formatDate(hackathon.end_date)}</p>
+              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-lg">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 text-purple-200">
+                    <Clock className="w-4 h-4 text-purple-300 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-purple-300/80 mb-0.5">End Date</p>
+                      <p className="font-semibold text-sm truncate">{formatDate(hackathon.end_date)}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             )}
             {hackathon.location && (
-              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-xl">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-3 text-purple-200">
-                    <MapPin className="w-6 h-6 text-purple-300" />
-                    <div>
-                      <p className="text-sm text-purple-300/80 mb-1">Location</p>
-                      <p className="font-bold text-lg">{hackathon.location}</p>
+              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-lg">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 text-purple-200">
+                    <MapPin className="w-4 h-4 text-purple-300 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-purple-300/80 mb-0.5">Location</p>
+                      <p className="font-semibold text-sm truncate">{hackathon.location}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             )}
             {hackathon.max_participants && (
-              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-xl">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-3 text-purple-200">
-                    <Users className="w-6 h-6 text-purple-300" />
-                    <div>
-                      <p className="text-sm text-purple-300/80 mb-1">Max Participants</p>
-                      <p className="font-bold text-lg">{hackathon.max_participants}</p>
+              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-lg">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 text-purple-200">
+                    <Users className="w-4 h-4 text-purple-300 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-purple-300/80 mb-0.5">Max Participants</p>
+                      <p className="font-semibold text-sm">{hackathon.max_participants}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -559,10 +559,10 @@ export default function Hackathon() {
 
           {/* Registration Status */}
           {!isApproved && !isPending && !isRejected && !registrationClosed && (
-            <div className="mt-10">
+            <div className="mt-4">
               <Button 
-                size="lg" 
-                className="bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-600/90 hover:to-purple-800/90 text-lg px-8 py-6"
+                size="sm" 
+                className="bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-600/90 hover:to-purple-800/90"
                 onClick={() => setShowRegistration(true)}
               >
                 Register for Hackathon
@@ -570,20 +570,20 @@ export default function Hackathon() {
             </div>
           )}
           {isPending && (
-            <div className="mt-10">
-              <Badge variant="outline" className="bg-yellow-900/30 border-yellow-600 text-yellow-200 text-base px-4 py-2">
+            <div className="mt-4">
+              <Badge variant="outline" className="bg-yellow-900/30 border-yellow-600 text-yellow-200 text-xs px-2 py-1">
                 Registration Pending Approval
               </Badge>
             </div>
           )}
           {isRejected && (
-            <div className="mt-10">
-              <Badge variant="destructive" className="text-base px-4 py-2">Registration Rejected</Badge>
+            <div className="mt-4">
+              <Badge variant="destructive" className="text-xs px-2 py-1">Registration Rejected</Badge>
             </div>
           )}
           {registrationClosed && !registration && (
-            <div className="mt-10">
-              <Badge variant="secondary" className="bg-gray-800 text-gray-300 text-base px-4 py-2">
+            <div className="mt-4">
+              <Badge variant="secondary" className="bg-gray-800 text-gray-300 text-xs px-2 py-1">
                 Registration Closed
               </Badge>
             </div>
@@ -591,49 +591,49 @@ export default function Hackathon() {
         </div>
       </div>
 
-      {/* Main Content - More Spacious */}
+      {/* Main Content - Compact and Professional */}
       {isApproved ? (
-        <div className="container mx-auto px-6 py-12">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
-            <TabsList className="grid w-full grid-cols-5 bg-muted/50 backdrop-blur-sm h-14 p-1.5">
-              <TabsTrigger value="overview" className="text-base">Overview</TabsTrigger>
-              <TabsTrigger value="teams" className="text-base">Teams</TabsTrigger>
-              <TabsTrigger value="resources" className="text-base">Resources</TabsTrigger>
-              <TabsTrigger value="submissions" className="text-base">Submissions</TabsTrigger>
-              {resultsPublished && <TabsTrigger value="results" className="text-base">Results</TabsTrigger>}
+        <div className="container mx-auto px-4 py-4">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+            <TabsList className="grid w-full grid-cols-5 bg-muted/50 backdrop-blur-sm h-9 p-0.5">
+              <TabsTrigger value="overview" className="text-sm">Overview</TabsTrigger>
+              <TabsTrigger value="teams" className="text-sm">Teams</TabsTrigger>
+              <TabsTrigger value="resources" className="text-sm">Resources</TabsTrigger>
+              <TabsTrigger value="submissions" className="text-sm">Submissions</TabsTrigger>
+              {resultsPublished && <TabsTrigger value="results" className="text-sm">Results</TabsTrigger>}
             </TabsList>
 
             {/* Overview Tab */}
-            <TabsContent value="overview" className="space-y-8">
+            <TabsContent value="overview" className="space-y-4 mt-4">
               {hackathon.details_markdown && (
-                <Card className="shadow-xl border-2">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-2xl">Details</CardTitle>
+                <Card className="shadow-lg border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">Details</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.details_markdown }} />
+                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.details_markdown }} />
                   </CardContent>
                 </Card>
               )}
 
               {hackathon.schedule_markdown && (
-                <Card className="shadow-xl border-2">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-2xl">Schedule</CardTitle>
+                <Card className="shadow-lg border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">Schedule</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.schedule_markdown }} />
+                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.schedule_markdown }} />
                   </CardContent>
                 </Card>
               )}
 
               {hackathon.rules_markdown && (
-                <Card className="shadow-xl border-2">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-2xl">Rules & Guidelines</CardTitle>
+                <Card className="shadow-lg border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">Rules & Guidelines</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="prose prose-lg max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.rules_markdown }} />
+                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.rules_markdown }} />
                   </CardContent>
                 </Card>
               )}
