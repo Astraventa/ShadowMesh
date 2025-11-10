@@ -58,7 +58,7 @@ const Events = () => {
     }
   };
 
-  // Load events from Supabase (only admin-created, active; exclude hackathons for landing)
+  // Load events from Supabase (only admin-created, active; include hackathons too)
   useEffect(() => {
     async function loadEvents() {
       try {
@@ -67,7 +67,6 @@ const Events = () => {
           .from("events")
           .select("*")
           .eq("is_active", true)
-          .neq("event_type", "hackathon") // Exclude hackathons from landing page
           .order("created_at", { ascending: false });
 
         if (error) {
@@ -219,11 +218,21 @@ const Events = () => {
                     </>
                   )}
 
-                <Button variant="glow" className="w-full" asChild>
-                    <a href={isSupabaseEvent ? "#join" : (event as any).registrationLink}>
-                    Register Now
-                    <ExternalLink className="w-4 h-4 ml-2" />
-                  </a>
+                <Button
+                  variant="glow"
+                  className="w-full"
+                  onClick={() => {
+                    const isAuthed = localStorage.getItem("shadowmesh_authenticated") === "true";
+                    const email = localStorage.getItem("shadowmesh_member_email");
+                    if (isAuthed && email) {
+                      window.location.href = `/member-portal?event=${isSupabaseEvent ? event.id : ""}`;
+                    } else {
+                      window.location.hash = "join";
+                    }
+                  }}
+                >
+                  Register Now
+                  <ExternalLink className="w-4 h-4 ml-2" />
                 </Button>
               </div>
             );

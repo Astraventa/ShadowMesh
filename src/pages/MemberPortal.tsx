@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import EventRegistration from "@/components/EventRegistration";
@@ -1856,16 +1856,17 @@ export default function MemberPortal() {
                   const isApproved = reg?.status === "approved";
                   const isNew = new Date(hackathon.created_at) > new Date(Date.now() - 24 * 60 * 60 * 1000);
                   const isExpanded = expandedHackathons.has(hackathon.id);
+                  const formattedDeadline = hackathon.registration_deadline ? formatDate(hackathon.registration_deadline) : null;
+                  const formattedStart = hackathon.start_date ? formatDate(hackathon.start_date) : null;
 
                   return (
                     <Card 
                       key={hackathon.id} 
-                      className="bg-gradient-to-br from-red-950/90 via-red-900/80 to-amber-950/90 backdrop-blur-sm border-red-800/50 hover:border-red-600/70 transition-all duration-300 hover:shadow-lg hover:shadow-red-600/20 relative overflow-hidden"
+                      className="bg-gradient-to-br from-[#140114] via-[#1a0724] to-[#05010a] backdrop-blur-sm border-fuchsia-800/40 hover:border-fuchsia-500/70 transition-all duration-300 hover:shadow-lg hover:shadow-fuchsia-500/20 relative overflow-hidden"
                     >
-                      {/* Fire Animation */}
-                      <div className="absolute top-0 right-0 w-16 h-16 pointer-events-none opacity-60">
-                        <div className="fire-animation"></div>
-                      </div>
+                      {/* Aurora Glow */}
+                      <div className="absolute -top-16 -right-10 w-56 h-56 bg-gradient-to-br from-amber-400/30 via-fuchsia-500/20 to-purple-600/30 blur-3xl opacity-80 pointer-events-none" />
+                      <div className="absolute bottom-0 left-0 w-40 h-40 bg-gradient-to-tr from-purple-500/20 via-indigo-500/10 to-transparent blur-3xl opacity-80 pointer-events-none" />
                       {isNew && (
                         <div className="absolute top-2 right-2 z-10">
                           <Badge variant="destructive">NEW</Badge>
@@ -1874,22 +1875,43 @@ export default function MemberPortal() {
                       <CardHeader>
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
-                            <CardTitle className="text-2xl font-bold mb-2 flex items-center gap-2 text-red-100">
-                              <Trophy className="w-6 h-6 text-amber-400" />
+                            <CardTitle className="text-3xl font-extrabold mb-2 flex items-center gap-3 bg-gradient-to-r from-amber-300 via-pink-300 to-violet-300 text-transparent bg-clip-text drop-shadow-sm">
+                              <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-amber-500/80 to-pink-500/80">
+                                <Trophy className="w-5 h-5 text-white" />
+                              </span>
                               {hackathon.title}
                             </CardTitle>
-                            <div className="flex items-center gap-2 flex-wrap text-red-100/80">
-                              <Badge variant="outline" className="bg-red-800/30 border-red-600/50 text-red-200">
+                            <div className="flex items-center gap-2 flex-wrap text-pink-100/80">
+                              <Badge variant="outline" className="bg-pink-900/40 border-pink-500/50 text-pink-100 uppercase tracking-wider">
                                 Hackathon
                               </Badge>
                               <span className="text-sm">•</span>
-                              <Badge variant="secondary" className="text-xs bg-amber-800/30 text-amber-200 border-amber-600/50">Upcoming</Badge>
-                              <span className="text-sm">•</span>
-                              <span className="text-sm">{formatDate(hackathon.start_date)}</span>
+                              <Badge variant="secondary" className="text-xs bg-amber-900/40 text-amber-200 border-amber-600/40">Upcoming</Badge>
+                              {formattedStart && (
+                                <>
+                                  <span className="text-sm">•</span>
+                                  <span className="inline-flex items-center gap-1 text-sm">
+                                    <Calendar className="w-3 h-3 text-amber-300" />
+                                    {formattedStart}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-pink-100/80">
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin className="w-4 h-4 text-amber-300" />
+                                {hackathon.location || "Location TBA"}
+                              </span>
+                              {formattedDeadline && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Calendar className="w-4 h-4 text-amber-300" />
+                                  Reg. closes {formattedDeadline}
+                                </span>
+                              )}
                             </div>
                           </div>
                           {isApproved && (
-                            <Badge variant="secondary" className="bg-green-500/20 text-green-400 border-green-500/30">
+                            <Badge variant="secondary" className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
                               ✓ Approved
                             </Badge>
                           )}
@@ -1897,7 +1919,7 @@ export default function MemberPortal() {
                       </CardHeader>
                       <CardContent className="space-y-4">
                         {hackathon.description && !isExpanded && (
-                          <p className="text-sm text-red-100/80 leading-relaxed line-clamp-2">{hackathon.description}</p>
+                          <p className="text-sm text-pink-100/80 leading-relaxed line-clamp-2">{hackathon.description}</p>
                         )}
                         {isExpanded && (
                           <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
