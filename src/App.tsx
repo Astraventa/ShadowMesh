@@ -9,6 +9,7 @@ import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 import MemberPortal from "./pages/MemberPortal";
 import AttendanceCheckin from "./pages/AttendanceCheckin";
+import Hackathon from "./pages/Hackathon";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,8 @@ const App = () => (
           <Route path="/shadow-ops-portal" element={<Admin />} />
           {/* Member portal - requires token */}
           <Route path="/member-portal" element={<MemberPortal />} />
+          {/* Hackathon dashboard - dynamic page for each hackathon */}
+          <Route path="/hackathons/:hackathonId" element={<Hackathon />} />
           {/* Attendance check-in - separate secure page */}
           <Route path="/attendance-checkin" element={<AttendanceCheckin />} />
           {/* Fake 404 decoy for /admin */}

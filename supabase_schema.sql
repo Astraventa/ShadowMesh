@@ -682,3 +682,201 @@ begin
   alter table public.event_registrations add constraint event_registrations_status_check 
     check (status in ('registered', 'attended', 'cancelled', 'pending_payment'));
 end$$;
+
+-- 10) Hackathon Dashboard Tables ------------------------------------------------
+
+-- Add hackathon-specific fields to events table
+do $$
+begin
+  -- Schedule and rules (markdown content)
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='schedule_markdown') then
+    alter table public.events add column schedule_markdown text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='rules_markdown') then
+    alter table public.events add column rules_markdown text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='details_markdown') then
+    alter table public.events add column details_markdown text;
+  end if;
+  -- Submission deadline (separate from registration deadline)
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='submission_deadline') then
+    alter table public.events add column submission_deadline timestamptz;
+  end if;
+  -- Results publication
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='events' and column_name='results_published_at') then
+    alter table public.events add column results_published_at timestamptz;
+  end if;
+end$$;
+
+-- Hackathon submissions (team or individual)
+create table if not exists public.hackathon_submissions (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  hackathon_id      uuid references public.events(id) on delete cascade,
+  team_id           uuid references public.hackathon_teams(id) on delete set null, -- null for individual submissions
+  member_id         uuid references public.members(id) on delete cascade, -- submitter (team leader or individual)
+  title             text not null,
+  description       text,
+  artifact_url      text, -- URL to submission (GitHub repo, demo link, etc.)
+  video_url         text, -- Optional video demo/pitch
+  submission_data   jsonb, -- Flexible JSON for additional data
+  status            text default 'submitted' check (status in ('submitted', 'under_review', 'disqualified', 'winner', 'runner_up')),
+  admin_notes       text,
+  reviewed_at       timestamptz,
+  reviewed_by       text,
+  unique (hackathon_id, team_id), -- One submission per team per hackathon
+  unique (hackathon_id, member_id) -- One submission per individual per hackathon (if no team)
+);
+
+-- Hackathon results (winners, rankings)
+create table if not exists public.hackathon_results (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  hackathon_id      uuid references public.events(id) on delete cascade,
+  team_id           uuid references public.hackathon_teams(id) on delete set null,
+  member_id         uuid references public.members(id) on delete set null, -- for individual winners
+  submission_id     uuid references public.hackathon_submissions(id) on delete set null,
+  rank              integer not null, -- 1 = winner, 2 = runner-up, etc.
+  award_category    text, -- e.g., 'Best Overall', 'Best AI Solution', 'Best Security', 'Innovation Award'
+  prize_amount      numeric(10,2),
+  prize_description text,
+  notes             text,
+  unique (hackathon_id, rank, award_category) -- One winner per rank per category
+);
+
+-- Hackathon invite links (for team invitations)
+create table if not exists public.hackathon_invites (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  expires_at        timestamptz not null,
+  hackathon_id      uuid references public.events(id) on delete cascade,
+  team_id           uuid references public.hackathon_teams(id) on delete cascade,
+  created_by        uuid references public.members(id) on delete cascade, -- team leader who created invite
+  invite_token      text not null unique, -- Signed token for invite link
+  max_uses          integer default 1, -- How many times this invite can be used
+  uses_count        integer default 0, -- Current usage count
+  is_active         boolean default true
+);
+
+-- Member notifications (in-app notifications)
+create table if not exists public.member_notifications (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  member_id         uuid references public.members(id) on delete cascade,
+  notification_type text not null check (notification_type in ('team_invite', 'team_joined', 'team_request', 'hackathon_approved', 'hackathon_started', 'submission_reminder', 'results_published', 'general')),
+  title             text not null,
+  message           text not null,
+  related_id        uuid, -- ID of related team/event/submission/etc
+  related_type      text, -- 'team', 'event', 'submission', etc.
+  is_read           boolean default false,
+  read_at           timestamptz,
+  action_url        text, -- Optional URL to navigate to when clicked
+  metadata          jsonb -- Additional data
+);
+
+-- Hackathon resources (resources specific to a hackathon)
+create table if not exists public.hackathon_resources (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  hackathon_id      uuid references public.events(id) on delete cascade,
+  resource_id       uuid references public.member_resources(id) on delete cascade,
+  display_order     integer default 0, -- Order in which to display resources
+  is_required       boolean default false, -- Whether this resource is required reading
+  unique (hackathon_id, resource_id)
+);
+
+-- Indexes for hackathon dashboard tables
+create index if not exists idx_hackathon_submissions_hackathon_id on public.hackathon_submissions (hackathon_id);
+create index if not exists idx_hackathon_submissions_team_id on public.hackathon_submissions (team_id);
+create index if not exists idx_hackathon_submissions_member_id on public.hackathon_submissions (member_id);
+create index if not exists idx_hackathon_submissions_status on public.hackathon_submissions (status);
+
+create index if not exists idx_hackathon_results_hackathon_id on public.hackathon_results (hackathon_id);
+create index if not exists idx_hackathon_results_team_id on public.hackathon_results (team_id);
+create index if not exists idx_hackathon_results_rank on public.hackathon_results (rank);
+
+create index if not exists idx_hackathon_invites_token on public.hackathon_invites (invite_token);
+create index if not exists idx_hackathon_invites_team_id on public.hackathon_invites (team_id);
+create index if not exists idx_hackathon_invites_expires_at on public.hackathon_invites (expires_at);
+
+create index if not exists idx_member_notifications_member_id on public.member_notifications (member_id);
+create index if not exists idx_member_notifications_is_read on public.member_notifications (is_read);
+create index if not exists idx_member_notifications_created_at on public.member_notifications (created_at desc);
+
+create index if not exists idx_hackathon_resources_hackathon_id on public.hackathon_resources (hackathon_id);
+create index if not exists idx_hackathon_resources_display_order on public.hackathon_resources (display_order);
+
+-- RLS for new tables
+alter table public.hackathon_submissions enable row level security;
+alter table public.hackathon_results enable row level security;
+alter table public.hackathon_invites enable row level security;
+alter table public.member_notifications enable row level security;
+alter table public.hackathon_resources enable row level security;
+
+-- Policies: Members can view their own submissions and team submissions
+create policy p_hackathon_submissions_select
+  on public.hackathon_submissions
+  for select
+  to authenticated
+  using (
+    member_id = auth.uid()::text::uuid
+    or team_id in (
+      select team_id from public.team_members where member_id = auth.uid()::text::uuid
+      union
+      select id from public.hackathon_teams where team_leader_id = auth.uid()::text::uuid
+    )
+  );
+
+-- Policies: Members can insert their own submissions
+create policy p_hackathon_submissions_insert
+  on public.hackathon_submissions
+  for insert
+  to authenticated
+  with check (member_id = auth.uid()::text::uuid);
+
+-- Results: Public read after publication (via service role in edge functions)
+create policy p_hackathon_results_select
+  on public.hackathon_results
+  for select
+  to authenticated
+  using (true); -- Results visible to all authenticated members after publication
+
+-- Invites: Team leaders can create, members can view their team's invites
+create policy p_hackathon_invites_select
+  on public.hackathon_invites
+  for select
+  to authenticated
+  using (
+    created_by = auth.uid()::text::uuid
+    or team_id in (
+      select id from public.hackathon_teams where team_leader_id = auth.uid()::text::uuid
+    )
+  );
+
+create policy p_hackathon_invites_insert
+  on public.hackathon_invites
+  for insert
+  to authenticated
+  with check (created_by = auth.uid()::text::uuid);
+
+-- Notifications: Members can only see their own notifications
+create policy p_member_notifications_select
+  on public.member_notifications
+  for select
+  to authenticated
+  using (member_id = auth.uid()::text::uuid);
+
+create policy p_member_notifications_update
+  on public.member_notifications
+  for update
+  to authenticated
+  using (member_id = auth.uid()::text::uuid);
+
+-- Resources: Same as member_resources (authenticated members can view)
+create policy p_hackathon_resources_select
+  on public.hackathon_resources
+  for select
+  to authenticated
+  using (true);

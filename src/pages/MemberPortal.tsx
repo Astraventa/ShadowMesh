@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import EventRegistration from "@/components/EventRegistration";
