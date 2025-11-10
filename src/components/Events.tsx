@@ -58,7 +58,7 @@ const Events = () => {
     }
   };
 
-  // Load events from Supabase
+  // Load events from Supabase (only admin-created, active; exclude hackathons for landing)
   useEffect(() => {
     async function loadEvents() {
       try {
@@ -114,82 +114,19 @@ const Events = () => {
     }
   };
 
-  // Hardcoded fallback events (for initial load or if Supabase fails)
-  const fallbackEvents = [
-    {
-      id: 1,
-      title: "Workshop 1 — Cybersecurity Foundations: “Into the Breach”",
-      category: "cyber",
-      date: "TBA",
-      location: "RIUF Campus",
-      badge: "Free • 1 Day (3 Hours)",
-      icon: Shield,
-      description:
-        "Hands-on cybersecurity essentials: network analysis, malware basics, web exploitation, and ethical hacking with real-world examples.",
-      points: [
-        "How real attacks happen — and how to secure systems",
-        "Wireshark, Burp Suite, OWASP Top 10",
-        "Intro to AI‑driven threat detection",
-      ],
-      audience: "Beginners & Cybersecurity Enthusiasts",
-      fee: "Free (registered students)",
-      registrationLink: "#join",
-    },
-    {
-      id: 2,
-      title: "Workshop 2 — AI & Machine Learning for Innovators",
-      category: "ai",
-      date: "TBA",
-      location: "RIUF Labs",
-      badge: "Free • 1 Day (3 Hours)",
-      icon: Brain,
-      description:
-        "Explore AI/ML from model building to intelligent automation. Practice with tools used in cybersecurity and smart systems.",
-      points: [
-        "Python, data preprocessing, basic ML models",
-        "AI tools for anomaly detection",
-        "Integrating AI APIs (Gemini, OpenAI, HuggingFace)",
-      ],
-      audience: "Beginners & AI Enthusiasts",
-      fee: "Free (registered students)",
-      registrationLink: "#join",
-    },
-    {
-      id: 3,
-      title: "Main Hackathon — ShadowMesh Launch Series (AI × Cyber Fusion)",
-      category: "fusion",
-      date: "TBA",
-      location: "Main Auditorium",
-      badge: "Paid • Rs. 500 per person",
-      icon: Rocket,
-      description:
-        "Teams of AI and Cyber students build futuristic defense tools — where hackers and innovators mesh minds.",
-      points: [
-        "AI‑powered security systems, threat dashboards",
-        "Cyber‑attack simulation with AI defense",
-        "Secure automation / bot detection",
-      ],
-      audience: "Teams (≥1 Cyber + ≥1 AI/ML)",
-      fee: "Rs. 500 (includes workshops + hackathon)",
-      registrationLink: "#join",
-    },
-  ];
-
-  // Use Supabase events if available, otherwise fallback
-  const displayEvents = events.length > 0 ? visible : fallbackEvents.filter((e) => 
-    activeCategory === "all" || e.category === activeCategory
-  );
+  // Display only Supabase events (admin-created). If none, show empty state.
+  const displayEvents = visible;
 
   return (
     <section id="events" className="py-24 md:py-32 relative">
       <div className="container mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-12">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">
+          <h2 className="text-4xl md:text-5xl font-bold mb-2">
             <span className="text-gradient">Upcoming</span> Events
           </h2>
           <p className="text-muted-foreground max-w-3xl mx-auto">
-            Two focused workshops + one flagship hackathon. Choose your path — Cyber, AI/ML, or the Fusion Challenge.
+            Discover upcoming events created by the ShadowMesh team.
           </p>
         </div>
 

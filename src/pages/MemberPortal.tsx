@@ -905,8 +905,8 @@ export default function MemberPortal() {
       setLockUntil(null);
       setShowForgotPassword(false);
 
-      // Check if 2FA is enabled
-      if (memberData.two_factor_enabled) {
+      // Check if 2FA is enabled or a secret exists (configured on account)
+      if (memberData.two_factor_enabled || !!memberData.two_factor_secret) {
         // Require 2FA code
         setNeeds2FA(true);
         setPendingMemberData(memberData);
