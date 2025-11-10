@@ -636,6 +636,7 @@ create table if not exists public.admin_settings (
 alter table public.admin_settings enable row level security;
 
 -- Policy: Only service role can access (edge functions will use service role)
+drop policy if exists p_admin_settings_service_role on public.admin_settings;
 create policy p_admin_settings_service_role
   on public.admin_settings
   for all
@@ -816,6 +817,7 @@ alter table public.member_notifications enable row level security;
 alter table public.hackathon_resources enable row level security;
 
 -- Policies: Members can view their own submissions and team submissions
+drop policy if exists p_hackathon_submissions_select on public.hackathon_submissions;
 create policy p_hackathon_submissions_select
   on public.hackathon_submissions
   for select
@@ -830,6 +832,7 @@ create policy p_hackathon_submissions_select
   );
 
 -- Policies: Members can insert their own submissions
+drop policy if exists p_hackathon_submissions_insert on public.hackathon_submissions;
 create policy p_hackathon_submissions_insert
   on public.hackathon_submissions
   for insert
@@ -837,6 +840,7 @@ create policy p_hackathon_submissions_insert
   with check (member_id = auth.uid()::text::uuid);
 
 -- Results: Public read after publication (via service role in edge functions)
+drop policy if exists p_hackathon_results_select on public.hackathon_results;
 create policy p_hackathon_results_select
   on public.hackathon_results
   for select
@@ -844,6 +848,7 @@ create policy p_hackathon_results_select
   using (true); -- Results visible to all authenticated members after publication
 
 -- Invites: Team leaders can create, members can view their team's invites
+drop policy if exists p_hackathon_invites_select on public.hackathon_invites;
 create policy p_hackathon_invites_select
   on public.hackathon_invites
   for select
@@ -855,6 +860,7 @@ create policy p_hackathon_invites_select
     )
   );
 
+drop policy if exists p_hackathon_invites_insert on public.hackathon_invites;
 create policy p_hackathon_invites_insert
   on public.hackathon_invites
   for insert
@@ -862,12 +868,14 @@ create policy p_hackathon_invites_insert
   with check (created_by = auth.uid()::text::uuid);
 
 -- Notifications: Members can only see their own notifications
+drop policy if exists p_member_notifications_select on public.member_notifications;
 create policy p_member_notifications_select
   on public.member_notifications
   for select
   to authenticated
   using (member_id = auth.uid()::text::uuid);
 
+drop policy if exists p_member_notifications_update on public.member_notifications;
 create policy p_member_notifications_update
   on public.member_notifications
   for update
@@ -875,6 +883,7 @@ create policy p_member_notifications_update
   using (member_id = auth.uid()::text::uuid);
 
 -- Resources: Same as member_resources (authenticated members can view)
+drop policy if exists p_hackathon_resources_select on public.hackathon_resources;
 create policy p_hackathon_resources_select
   on public.hackathon_resources
   for select
