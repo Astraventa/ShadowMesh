@@ -1858,6 +1858,9 @@ export default function MemberPortal() {
                   const isExpanded = expandedHackathons.has(hackathon.id);
                   const formattedDeadline = hackathon.registration_deadline ? formatDate(hackathon.registration_deadline) : null;
                   const formattedStart = hackathon.start_date ? formatDate(hackathon.start_date) : null;
+                  const deadlinePassed = hackathon.registration_deadline ? new Date(hackathon.registration_deadline).getTime() < Date.now() : false;
+                  const typeLabel = (hackathon.event_type || "Hackathon").toLowerCase();
+                  const typeTitle = typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1);
 
                   return (
                     <Card 
@@ -1883,7 +1886,7 @@ export default function MemberPortal() {
                             </CardTitle>
                             <div className="flex items-center gap-2 flex-wrap text-pink-100/80">
                               <Badge variant="outline" className="bg-pink-900/40 border-pink-500/50 text-pink-100 uppercase tracking-wider">
-                                Hackathon
+                                {typeTitle}
                               </Badge>
                               <span className="text-sm">•</span>
                               <Badge variant="secondary" className="text-xs bg-amber-900/40 text-amber-200 border-amber-600/40">Upcoming</Badge>
@@ -1897,17 +1900,27 @@ export default function MemberPortal() {
                                 </>
                               )}
                             </div>
-                            <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-pink-100/80">
-                              <span className="inline-flex items-center gap-1">
-                                <MapPin className="w-4 h-4 text-amber-300" />
-                                {hackathon.location || "Location TBA"}
-                              </span>
-                              {formattedDeadline && (
-                                <span className="inline-flex items-center gap-1">
-                                  <Calendar className="w-4 h-4 text-amber-300" />
-                                  Reg. closes {formattedDeadline}
+                            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-pink-100/80">
+                              <div className="flex items-center gap-3">
+                                <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-pink-500/30 to-purple-500/30">
+                                  <MapPin className="w-4 h-4 text-amber-200" />
                                 </span>
-                              )}
+                                <div>
+                                  <p className="text-xs uppercase tracking-wide text-pink-200/70">Location</p>
+                                  <p className="font-medium text-pink-50">{hackathon.location || "Location TBA"}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-amber-500/25 to-orange-500/25">
+                                  <Calendar className="w-4 h-4 text-amber-100" />
+                                </span>
+                                <div>
+                                  <p className="text-xs uppercase tracking-wide text-pink-200/70">Registration Deadline</p>
+                                  <p className={`font-medium ${deadlinePassed ? "text-red-300" : "text-amber-100"}`}>
+                                    {formattedDeadline || "Open"}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           </div>
                           {isApproved && (
@@ -2047,20 +2060,36 @@ export default function MemberPortal() {
                           {!reg ? (
                             <Button 
                               variant="default" 
-                              className="flex-1 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-600/90 hover:to-purple-800/90"
-                              onClick={() => setShowHackathonReg(hackathon.id)}
+                              className={`flex-1 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-600/90 hover:to-purple-800/90 ${deadlinePassed ? "opacity-70 hover:opacity-70 cursor-not-allowed" : ""}`}
+                              onClick={() => {
+                                if (deadlinePassed) {
+                                  toast({
+                                    title: `${typeTitle} registration closed`,
+                                    description: formattedDeadline
+                                      ? `Registration closed on ${formattedDeadline}.`
+                                      : "The registration deadline has passed.",
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                setShowHackathonReg(hackathon.id);
+                              }}
                             >
-                              Register for Hackathon
+                              {deadlinePassed ? "Registration Closed" : `Register for ${typeTitle}`}
                             </Button>
                           ) : null}
                         </div>
                         
                         {!reg ? (
                           <div className="mt-2">
-                            {hackathon.payment_required ? (
-                              <p className="text-sm text-muted-foreground">This hackathon requires payment and registration.</p>
+                            {deadlinePassed ? (
+                              <p className="text-sm text-red-300/80">
+                                Registration closed for this {typeLabel}. Please watch your email for future opportunities.
+                              </p>
+                            ) : hackathon.payment_required ? (
+                              <p className="text-sm text-muted-foreground">This {typeLabel} requires payment and registration.</p>
                             ) : (
-                              <p className="text-sm text-muted-foreground">Register to participate in this hackathon.</p>
+                              <p className="text-sm text-muted-foreground">Register to participate in this {typeLabel}.</p>
                             )}
                           </div>
                         ) : reg.status === "pending" ? (

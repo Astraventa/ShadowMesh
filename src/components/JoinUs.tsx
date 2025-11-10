@@ -145,13 +145,69 @@ const JoinUs = () => {
     }
 
     const phone_e164 = phone && /^\+[1-9][0-9]{6,14}$/.test(phone) ? phone : null;
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedPhone = phone_e164 || (phone ? phone.trim() : null);
 
     setLoading(true);
     try {
+      // Duplicate checks (run in parallel for speed)
+      const [
+        existingApplicationEmail,
+        existingMemberEmail,
+        existingApplicationPhone,
+        existingMemberPhone,
+      ] = await Promise.all([
+        supabase.from('join_applications').select('id,status,created_at').eq('email', normalizedEmail).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('members').select('id,full_name,created_at').eq('email', normalizedEmail).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        normalizedPhone
+          ? supabase.from('join_applications').select('id,status,created_at').eq('phone_e164', normalizedPhone).order('created_at', { ascending: false }).limit(1).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+        normalizedPhone
+          ? supabase.from('members').select('id,full_name,created_at').eq('phone_e164', normalizedPhone).order('created_at', { ascending: false }).limit(1).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+
+      if (!existingApplicationEmail.error && existingApplicationEmail.data) {
+        toast({
+          title: "Application already submitted",
+          description: "We already have a pending application with this email. Please wait for the review.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+      if (!existingMemberEmail.error && existingMemberEmail.data) {
+        toast({
+          title: "Already a member",
+          description: "This email is already connected to an approved member account. Try logging in instead.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+      if (normalizedPhone && !existingApplicationPhone.error && existingApplicationPhone.data) {
+        toast({
+          title: "Phone number already used",
+          description: "An application with this phone number already exists. Please wait for the review.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+      if (normalizedPhone && !existingMemberPhone.error && existingMemberPhone.data) {
+        toast({
+          title: "Phone already registered",
+          description: "This phone number is already linked to a member profile. Try logging in instead.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
       const { error, data } = await supabase.from('join_applications')
         .insert([{
           full_name: fullName.trim(),
-          email: email.trim().toLowerCase(),
+          email: normalizedEmail,
           affiliation,
           area_of_interest: areaOfInterest || null,
           motivation: motivation || null,
