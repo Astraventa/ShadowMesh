@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
             </div>
             <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb;">
               <h2 style="color: #1f2937; margin-top: 0;">Welcome to ShadowMesh, ${app.full_name}!</h2>
-              <p>Congratulations! Your application has been <strong>approved</strong>. You're now a member of our elite cybersecurity community.</p>
+              <p>Congratulations! Your application has been <strong>approved</strong>. You're now a member of our elite cybersecurity and AI‑powered innovation community.</p>
               <p>To get started, please set up your password by clicking the button below:</p>
               <div style="text-align: center; margin: 30px 0;">
                 <a href="${setupLink}" 

@@ -747,7 +747,9 @@ export default function MemberPortal() {
   }
 
   async function handleLogin() {
-    if (!loginEmail.trim()) {
+    // For password setup via welcome email link, allow proceeding without typing email
+    const requiresEmail = !(setupToken && isSettingPassword);
+    if (requiresEmail && !loginEmail.trim()) {
       toast({ title: "Email required", description: "Please enter your registered email address." });
       return;
     }
@@ -773,12 +775,29 @@ export default function MemberPortal() {
     try {
       setLoading(true);
       
-      // Get member by email
-      const { data: memberData, error: memberError } = await supabase
-        .from("members")
-        .select("*")
-        .eq("email", loginEmail.trim().toLowerCase())
-        .single();
+      // Get member either by email (normal flow) or by setup token (welcome email flow)
+      let memberData: any = null;
+      let memberError: any = null;
+      if (setupToken && isSettingPassword) {
+        const { data, error } = await supabase
+          .from("members")
+          .select("*")
+          .eq("password_reset_token", setupToken)
+          .single();
+        memberData = data;
+        memberError = error;
+        if (data?.email && !loginEmail) {
+          setLoginEmail(data.email);
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("members")
+          .select("*")
+          .eq("email", loginEmail.trim().toLowerCase())
+          .single();
+        memberData = data;
+        memberError = error;
+      }
 
       if (memberError || !memberData) {
         throw new Error("Member not found. Please ensure your application has been approved.");
