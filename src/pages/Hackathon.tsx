@@ -130,6 +130,7 @@ export default function Hackathon() {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [creatingTeam, setCreatingTeam] = useState(false);
+  const [deletingTeam, setDeletingTeam] = useState(false);
 
   useEffect(() => {
     async function loadHackathonData() {
@@ -285,6 +286,35 @@ export default function Hackathon() {
       setInviteLinks(data || []);
     } catch (error: any) {
       console.error("Error loading invite links:", error);
+    }
+  }
+
+  async function deleteTeam() {
+    if (!team || !memberId) return;
+    if (team.team_leader_id !== memberId) {
+      toast({ title: "Not allowed", description: "Only the team leader can delete this team.", variant: "destructive" });
+      return;
+    }
+    try {
+      setDeletingTeam(true);
+      // Delete the team - cascade will remove team_members, invites, etc. per schema
+      const { error } = await supabase
+        .from("hackathon_teams")
+        .delete()
+        .eq("id", team.id);
+      if (error) throw error;
+
+      toast({ title: "Team deleted", description: "Your team and related memberships were removed." });
+      setTeam(null);
+      setInviteLinks([]);
+      // Refresh lists so the UI reflects changes
+      if (hackathonId && memberId) {
+        await loadTeamsAndPlayers(hackathonId, memberId);
+      }
+    } catch (e: any) {
+      toast({ title: "Failed to delete team", description: e.message, variant: "destructive" });
+    } finally {
+      setDeletingTeam(false);
     }
   }
 
@@ -796,15 +826,37 @@ export default function Hackathon() {
                           <Users className="w-6 h-6" />
                           Your Team: {team.team_name}
                         </CardTitle>
-                        {team.team_leader_id === memberId && team.members.length < team.max_members && (
-                          <Button 
-                            size="sm"
-                            onClick={generateInviteLink}
-                          >
-                            <LinkIcon className="w-4 h-4 mr-2" />
-                            Generate Invite Link
-                          </Button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {team.team_leader_id === memberId && team.members.length < team.max_members && (
+                            <Button 
+                              size="sm"
+                              onClick={generateInviteLink}
+                            >
+                              <LinkIcon className="w-4 h-4 mr-2" />
+                              Generate Invite Link
+                            </Button>
+                          )}
+                          {team.team_leader_id === memberId && (
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={deleteTeam}
+                              disabled={deletingTeam}
+                            >
+                              {deletingTeam ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Deleting...
+                                </>
+                              ) : (
+                                <>
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete Team
+                                </>
+                              )}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-6">
