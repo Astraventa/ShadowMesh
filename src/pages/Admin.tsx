@@ -810,12 +810,6 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 		}
 	}
 
-	async function saveEvent() {
-		if (!eventFormData.title.trim()) {
-			toast({ title: "Title required", description: "Please enter an event title." });
-			return;
-		}
-
     async function loadHackathonResources(eventId: string) {
         try {
             const { data, error } = await supabase
@@ -917,6 +911,52 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
             setManageSaving(false);
         }
     }
+
+    async function deleteResource(resourceId: string) {
+        if (!managingHackathon) return;
+        setManageSaving(true);
+        try {
+            const { error } = await supabase
+                .from("hackathon_resources")
+                .delete()
+                .eq("id", resourceId);
+            if (error) throw error;
+            await loadHackathonResources(managingHackathon.id);
+            toast({ title: "Resource deleted" });
+        } catch (e: any) {
+            toast({ title: "Delete failed", description: e.message || String(e), variant: "destructive" });
+        } finally {
+            setManageSaving(false);
+        }
+    }
+
+    async function moveResource(resource: any, direction: "up" | "down") {
+        const idx = manageResources.findIndex(r => r.id === resource.id);
+        const newIdx = direction === "up" ? idx - 1 : idx + 1;
+        if (idx < 0 || newIdx < 0 || newIdx >= manageResources.length || !managingHackathon) return;
+        const a = manageResources[idx];
+        const b = manageResources[newIdx];
+        // swap display_order
+        setManageSaving(true);
+        try {
+            const updates = [
+                supabase.from("hackathon_resources").update({ display_order: b.display_order }).eq("id", a.id),
+                supabase.from("hackathon_resources").update({ display_order: a.display_order }).eq("id", b.id),
+            ];
+            await Promise.all(updates);
+            await loadHackathonResources(managingHackathon.id);
+        } catch (e: any) {
+            toast({ title: "Reorder failed", description: e.message || String(e), variant: "destructive" });
+        } finally {
+            setManageSaving(false);
+        }
+    }
+
+	async function saveEvent() {
+		if (!eventFormData.title.trim()) {
+			toast({ title: "Title required", description: "Please enter an event title." });
+			return;
+		}
 		if (!eventFormData.start_date || !eventFormData.start_date.trim()) {
 			toast({ title: "Start date required", description: "Please select a start date and time." });
 			return;
@@ -2219,11 +2259,16 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 									{manageResources.length === 0 ? (
 										<p className="text-sm text-muted-foreground">No resources yet.</p>
 									) : (
-										manageResources.map((r) => (
-											<div key={r.id} className="p-2 border rounded-md flex items-center justify-between">
-												<div>
-													<p className="font-medium">{r.title}</p>
+										manageResources.map((r, idx) => (
+											<div key={r.id} className="p-2 border rounded-md flex items-center justify-between gap-2">
+												<div className="min-w-0">
+													<p className="font-medium truncate">{r.title}</p>
 													<p className="text-xs text-muted-foreground break-all">{r.content_url}</p>
+												</div>
+												<div className="flex items-center gap-2">
+													<Button size="sm" variant="outline" onClick={() => void moveResource(r, "up")} disabled={idx === 0}>↑</Button>
+													<Button size="sm" variant="outline" onClick={() => void moveResource(r, "down")} disabled={idx === manageResources.length - 1}>↓</Button>
+													<Button size="sm" variant="ghost" onClick={() => void deleteResource(r.id)}>Delete</Button>
 												</div>
 											</div>
 										))

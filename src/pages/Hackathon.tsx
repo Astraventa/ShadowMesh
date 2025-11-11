@@ -897,11 +897,12 @@ export default function Hackathon() {
       {isApproved ? (
         <div className="container mx-auto px-4 py-4">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-5 bg-muted/50 backdrop-blur-sm h-9 p-0.5">
+            <TabsList className="grid w-full grid-cols-6 bg-muted/50 backdrop-blur-sm h-9 p-0.5">
               <TabsTrigger value="overview" className="text-sm">Overview</TabsTrigger>
               <TabsTrigger value="teams" className="text-sm">Teams</TabsTrigger>
               <TabsTrigger value="resources" className="text-sm">Resources</TabsTrigger>
               <TabsTrigger value="submissions" className="text-sm">Submissions</TabsTrigger>
+              {hackathon.rules_markdown && <TabsTrigger value="rules" className="text-sm">Rules</TabsTrigger>}
               {resultsPublished && <TabsTrigger value="results" className="text-sm">Results</TabsTrigger>}
             </TabsList>
 
@@ -929,17 +930,21 @@ export default function Hackathon() {
                 </Card>
               )}
 
-              {hackathon.rules_markdown && (
-                <Card className="shadow-lg border">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-lg">Rules & Guidelines</CardTitle>
+            </TabsContent>
+            {/* Rules Tab */}
+            {hackathon.rules_markdown && (
+              <TabsContent value="rules" className="space-y-6">
+                <Card className="shadow-xl border-2">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-2xl">Rules & Guidelines</CardTitle>
+                    <CardDescription>Read carefully before forming teams and submitting</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.rules_markdown }} />
+                    <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.rules_markdown }} />
                   </CardContent>
                 </Card>
-              )}
-            </TabsContent>
+              </TabsContent>
+            )}
 
             {/* Teams Tab - Premium Team Management */}
             <TabsContent value="teams" className="space-y-8">
