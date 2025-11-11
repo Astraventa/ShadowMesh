@@ -25,6 +25,8 @@ import {
   Video,
   Link as LinkIcon,
   UserPlus,
+  Bell,
+  Check,
   Search,
   Loader2,
   X,
@@ -37,6 +39,7 @@ import {
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import HackathonRegistration from "@/components/HackathonRegistration";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabaseClient";
 
 interface Hackathon {
@@ -132,6 +135,8 @@ export default function Hackathon() {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [deletingTeam, setDeletingTeam] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   useEffect(() => {
     async function loadHackathonData() {
@@ -166,6 +171,8 @@ export default function Hackathon() {
         }
 
         setMemberId(memberData.id);
+        // Preload notifications
+        await loadNotifications(memberData.id);
 
         const { data: hackathonData, error: hackathonError } = await supabase
           .from("events")
@@ -242,6 +249,51 @@ export default function Hackathon() {
 
     loadHackathonData();
   }, [hackathonId, navigate, toast]);
+
+  async function loadNotifications(currentMemberId: string) {
+    try {
+      // member_notifications table (admin-triggered updates)
+      const { data: notifRows, error } = await supabase
+        .from("member_notifications")
+        .select("*")
+        .eq("member_id", currentMemberId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error) {
+        console.error("Notifications load error:", error);
+      }
+      // pending team requests to this member
+      const { data: teamReqs } = await supabase
+        .from("team_requests")
+        .select("id, created_at, status, hackathon_teams(team_name)")
+        .eq("to_member_id", currentMemberId)
+        .eq("status", "pending");
+      const synthetic = (teamReqs || []).map((r: any) => ({
+        id: `teamreq_${r.id}`,
+        notification_type: "team_invite",
+        title: "Team Invitation",
+        body: `You have been invited to join ${r.hackathon_teams?.team_name || "a team"}.`,
+        created_at: r.created_at,
+        is_read: false,
+      }));
+      const all = [...(notifRows || []), ...synthetic].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setNotifications(all);
+      setUnreadCount(all.filter(n => !n.is_read).length);
+    } catch (e) {
+      console.error("Failed loading notifications:", e);
+    }
+  }
+
+  async function markAllRead() {
+    try {
+      if (!memberId) return;
+      await supabase.from("member_notifications").update({ is_read: true }).eq("member_id", memberId).eq("is_read", false);
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch {
+      // non-fatal
+    }
+  }
 
   async function loadMemberTeam(hackathonId: string, currentMemberId: string): Promise<string | null> {
     // 1) Try as leader
@@ -673,9 +725,48 @@ export default function Hackathon() {
                 Back to Portal
               </Link>
             </Button>
-            <Badge variant={hackathon.status === "ongoing" ? "default" : "secondary"} className="text-xs px-3 py-0.5">
-              {hackathon.status.toUpperCase()}
-            </Badge>
+            <div className="flex items-center gap-3">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80">
+                  <DropdownMenuLabel className="flex items-center justify-between">
+                    <span>Notifications</span>
+                    {unreadCount > 0 && (
+                      <Button variant="ghost" size="sm" onClick={() => void markAllRead()}>
+                        <Check className="w-4 h-4 mr-1" /> Mark all read
+                      </Button>
+                    )}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {notifications.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground">No notifications yet</div>
+                  ) : (
+                    notifications.map((n) => (
+                      <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${n.is_read ? "bg-muted" : "bg-primary"}`}></span>
+                          <span className="font-medium">{n.title || (n.notification_type === "team_invite" ? "Team Invitation" : "Update")}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">{n.body || ""}</div>
+                        <div className="text-[10px] text-muted-foreground">{new Date(n.created_at).toLocaleString()}</div>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Badge variant={hackathon.status === "ongoing" ? "default" : "secondary"} className="text-xs px-3 py-0.5">
+                {hackathon.status.toUpperCase()}
+              </Badge>
+            </div>
           </div>
         </div>
       </div>

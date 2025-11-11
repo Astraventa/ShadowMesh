@@ -331,6 +331,12 @@ const scannerLockRef = useRef(false);
 	const [hackRejectingId, setHackRejectingId] = useState<string | null>(null);
 	const [paymentProofViewer, setPaymentProofViewer] = useState<string | null>(null);
 	const [viewingHackathonReg, setViewingHackathonReg] = useState<any | null>(null);
+const [manageOpen, setManageOpen] = useState(false);
+const [managingHackathon, setManagingHackathon] = useState<any | null>(null);
+const [manageSaving, setManageSaving] = useState(false);
+const [manageResources, setManageResources] = useState<any[]>([]);
+const [newResTitle, setNewResTitle] = useState("");
+const [newResUrl, setNewResUrl] = useState("");
 
 	// Initial loads
     useEffect(() => {
@@ -804,6 +810,65 @@ const scannerLockRef = useRef(false);
 			toast({ title: "Title required", description: "Please enter an event title." });
 			return;
 		}
+
+    async function loadHackathonResources(eventId: string) {
+        try {
+            const { data, error } = await supabase
+                .from("hackathon_resources")
+                .select("*")
+                .eq("hackathon_id", eventId)
+                .order("display_order", { ascending: true });
+            if (error) throw error;
+            setManageResources(data || []);
+        } catch (e: any) {
+            toast({ title: "Failed to load resources", description: e.message || String(e) });
+        }
+    }
+
+    async function addHackathonResource() {
+        if (!managingHackathon || !newResTitle.trim() || !newResUrl.trim()) return;
+        setManageSaving(true);
+        try {
+            const { error } = await supabase
+                .from("hackathon_resources")
+                .insert({
+                    hackathon_id: managingHackathon.id,
+                    title: newResTitle.trim(),
+                    description: null,
+                    content_url: newResUrl.trim(),
+                    resource_type: "link",
+                    display_order: (manageResources?.length || 0) + 1,
+                });
+            if (error) throw error;
+            setNewResTitle("");
+            setNewResUrl("");
+            await loadHackathonResources(managingHackathon.id);
+            toast({ title: "Resource added" });
+        } catch (e: any) {
+            toast({ title: "Add failed", description: e.message || String(e), variant: "destructive" });
+        } finally {
+            setManageSaving(false);
+        }
+    }
+
+    async function toggleSubmissionEnabled(enabled: boolean) {
+        if (!managingHackathon) return;
+        setManageSaving(true);
+        try {
+            const { error } = await supabase
+                .from("events")
+                .update({ submission_page_enabled: enabled })
+                .eq("id", managingHackathon.id);
+            if (error) throw error;
+            toast({ title: "Updated", description: "Submission page setting saved." });
+            // reflect locally
+            setManagingHackathon({ ...managingHackathon, submission_page_enabled: enabled });
+        } catch (e: any) {
+            toast({ title: "Save failed", description: e.message || String(e), variant: "destructive" });
+        } finally {
+            setManageSaving(false);
+        }
+    }
 		if (!eventFormData.start_date || !eventFormData.start_date.trim()) {
 			toast({ title: "Start date required", description: "Please select a start date and time." });
 			return;
@@ -1511,7 +1576,7 @@ const scannerLockRef = useRef(false);
 													</TableCell>
 													<TableCell className="text-right space-x-2">
 														{event.event_type === "hackathon" && (
-															<Button size="sm" variant="secondary" onClick={() => window.open(`/hackathons/${event.id}`, "_blank")}>
+															<Button size="sm" variant="secondary" onClick={() => { setManagingHackathon(event); setManageOpen(true); }}>
 																Manage
 															</Button>
 														)}
@@ -1577,6 +1642,7 @@ const scannerLockRef = useRef(false);
 											<TableHead>When</TableHead>
 											<TableHead>Member</TableHead>
 											<TableHead>Hackathon</TableHead>
+											<TableHead>Team</TableHead>
 											<TableHead>Payment Details</TableHead>
 											<TableHead>Status</TableHead>
 											<TableHead className="text-right">Actions</TableHead>
@@ -1607,6 +1673,16 @@ const scannerLockRef = useRef(false);
 																	<p className="text-xs text-muted-foreground">Fee: {event.fee_amount} {event.fee_currency}</p>
 																)}
 															</div>
+														</TableCell>
+														<TableCell>
+															{reg.team ? (
+																<div>
+																	<p className="font-medium">{reg.team.team_name}</p>
+																	<p className="text-xs text-muted-foreground capitalize">{reg.team.role}</p>
+																</div>
+															) : (
+																<Badge variant="outline">Single</Badge>
+															)}
 														</TableCell>
 														<TableCell>
 															<div className="text-sm space-y-1">
@@ -2001,6 +2077,76 @@ const scannerLockRef = useRef(false);
 					</TabsContent>
 				</Tabs>
 			</div>
+
+			{/* Manage Hackathon Drawer */}
+			<Dialog open={manageOpen} onOpenChange={(open) => {
+				setManageOpen(open);
+				if (!open) {
+					setManagingHackathon(null);
+					setManageResources([]);
+				} else if (managingHackathon) {
+					void loadHackathonResources(managingHackathon.id);
+				}
+			}}>
+				<DialogContent className="max-w-3xl">
+					<DialogHeader>
+						<DialogTitle>Manage Hackathon</DialogTitle>
+						<DialogDescription>
+							{managingHackathon ? managingHackathon.title : ""}
+						</DialogDescription>
+					</DialogHeader>
+					{managingHackathon && (
+						<div className="space-y-6">
+							<div className="border rounded-md p-4">
+								<h3 className="font-semibold mb-3">Submission Settings</h3>
+								<div className="flex items-center justify-between">
+									<span className="text-sm text-muted-foreground">Enable submission page</span>
+									<div className="flex items-center gap-2">
+										<Button 
+											variant={managingHackathon.submission_page_enabled ? "secondary" : "outline"} 
+											size="sm"
+											disabled={manageSaving}
+											onClick={() => void toggleSubmissionEnabled(!managingHackathon.submission_page_enabled)}
+										>
+											{manageSaving ? "Saving..." : managingHackathon.submission_page_enabled ? "Enabled" : "Disabled"}
+										</Button>
+									</div>
+								</div>
+							</div>
+
+							<div className="border rounded-md p-4">
+								<h3 className="font-semibold mb-3">Resources</h3>
+								<div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+									<Input placeholder="Title" value={newResTitle} onChange={(e) => setNewResTitle(e.target.value)} />
+									<Input placeholder="URL" value={newResUrl} onChange={(e) => setNewResUrl(e.target.value)} className="md:col-span-2" />
+								</div>
+								<div className="flex justify-end">
+									<Button size="sm" onClick={() => void addHackathonResource()} disabled={manageSaving || !newResTitle.trim() || !newResUrl.trim()}>
+										{manageSaving ? "Adding..." : "Add Resource"}
+									</Button>
+								</div>
+								<div className="mt-4 space-y-2">
+									{manageResources.length === 0 ? (
+										<p className="text-sm text-muted-foreground">No resources yet.</p>
+									) : (
+										manageResources.map((r) => (
+											<div key={r.id} className="p-2 border rounded-md flex items-center justify-between">
+												<div>
+													<p className="font-medium">{r.title}</p>
+													<p className="text-xs text-muted-foreground break-all">{r.content_url}</p>
+												</div>
+											</div>
+										))
+									)}
+								</div>
+							</div>
+						</div>
+					)}
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setManageOpen(false)}>Close</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 
 			<Dialog open={openDetail} onOpenChange={setOpenDetail}>
 				<DialogContent className="max-w-2xl">

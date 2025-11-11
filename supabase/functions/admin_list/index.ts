@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } else if (type === 'hackathon_registrations') {
-      let url = `${SUPABASE_URL}/rest/v1/hackathon_registrations?select=*,members(full_name,email),events(title,start_date)&order=created_at.desc&limit=${pageSize}&offset=${from}`;
+      let url = `${SUPABASE_URL}/rest/v1/hackathon_registrations?select=*,members(full_name,email),events(title,start_date,payment_required,fee_amount,fee_currency)&order=created_at.desc&limit=${pageSize}&offset=${from}`;
       if (status && status !== 'all') {
         url += `&status=eq.${status}`;
       }
@@ -163,7 +163,43 @@ Deno.serve(async (req) => {
       }
 
       const data = await res.json();
-      return new Response(JSON.stringify({ data, hasMore: data.length === pageSize }), {
+
+      // Enrich with team information (team name if member is in a team for this hackathon)
+      const enriched = await Promise.all((Array.isArray(data) ? data : []).map(async (reg: any) => {
+        try {
+          // Check if member is leader of any team for this hackathon
+          const leaderRes = await fetch(`${SUPABASE_URL}/rest/v1/hackathon_teams?hackathon_id=eq.${reg.hackathon_id}&team_leader_id=eq.${reg.member_id}&select=id,team_name`, {
+            headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
+          });
+          const leaderTeams = leaderRes.ok ? await leaderRes.json() : [];
+          if (Array.isArray(leaderTeams) && leaderTeams[0]) {
+            return { ...reg, team: { id: leaderTeams[0].id, team_name: leaderTeams[0].team_name, role: 'leader' } };
+          }
+
+          // Else check membership via team_members join to hackathon_teams
+          const memberTeamsRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/team_members?member_id=eq.${reg.member_id}&select=team_id,role,hackathon_teams!inner(id,team_name,hackathon_id)&hackathon_teams.hackathon_id=eq.${reg.hackathon_id}`,
+            { headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` } }
+          );
+          const memberTeams = memberTeamsRes.ok ? await memberTeamsRes.json() : [];
+          if (Array.isArray(memberTeams) && memberTeams[0] && memberTeams[0].hackathon_teams) {
+            return { 
+              ...reg, 
+              team: { 
+                id: memberTeams[0].hackathon_teams.id, 
+                team_name: memberTeams[0].hackathon_teams.team_name,
+                role: memberTeams[0].role || 'member'
+              } 
+            };
+          }
+
+          return { ...reg, team: null };
+        } catch {
+          return { ...reg, team: null };
+        }
+      }));
+
+      return new Response(JSON.stringify({ data: enriched, hasMore: enriched.length === pageSize }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
