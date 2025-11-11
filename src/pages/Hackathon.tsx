@@ -26,6 +26,7 @@ import {
   Link as LinkIcon,
   UserPlus,
   Search,
+  Loader2,
   X,
   Send,
   User,
@@ -191,7 +192,7 @@ export default function Hackathon() {
         }
 
         if (regData?.status === "approved") {
-          await loadMemberTeam(hackathonId, memberData.id);
+          const foundTeamId = await loadMemberTeam(hackathonId, memberData.id);
 
           // Load all teams and single players
           await loadTeamsAndPlayers(hackathonId, memberData.id);
@@ -201,7 +202,7 @@ export default function Hackathon() {
             .from("hackathon_submissions")
             .select("*")
             .eq("hackathon_id", hackathonId)
-            .or(`member_id.eq.${memberData.id}${teamData ? `,team_id.eq.${teamData.id}` : ""}`)
+            .or(`member_id.eq.${memberData.id}${foundTeamId ? `,team_id.eq.${foundTeamId}` : ""}`)
             .single();
 
           if (subData) {
@@ -242,7 +243,7 @@ export default function Hackathon() {
     loadHackathonData();
   }, [hackathonId, navigate, toast]);
 
-  async function loadMemberTeam(hackathonId: string, currentMemberId: string) {
+  async function loadMemberTeam(hackathonId: string, currentMemberId: string): Promise<string | null> {
     // 1) Try as leader
     const { data: leaderTeam } = await supabase
       .from("hackathon_teams")
@@ -256,7 +257,7 @@ export default function Hackathon() {
       `)
       .eq("hackathon_id", hackathonId)
       .eq("team_leader_id", currentMemberId)
-      .single();
+      .maybeSingle();
 
     let teamId: string | null = leaderTeam?.id || null;
 
@@ -285,7 +286,7 @@ export default function Hackathon() {
           )
         `)
         .eq("id", teamId)
-        .single();
+        .maybeSingle();
       if (fullTeam) {
         const formattedTeam = {
           ...fullTeam,
@@ -304,6 +305,7 @@ export default function Hackathon() {
     } else {
       setTeam(null);
     }
+    return teamId;
   }
 
   async function loadInviteLinks(teamId: string) {
