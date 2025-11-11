@@ -316,6 +316,7 @@ const scannerLockRef = useRef(false);
 
 	const [memberDetails, setMemberDetails] = useState<any>(null);
 	const [showMemberDetails, setShowMemberDetails] = useState(false);
+	const [viewingMemberId, setViewingMemberId] = useState<string | null>(null);
 	const [deleteMemberOpen, setDeleteMemberOpen] = useState(false);
 	const [deleteMemberId, setDeleteMemberId] = useState<string | null>(null);
 	const [deleteMemberReason, setDeleteMemberReason] = useState("");
@@ -337,6 +338,8 @@ const [manageSaving, setManageSaving] = useState(false);
 const [manageResources, setManageResources] = useState<any[]>([]);
 const [newResTitle, setNewResTitle] = useState("");
 const [newResUrl, setNewResUrl] = useState("");
+const [submissionFields, setSubmissionFields] = useState<string[]>([]);
+const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 
 	// Initial loads
     useEffect(() => {
@@ -666,8 +669,10 @@ const [newResUrl, setNewResUrl] = useState("");
 			const data = await res.json();
 			setMemberDetails(data);
 			setShowMemberDetails(true);
+			setViewingMemberId(null);
 		} catch (e: any) {
 			toast({ title: "Failed to load member details", description: e.message || String(e) });
+			setViewingMemberId(null);
 		}
 	}
 
@@ -820,6 +825,15 @@ const [newResUrl, setNewResUrl] = useState("");
                 .order("display_order", { ascending: true });
             if (error) throw error;
             setManageResources(data || []);
+            // load submission fields and rules from events
+            const { data: ev } = await supabase
+                .from("events")
+                .select("submission_fields, rules_markdown, submission_page_enabled")
+                .eq("id", eventId)
+                .single();
+            setSubmissionFields(Array.isArray(ev?.submission_fields) ? ev!.submission_fields : []);
+            setRulesMarkdown(ev?.rules_markdown || "");
+            setManagingHackathon(prev => prev ? { ...prev, submission_page_enabled: !!ev?.submission_page_enabled } : prev);
         } catch (e: any) {
             toast({ title: "Failed to load resources", description: e.message || String(e) });
         }
@@ -863,6 +877,40 @@ const [newResUrl, setNewResUrl] = useState("");
             toast({ title: "Updated", description: "Submission page setting saved." });
             // reflect locally
             setManagingHackathon({ ...managingHackathon, submission_page_enabled: enabled });
+        } catch (e: any) {
+            toast({ title: "Save failed", description: e.message || String(e), variant: "destructive" });
+        } finally {
+            setManageSaving(false);
+        }
+    }
+
+    async function saveSubmissionFields() {
+        if (!managingHackathon) return;
+        setManageSaving(true);
+        try {
+            const { error } = await supabase
+                .from("events")
+                .update({ submission_fields: submissionFields })
+                .eq("id", managingHackathon.id);
+            if (error) throw error;
+            toast({ title: "Saved", description: "Submission fields updated." });
+        } catch (e: any) {
+            toast({ title: "Save failed", description: e.message || String(e), variant: "destructive" });
+        } finally {
+            setManageSaving(false);
+        }
+    }
+
+    async function saveRulesMarkdown() {
+        if (!managingHackathon) return;
+        setManageSaving(true);
+        try {
+            const { error } = await supabase
+                .from("events")
+                .update({ rules_markdown: rulesMarkdown })
+                .eq("id", managingHackathon.id);
+            if (error) throw error;
+            toast({ title: "Saved", description: "Rules updated." });
         } catch (e: any) {
             toast({ title: "Save failed", description: e.message || String(e), variant: "destructive" });
         } finally {
@@ -1777,9 +1825,16 @@ const [newResUrl, setNewResUrl] = useState("");
 															<Button 
 																size="sm" 
 																variant="outline" 
-																onClick={() => void loadMemberDetails(reg.member_id)}
+																onClick={() => { setViewingMemberId(reg.member_id); void loadMemberDetails(reg.member_id); }}
 															>
-																View Member
+																{viewingMemberId === reg.member_id ? (
+																	<>
+																		<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+																		Loading...
+																	</>
+																) : (
+																	"View Member"
+																)}
 															</Button>
 														</TableCell>
 													</TableRow>
@@ -2112,6 +2167,41 @@ const [newResUrl, setNewResUrl] = useState("");
 										</Button>
 									</div>
 								</div>
+
+								<div className="mt-4">
+									<p className="text-sm font-medium mb-2">Submission fields</p>
+									<div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+										<label className="flex items-center gap-2">
+											<input type="checkbox" checked={submissionFields.includes("title")} onChange={(e) => {
+												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "title"])) : prev.filter(f => f !== "title"));
+											}} />
+											Title
+										</label>
+										<label className="flex items-center gap-2">
+											<input type="checkbox" checked={submissionFields.includes("description")} onChange={(e) => {
+												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "description"])) : prev.filter(f => f !== "description"));
+											}} />
+											Description
+										</label>
+										<label className="flex items-center gap-2">
+											<input type="checkbox" checked={submissionFields.includes("artifact_url")} onChange={(e) => {
+												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "artifact_url"])) : prev.filter(f => f !== "artifact_url"));
+											}} />
+											Artifact URL
+										</label>
+										<label className="flex items-center gap-2">
+											<input type="checkbox" checked={submissionFields.includes("video_url")} onChange={(e) => {
+												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "video_url"])) : prev.filter(f => f !== "video_url"));
+											}} />
+											Video URL
+										</label>
+									</div>
+									<div className="flex justify-end mt-3">
+										<Button size="sm" onClick={() => void saveSubmissionFields()} disabled={manageSaving}>
+											{manageSaving ? "Saving..." : "Save Fields"}
+										</Button>
+									</div>
+								</div>
 							</div>
 
 							<div className="border rounded-md p-4">
@@ -2138,6 +2228,16 @@ const [newResUrl, setNewResUrl] = useState("");
 											</div>
 										))
 									)}
+								</div>
+							</div>
+
+							<div className="border rounded-md p-4">
+								<h3 className="font-semibold mb-3">Rules (Markdown supported)</h3>
+								<Textarea rows={8} value={rulesMarkdown} onChange={(e) => setRulesMarkdown(e.target.value)} placeholder="Write rules and guidelines here..." />
+								<div className="flex justify-end mt-3">
+									<Button size="sm" onClick={() => void saveRulesMarkdown()} disabled={manageSaving}>
+										{manageSaving ? "Saving..." : "Save Rules"}
+									</Button>
 								</div>
 							</div>
 						</div>

@@ -7,13 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2 } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import EventRegistration from "@/components/EventRegistration";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface Member {
   id: string;
@@ -159,6 +160,8 @@ export default function MemberPortal() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [needs2FA, setNeeds2FA] = useState(false);
   const [pendingMemberData, setPendingMemberData] = useState<any>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   useEffect(() => {
     // Load viewed hackathons from localStorage (if needed in future)
@@ -219,6 +222,8 @@ export default function MemberPortal() {
       }
 
       setMember(memberData);
+      // Load notifications
+      await loadNotifications(memberData.id);
       localStorage.setItem("shadowmesh_member_email", email.trim().toLowerCase());
       localStorage.setItem("shadowmesh_authenticated", "true");
 
@@ -410,6 +415,42 @@ export default function MemberPortal() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadNotifications(memberId: string) {
+    try {
+      const { data: notifRows } = await supabase
+        .from("member_notifications")
+        .select("*")
+        .eq("member_id", memberId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      const { data: teamReqs } = await supabase
+        .from("team_requests")
+        .select("id, created_at, status, hackathon_teams(team_name)")
+        .eq("to_member_id", memberId)
+        .eq("status", "pending");
+      const synthetic = (teamReqs || []).map((r: any) => ({
+        id: `teamreq_${r.id}`,
+        notification_type: "team_invite",
+        title: "Team Invitation",
+        body: `You have been invited to join ${r.hackathon_teams?.team_name || "a team"}.`,
+        created_at: r.created_at,
+        is_read: false,
+      }));
+      const all = [...(notifRows || []), ...synthetic].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setNotifications(all);
+      setUnreadCount(all.filter(n => !n.is_read).length);
+    } catch {}
+  }
+
+  async function markAllRead() {
+    if (!member) return;
+    try {
+      await supabase.from("member_notifications").update({ is_read: true }).eq("member_id", member.id).eq("is_read", false);
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch {}
   }
 
   async function handleEventRegistrationSuccess(eventId?: string) {
@@ -1444,6 +1485,24 @@ export default function MemberPortal() {
     return null;
   }
 
+  // Realtime: if admin deletes this member, show dismissal popup and redirect
+  useEffect(() => {
+    if (!member?.id) return;
+    const channel = supabase
+      .channel(`member-delete-${member.id}`)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'members', filter: `id=eq.${member.id}` }, () => {
+        // Clear session and show modal via alert, then redirect
+        localStorage.removeItem("shadowmesh_authenticated");
+        localStorage.removeItem("shadowmesh_member_email");
+        alert("Your account has been dismissed by the admin. You will be redirected to the homepage.");
+        window.location.href = "/";
+      })
+      .subscribe();
+    return () => {
+      try { supabase.removeChannel(channel); } catch {}
+    };
+  }, [member?.id]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 py-12 relative overflow-hidden">
       {/* Animated background effects */}
@@ -1463,6 +1522,43 @@ export default function MemberPortal() {
               <p className="text-lg text-muted-foreground">ShadowMesh Member Portal • Your gateway to AI × Cyber</p>
             </div>
             <div className="hidden md:flex items-center gap-3">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="w-5 h-5" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80">
+                  <DropdownMenuLabel className="flex items-center justify-between">
+                    <span>Notifications</span>
+                    {unreadCount > 0 && (
+                      <Button variant="ghost" size="sm" onClick={() => void markAllRead()}>
+                        <Check className="w-4 h-4 mr-1" /> Mark all read
+                      </Button>
+                    )}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {notifications.length === 0 ? (
+                    <div className="p-3 text-sm text-muted-foreground">No notifications yet</div>
+                  ) : (
+                    notifications.map((n) => (
+                      <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${n.is_read ? "bg-muted" : "bg-primary"}`}></span>
+                          <span className="font-medium">{n.title || (n.notification_type === "team_invite" ? "Team Invitation" : "Update")}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">{n.body || ""}</div>
+                        <div className="text-[10px] text-muted-foreground">{new Date(n.created_at).toLocaleString()}</div>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Badge variant="secondary" className="px-4 py-2 text-sm">
                 <KeyRound className="w-4 h-4 mr-2" />
                 {member.email}
