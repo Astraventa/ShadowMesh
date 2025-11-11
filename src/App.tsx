@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import MemberPortal from "./pages/MemberPortal";
 import AttendanceCheckin from "./pages/AttendanceCheckin";
 import Hackathon from "./pages/Hackathon";
+import TeamInvite from "./pages/TeamInvite";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,8 @@ const App = () => (
           <Route path="/member-portal" element={<MemberPortal />} />
           {/* Hackathon dashboard - dynamic page for each hackathon */}
           <Route path="/hackathons/:hackathonId" element={<Hackathon />} />
+          {/* Team invite link - for joining teams via invite */}
+          <Route path="/team-invite/:token" element={<TeamInvite />} />
           {/* Attendance check-in - separate secure page */}
           <Route path="/attendance-checkin" element={<AttendanceCheckin />} />
           {/* Fake 404 decoy for /admin */}

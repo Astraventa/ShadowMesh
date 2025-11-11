@@ -28,10 +28,15 @@ import {
   Search,
   X,
   Send,
-  User
+  User,
+  Copy,
+  Check,
+  Mail,
+  Trash2
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import HackathonRegistration from "@/components/HackathonRegistration";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabaseClient";
 
 interface Hackathon {
   id: string;
@@ -121,6 +126,10 @@ export default function Hackathon() {
   const [showFindTeammates, setShowFindTeammates] = useState(false);
   const [showJoinTeam, setShowJoinTeam] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [inviteLinks, setInviteLinks] = useState<any[]>([]);
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [creatingTeam, setCreatingTeam] = useState(false);
 
   useEffect(() => {
     async function loadHackathonData() {
@@ -207,6 +216,11 @@ export default function Hackathon() {
               }))
             };
             setTeam(formattedTeam as Team);
+            
+            // Load invite links if user is team leader
+            if (teamData.team_leader_id === memberData.id) {
+              await loadInviteLinks(teamData.id);
+            }
           }
 
           // Load all teams and single players
@@ -257,6 +271,91 @@ export default function Hackathon() {
 
     loadHackathonData();
   }, [hackathonId, navigate, toast]);
+
+  async function loadInviteLinks(teamId: string) {
+    try {
+      const { data, error } = await supabase
+        .from("hackathon_invites")
+        .select("*")
+        .eq("team_id", teamId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setInviteLinks(data || []);
+    } catch (error: any) {
+      console.error("Error loading invite links:", error);
+    }
+  }
+
+  async function generateInviteLink() {
+    if (!team || !hackathonId || !memberId || team.team_leader_id !== memberId) {
+      toast({ title: "Unauthorized", description: "Only team leaders can generate invite links.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      // Generate secure token
+      const token = crypto.randomUUID() + "-" + Date.now().toString(36);
+      
+      // Set expiration to 7 days from now
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      const { data, error } = await supabase
+        .from("hackathon_invites")
+        .insert({
+          hackathon_id: hackathonId,
+          team_id: team.id,
+          created_by: memberId,
+          invite_token: token,
+          expires_at: expiresAt.toISOString(),
+          max_uses: 3, // Allow 3 uses (for team capacity)
+          uses_count: 0,
+          is_active: true
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({ title: "Invite link generated!", description: "Share this link with your teammates." });
+      await loadInviteLinks(team.id);
+      setShowInviteDialog(true);
+    } catch (error: any) {
+      console.error("Error generating invite link:", error);
+      toast({ title: "Failed to generate invite link", description: error.message, variant: "destructive" });
+    }
+  }
+
+  async function copyInviteLink(token: string) {
+    const inviteUrl = `${window.location.origin}/team-invite/${token}`;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedLink(token);
+      toast({ title: "Link copied!", description: "Invite link copied to clipboard." });
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch (error) {
+      toast({ title: "Failed to copy", description: "Please copy the link manually.", variant: "destructive" });
+    }
+  }
+
+  async function deleteInviteLink(inviteId: string) {
+    try {
+      const { error } = await supabase
+        .from("hackathon_invites")
+        .update({ is_active: false })
+        .eq("id", inviteId);
+
+      if (error) throw error;
+
+      toast({ title: "Invite link deleted", description: "The invite link has been deactivated." });
+      if (team) await loadInviteLinks(team.id);
+    } catch (error: any) {
+      console.error("Error deleting invite link:", error);
+      toast({ title: "Failed to delete invite link", description: error.message, variant: "destructive" });
+    }
+  }
 
   async function loadTeamsAndPlayers(hackathonId: string, currentMemberId: string) {
     try {
@@ -325,6 +424,20 @@ export default function Hackathon() {
     }
 
     try {
+      // Ensure the member is not already in a team for this hackathon
+      const { data: existingMembership } = await supabase
+        .from("team_members")
+        .select("team_id, hackathon_teams(hackathon_id)")
+        .eq("member_id", memberId);
+
+      if (Array.isArray(existingMembership) && existingMembership.some((tm: any) => tm.hackathon_teams?.hackathon_id === hackathonId)) {
+        toast({ title: "Already in a team", description: "You can only be in one team per hackathon.", variant: "destructive" });
+        setShowCreateTeam(false);
+        return;
+      }
+
+      setCreatingTeam(true);
+
       const { data: teamData, error } = await supabase
         .from("hackathon_teams")
         .insert({
@@ -348,17 +461,50 @@ export default function Hackathon() {
           role: "leader"
         });
 
-      toast({ title: "Team created!", description: "You can now invite teammates." });
+      // Load the brand new team and switch UI without reload
+      const { data: createdTeam } = await supabase
+        .from("hackathon_teams")
+        .select(`
+          *,
+          team_members(
+            member_id,
+            role,
+            members(id, full_name, email)
+          )
+        `)
+        .eq("id", teamData.id)
+        .single();
+
+      if (createdTeam) {
+        const formattedTeam = {
+          ...createdTeam,
+          members: (createdTeam.team_members || []).map((tm: any) => ({
+            member_id: tm.member_id,
+            full_name: tm.members?.full_name || "",
+            email: tm.members?.email || "",
+            role: tm.role
+          }))
+        };
+        setTeam(formattedTeam as Team);
+        await loadInviteLinks(createdTeam.id);
+      }
+
+      toast({ title: "Team created!", description: "You are the team leader. Generate an invite link to add members." });
       setShowCreateTeam(false);
       setTeamName("");
-      window.location.reload();
     } catch (e: any) {
       toast({ title: "Failed to create team", description: e.message });
+    } finally {
+      setCreatingTeam(false);
     }
   }
 
   async function joinTeam(teamId: string) {
     if (!memberId) return;
+    if (hasTeam) {
+      toast({ title: "Already in a team", description: "You can only be in one team per hackathon.", variant: "destructive" });
+      return;
+    }
 
     try {
       // Check if team has space
@@ -642,42 +788,137 @@ export default function Hackathon() {
             {/* Teams Tab - Premium Team Management */}
             <TabsContent value="teams" className="space-y-8">
               {hasTeam ? (
-                <Card className="shadow-xl border-2">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-2xl flex items-center gap-3">
-                      <Users className="w-6 h-6" />
-                      Your Team: {team.team_name}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid gap-4">
-                      {team.members.map((member) => (
-                        <div key={member.member_id} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
-                          <div>
-                            <p className="font-semibold text-lg">{member.full_name}</p>
-                            <p className="text-sm text-muted-foreground">{member.email}</p>
-                          </div>
-                          <Badge variant={member.role === "leader" ? "default" : "secondary"}>
-                            {member.role === "leader" ? "Leader" : "Member"}
-                          </Badge>
+                <>
+                  <Card className="shadow-xl border-2">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-2xl flex items-center gap-3">
+                          <Users className="w-6 h-6" />
+                          Your Team: {team.team_name}
+                        </CardTitle>
+                        {team.team_leader_id === memberId && team.members.length < team.max_members && (
+                          <Button 
+                            size="sm"
+                            onClick={generateInviteLink}
+                          >
+                            <LinkIcon className="w-4 h-4 mr-2" />
+                            Generate Invite Link
+                          </Button>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {/* Team Members with Contact Info */}
+                      <div className="space-y-3">
+                        <h3 className="font-semibold text-lg">Team Members</h3>
+                        <div className="grid gap-3">
+                          {team.members.map((member) => (
+                            <div key={member.member_id} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-semibold text-lg">{member.full_name}</p>
+                                  <Badge variant={member.role === "leader" ? "default" : "secondary"} className="text-xs">
+                                    {member.role === "leader" ? "Leader" : "Member"}
+                                  </Badge>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Mail className="w-3 h-3" />
+                                  <span>{member.email}</span>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 ml-2"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(member.email);
+                                      toast({ title: "Email copied!", description: `${member.email} copied to clipboard.` });
+                                    }}
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                    {team.members.length < team.max_members && (
-                      <Button 
-                        variant="outline" 
-                        className="w-full"
-                        onClick={() => {
-                          setShowFindTeammates(true);
-                          if (hackathonId) loadTeamsAndPlayers(hackathonId, memberId!);
-                        }}
-                      >
-                        <UserPlus className="w-4 h-4 mr-2" />
-                        Invite Teammates
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
+                        <p className="text-sm text-muted-foreground">
+                          {team.members.length} / {team.max_members} members
+                        </p>
+                      </div>
+
+                      {/* Invite Links Section (Team Leader Only) */}
+                      {team.team_leader_id === memberId && inviteLinks.length > 0 && (
+                        <div className="space-y-3 pt-4 border-t">
+                          <h3 className="font-semibold text-lg">Active Invite Links</h3>
+                          <div className="space-y-2">
+                            {inviteLinks.map((invite) => {
+                              const inviteUrl = `${window.location.origin}/team-invite/${invite.invite_token}`;
+                              const isExpired = new Date(invite.expires_at) < new Date();
+                              const isUsedUp = invite.uses_count >= invite.max_uses;
+                              const isCopied = copiedLink === invite.invite_token;
+                              
+                              return (
+                                <div key={invite.id} className="p-3 bg-muted/30 rounded-lg border border-dashed">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <LinkIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                        <code className="text-xs bg-background px-2 py-1 rounded break-all">
+                                          {inviteUrl}
+                                        </code>
+                                      </div>
+                                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                        <span>Uses: {invite.uses_count} / {invite.max_uses}</span>
+                                        <span>Expires: {new Date(invite.expires_at).toLocaleDateString()}</span>
+                                        {isExpired && <Badge variant="destructive" className="text-xs">Expired</Badge>}
+                                        {isUsedUp && <Badge variant="secondary" className="text-xs">Used Up</Badge>}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => copyInviteLink(invite.invite_token)}
+                                        disabled={isExpired || isUsedUp}
+                                      >
+                                        {isCopied ? (
+                                          <Check className="w-4 h-4 text-green-500" />
+                                        ) : (
+                                          <Copy className="w-4 h-4" />
+                                        )}
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => deleteInviteLink(invite.id)}
+                                      >
+                                        <Trash2 className="w-4 h-4 text-destructive" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Invite Teammates Button */}
+                      {team.members.length < team.max_members && (
+                        <Button 
+                          variant="outline" 
+                          className="w-full"
+                          onClick={() => {
+                            setShowFindTeammates(true);
+                            if (hackathonId) loadTeamsAndPlayers(hackathonId, memberId!);
+                          }}
+                        >
+                          <UserPlus className="w-4 h-4 mr-2" />
+                          Browse & Invite Teammates
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                </>
               ) : (
                 <div className="grid md:grid-cols-2 gap-6">
                   <Card className="shadow-xl border-2">
@@ -756,18 +997,45 @@ export default function Hackathon() {
                                 {t.members.length} / {t.max_members} members
                               </p>
                             </div>
-                            {t.members.length < t.max_members && (
+                            {!hasTeam && t.members.length < t.max_members ? (
                               <Button size="sm" onClick={() => joinTeam(t.id)}>
                                 Join
                               </Button>
+                            ) : (
+                              <Button size="sm" variant="outline" disabled>
+                                {hasTeam ? "In a Team" : "Full"}
+                              </Button>
                             )}
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            {t.members.map((m) => (
-                              <Badge key={m.member_id} variant="secondary">
-                                {m.full_name}
-                              </Badge>
-                            ))}
+                          <div className="space-y-2">
+                            <p className="text-xs text-muted-foreground font-semibold">Members:</p>
+                            <div className="space-y-1">
+                              {t.members.map((m) => (
+                                <div key={m.member_id} className="flex items-center justify-between p-2 bg-background/50 rounded text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">{m.full_name}</span>
+                                    {m.role === "leader" && (
+                                      <Badge variant="default" className="text-xs">Leader</Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Mail className="w-3 h-3" />
+                                    <span>{m.email}</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-5 px-1"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(m.email);
+                                        toast({ title: "Email copied!", description: `${m.email} copied to clipboard.` });
+                                      }}
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       ))
@@ -801,8 +1069,52 @@ export default function Hackathon() {
                     ) : (
                       filteredPlayers.map((player) => (
                         <div key={player.id} className="p-4 bg-muted/50 rounded-lg border">
-                          <p className="font-semibold">{player.full_name}</p>
-                          <p className="text-sm text-muted-foreground">{player.email}</p>
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <p className="font-semibold text-lg">{player.full_name}</p>
+                              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                                <Mail className="w-3 h-3" />
+                                <span>{player.email}</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-5 px-1"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(player.email);
+                                    toast({ title: "Email copied!", description: `${player.email} copied to clipboard.` });
+                                  }}
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            {hasTeam && team && team.team_leader_id === memberId && team.members.length < team.max_members && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                  // Send team request
+                                  try {
+                                    const { error } = await supabase
+                                      .from("team_requests")
+                                      .insert({
+                                        team_id: team.id,
+                                        from_member_id: memberId,
+                                        to_member_id: player.id,
+                                        status: "pending"
+                                      });
+                                    if (error) throw error;
+                                    toast({ title: "Invitation sent!", description: `Invitation sent to ${player.full_name}` });
+                                  } catch (e: any) {
+                                    toast({ title: "Failed to send invitation", description: e.message, variant: "destructive" });
+                                  }
+                                }}
+                              >
+                                <Send className="w-3 h-3 mr-1" />
+                                Invite
+                              </Button>
+                            )}
+                          </div>
                           {player.area_of_interest && (
                             <Badge variant="outline" className="mt-2">
                               {player.area_of_interest}
@@ -993,8 +1305,17 @@ export default function Hackathon() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateTeam(false)}>Cancel</Button>
-            <Button onClick={createTeam} disabled={!teamName.trim()}>Create Team</Button>
+            <Button variant="outline" onClick={() => setShowCreateTeam(false)} disabled={creatingTeam}>Cancel</Button>
+            <Button onClick={createTeam} disabled={!teamName.trim() || creatingTeam}>
+              {creatingTeam ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create Team"
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
