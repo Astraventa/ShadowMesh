@@ -1510,6 +1510,11 @@ const scannerLockRef = useRef(false);
 														</Badge>
 													</TableCell>
 													<TableCell className="text-right space-x-2">
+														{event.event_type === "hackathon" && (
+															<Button size="sm" variant="secondary" onClick={() => window.open(`/hackathons/${event.id}`, "_blank")}>
+																Manage
+															</Button>
+														)}
 														<Button size="sm" variant="outline" onClick={() => {
 															setEditingEvent(event);
 															setEventFormData({
@@ -1693,6 +1698,13 @@ const scannerLockRef = useRef(false);
 																	IBAN Info
 																</Button>
 															)}
+															<Button 
+																size="sm" 
+																variant="outline" 
+																onClick={() => void loadMemberDetails(reg.member_id)}
+															>
+																View Member
+															</Button>
 														</TableCell>
 													</TableRow>
 												);
