@@ -191,38 +191,7 @@ export default function Hackathon() {
         }
 
         if (regData?.status === "approved") {
-          // Load team
-          const { data: teamData } = await supabase
-            .from("hackathon_teams")
-            .select(`
-              *,
-              team_members(
-                member_id,
-                role,
-                members(id, full_name, email)
-              )
-            `)
-            .eq("hackathon_id", hackathonId)
-            .or(`team_leader_id.eq.${memberData.id},team_members.member_id.eq.${memberData.id}`)
-            .single();
-
-          if (teamData) {
-            const formattedTeam = {
-              ...teamData,
-              members: (teamData.team_members || []).map((tm: any) => ({
-                member_id: tm.member_id,
-                full_name: tm.members?.full_name || "",
-                email: tm.members?.email || "",
-                role: tm.role
-              }))
-            };
-            setTeam(formattedTeam as Team);
-            
-            // Load invite links if user is team leader
-            if (teamData.team_leader_id === memberData.id) {
-              await loadInviteLinks(teamData.id);
-            }
-          }
+          await loadMemberTeam(hackathonId, memberData.id);
 
           // Load all teams and single players
           await loadTeamsAndPlayers(hackathonId, memberData.id);
@@ -272,6 +241,70 @@ export default function Hackathon() {
 
     loadHackathonData();
   }, [hackathonId, navigate, toast]);
+
+  async function loadMemberTeam(hackathonId: string, currentMemberId: string) {
+    // 1) Try as leader
+    const { data: leaderTeam } = await supabase
+      .from("hackathon_teams")
+      .select(`
+        *,
+        team_members(
+          member_id,
+          role,
+          members(id, full_name, email)
+        )
+      `)
+      .eq("hackathon_id", hackathonId)
+      .eq("team_leader_id", currentMemberId)
+      .single();
+
+    let teamId: string | null = leaderTeam?.id || null;
+
+    // 2) If not leader, find membership
+    if (!teamId) {
+      const { data: membership } = await supabase
+        .from("team_members")
+        .select("team_id, hackathon_teams!inner(id, hackathon_id)")
+        .eq("member_id", currentMemberId)
+        .eq("hackathon_teams.hackathon_id", hackathonId)
+        .limit(1);
+      if (membership && membership.length > 0) {
+        teamId = membership[0].team_id;
+      }
+    }
+
+    if (teamId) {
+      const { data: fullTeam } = await supabase
+        .from("hackathon_teams")
+        .select(`
+          *,
+          team_members(
+            member_id,
+            role,
+            members(id, full_name, email)
+          )
+        `)
+        .eq("id", teamId)
+        .single();
+      if (fullTeam) {
+        const formattedTeam = {
+          ...fullTeam,
+          members: (fullTeam.team_members || []).map((tm: any) => ({
+            member_id: tm.member_id,
+            full_name: tm.members?.full_name || "",
+            email: tm.members?.email || "",
+            role: tm.role
+          }))
+        };
+        setTeam(formattedTeam as Team);
+        if (fullTeam.team_leader_id === currentMemberId) {
+          await loadInviteLinks(fullTeam.id);
+        }
+      }
+    } else {
+      setTeam(null);
+    }
+  }
 
   async function loadInviteLinks(teamId: string) {
     try {
