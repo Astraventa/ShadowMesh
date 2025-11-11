@@ -182,11 +182,17 @@ const Events = () => {
                   </p>
 
                   {isSupabaseEvent ? (
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground mb-5">
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground mb-5">
                       <span className="inline-flex items-center gap-1">
                         <Calendar className="w-4 h-4 text-primary" />
                         {formatEventDate(event.start_date)}
                       </span>
+                      {event.registration_deadline && (
+                        <span className="inline-flex items-center gap-1">
+                          <Calendar className="w-4 h-4 text-rose-400" />
+                          Reg. deadline: {formatEventDate(event.registration_deadline)}
+                        </span>
+                      )}
                       {event.location && (
                         <span className="inline-flex items-center gap-1">
                           <MapPin className="w-4 h-4 text-secondary" />

@@ -806,7 +806,7 @@ export default function Hackathon() {
           </div>
 
           {/* Stats Row - Compact */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
             <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-lg">
               <CardContent className="p-3">
                 <div className="flex items-center gap-2 text-purple-200">
@@ -839,6 +839,19 @@ export default function Hackathon() {
                     <div className="min-w-0">
                       <p className="text-xs text-purple-300/80 mb-0.5">Location</p>
                       <p className="font-semibold text-sm truncate">{hackathon.location}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {hackathon.registration_deadline && (
+              <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-lg">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 text-purple-200">
+                    <Clock className="w-4 h-4 text-purple-300 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-purple-300/80 mb-0.5">Registration Deadline</p>
+                      <p className="font-semibold text-sm truncate">{formatDate(hackathon.registration_deadline)}</p>
                     </div>
                   </div>
                 </CardContent>

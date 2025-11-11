@@ -316,7 +316,6 @@ const scannerLockRef = useRef(false);
 
 	const [memberDetails, setMemberDetails] = useState<any>(null);
 	const [showMemberDetails, setShowMemberDetails] = useState(false);
-	const [viewingMemberId, setViewingMemberId] = useState<string | null>(null);
 	const [deleteMemberOpen, setDeleteMemberOpen] = useState(false);
 	const [deleteMemberId, setDeleteMemberId] = useState<string | null>(null);
 	const [deleteMemberReason, setDeleteMemberReason] = useState("");
@@ -332,14 +331,15 @@ const scannerLockRef = useRef(false);
 	const [hackRejectingId, setHackRejectingId] = useState<string | null>(null);
 	const [paymentProofViewer, setPaymentProofViewer] = useState<string | null>(null);
 	const [viewingHackathonReg, setViewingHackathonReg] = useState<any | null>(null);
-const [manageOpen, setManageOpen] = useState(false);
-const [managingHackathon, setManagingHackathon] = useState<any | null>(null);
-const [manageSaving, setManageSaving] = useState(false);
-const [manageResources, setManageResources] = useState<any[]>([]);
-const [newResTitle, setNewResTitle] = useState("");
-const [newResUrl, setNewResUrl] = useState("");
-const [submissionFields, setSubmissionFields] = useState<string[]>([]);
-const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
+	// Manage Hackathon Drawer state (re-added)
+	const [manageOpen, setManageOpen] = useState(false);
+	const [managingHackathon, setManagingHackathon] = useState<any | null>(null);
+	const [manageSaving, setManageSaving] = useState(false);
+	const [manageResources, setManageResources] = useState<any[]>([]);
+	const [newResTitle, setNewResTitle] = useState("");
+	const [newResUrl, setNewResUrl] = useState("");
+	const [submissionFields, setSubmissionFields] = useState<string[]>([]);
+	const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 
 	// Initial loads
     useEffect(() => {
@@ -669,10 +669,8 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 			const data = await res.json();
 			setMemberDetails(data);
 			setShowMemberDetails(true);
-			setViewingMemberId(null);
 		} catch (e: any) {
 			toast({ title: "Failed to load member details", description: e.message || String(e) });
-			setViewingMemberId(null);
 		}
 	}
 
@@ -810,16 +808,25 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 		}
 	}
 
+    // Manage drawer helpers (re-added)
     async function loadHackathonResources(eventId: string) {
         try {
             const { data, error } = await supabase
                 .from("hackathon_resources")
-                .select("*")
+                .select(`id, hackathon_id, display_order, member_resources:resource_id ( id, title, description, content_url, resource_type )`)
                 .eq("hackathon_id", eventId)
                 .order("display_order", { ascending: true });
             if (error) throw error;
-            setManageResources(data || []);
-            // load submission fields and rules from events
+            const normalized = (data || []).map((row: any) => ({
+                id: row.id,
+                resource_id: row.member_resources?.id,
+                title: row.member_resources?.title || "Resource",
+                content_url: row.member_resources?.content_url || "",
+                description: row.member_resources?.description || "",
+                resource_type: row.member_resources?.resource_type || "link",
+                display_order: row.display_order || 0,
+            }));
+            setManageResources(normalized);
             const { data: ev } = await supabase
                 .from("events")
                 .select("submission_fields, rules_markdown, submission_page_enabled")
@@ -837,21 +844,30 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
         if (!managingHackathon || !newResTitle.trim() || !newResUrl.trim()) return;
         setManageSaving(true);
         try {
-            const { error } = await supabase
-                .from("hackathon_resources")
+            const { data: resCreated, error: resErr } = await supabase
+                .from("member_resources")
                 .insert({
-                    hackathon_id: managingHackathon.id,
                     title: newResTitle.trim(),
                     description: null,
                     content_url: newResUrl.trim(),
                     resource_type: "link",
+                })
+                .select("id")
+                .single();
+            if (resErr) throw resErr;
+            const { error: linkErr } = await supabase
+                .from("hackathon_resources")
+                .insert({
+                    hackathon_id: managingHackathon.id,
+                    resource_id: resCreated.id,
                     display_order: (manageResources?.length || 0) + 1,
                 });
-            if (error) throw error;
+            if (linkErr) throw linkErr;
             setNewResTitle("");
             setNewResUrl("");
             await loadHackathonResources(managingHackathon.id);
             toast({ title: "Resource added" });
+            await notifyHackathonMembers("New resource added", `${newResTitle.trim()} was added to the hackathon resources.`);
         } catch (e: any) {
             toast({ title: "Add failed", description: e.message || String(e), variant: "destructive" });
         } finally {
@@ -869,7 +885,6 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
                 .eq("id", managingHackathon.id);
             if (error) throw error;
             toast({ title: "Updated", description: "Submission page setting saved." });
-            // reflect locally
             setManagingHackathon({ ...managingHackathon, submission_page_enabled: enabled });
         } catch (e: any) {
             toast({ title: "Save failed", description: e.message || String(e), variant: "destructive" });
@@ -888,6 +903,7 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
                 .eq("id", managingHackathon.id);
             if (error) throw error;
             toast({ title: "Saved", description: "Submission fields updated." });
+            await notifyHackathonMembers("Submission fields updated", "Submission requirements have been updated. Please review before submitting.");
         } catch (e: any) {
             toast({ title: "Save failed", description: e.message || String(e), variant: "destructive" });
         } finally {
@@ -905,6 +921,7 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
                 .eq("id", managingHackathon.id);
             if (error) throw error;
             toast({ title: "Saved", description: "Rules updated." });
+            await notifyHackathonMembers("Rules updated", "Hackathon rules have been updated. Please read the latest guidelines.");
         } catch (e: any) {
             toast({ title: "Save failed", description: e.message || String(e), variant: "destructive" });
         } finally {
@@ -912,17 +929,27 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
         }
     }
 
-    async function deleteResource(resourceId: string) {
+    async function deleteResource(resourceRowId: string) {
         if (!managingHackathon) return;
         setManageSaving(true);
         try {
+            const { data: linkRow } = await supabase
+                .from("hackathon_resources")
+                .select("resource_id")
+                .eq("id", resourceRowId)
+                .single();
+            const resourceId = linkRow?.resource_id;
             const { error } = await supabase
                 .from("hackathon_resources")
                 .delete()
-                .eq("id", resourceId);
+                .eq("id", resourceRowId);
             if (error) throw error;
+            if (resourceId) {
+                await supabase.from("member_resources").delete().eq("id", resourceId);
+            }
             await loadHackathonResources(managingHackathon.id);
             toast({ title: "Resource deleted" });
+            await notifyHackathonMembers("Resource removed", "A resource was removed from the hackathon.");
         } catch (e: any) {
             toast({ title: "Delete failed", description: e.message || String(e), variant: "destructive" });
         } finally {
@@ -931,24 +958,45 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
     }
 
     async function moveResource(resource: any, direction: "up" | "down") {
-        const idx = manageResources.findIndex(r => r.id === resource.id);
+        const idx = manageResources.findIndex((r) => r.id === resource.id);
         const newIdx = direction === "up" ? idx - 1 : idx + 1;
         if (idx < 0 || newIdx < 0 || newIdx >= manageResources.length || !managingHackathon) return;
         const a = manageResources[idx];
         const b = manageResources[newIdx];
-        // swap display_order
         setManageSaving(true);
         try {
-            const updates = [
+            await Promise.all([
                 supabase.from("hackathon_resources").update({ display_order: b.display_order }).eq("id", a.id),
                 supabase.from("hackathon_resources").update({ display_order: a.display_order }).eq("id", b.id),
-            ];
-            await Promise.all(updates);
+            ]);
             await loadHackathonResources(managingHackathon.id);
+            await notifyHackathonMembers("Resources updated", "Resources order was updated.");
         } catch (e: any) {
             toast({ title: "Reorder failed", description: e.message || String(e), variant: "destructive" });
         } finally {
             setManageSaving(false);
+        }
+    }
+
+    async function notifyHackathonMembers(title: string, body: string) {
+        try {
+            if (!managingHackathon) return;
+            const { data: regs } = await supabase
+                .from("hackathon_registrations")
+                .select("member_id")
+                .eq("hackathon_id", managingHackathon.id)
+                .eq("status", "approved");
+            const memberIds = Array.isArray(regs) ? regs.map((r: any) => r.member_id).filter(Boolean) : [];
+            if (memberIds.length === 0) return;
+            const rows = memberIds.map((mid: string) => ({
+                member_id: mid,
+                notification_type: "hackathon_update",
+                title,
+                body,
+            }));
+            await supabase.from("member_notifications").insert(rows);
+        } catch {
+            // non-fatal
         }
     }
 
@@ -1581,6 +1629,126 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 						</Card>
 					</TabsContent>
 
+			{/* Manage Hackathon Drawer (re-added) */}
+			<Dialog open={manageOpen} onOpenChange={(open) => {
+				setManageOpen(open);
+				if (!open) {
+					setManagingHackathon(null);
+					setManageResources([]);
+				} else if (managingHackathon) {
+					void loadHackathonResources(managingHackathon.id);
+				}
+			}}>
+				<DialogContent className="max-w-3xl">
+					<DialogHeader>
+						<DialogTitle>Manage Hackathon</DialogTitle>
+						<DialogDescription>
+							{managingHackathon ? managingHackathon.title : ""}
+						</DialogDescription>
+					</DialogHeader>
+					{managingHackathon && (
+						<div className="space-y-6">
+							<div className="border rounded-md p-4">
+								<h3 className="font-semibold mb-3">Submission Settings</h3>
+								<div className="flex items-center justify-between">
+									<span className="text-sm text-muted-foreground">Enable submission page</span>
+									<div className="flex items-center gap-2">
+										<Button 
+											variant={managingHackathon.submission_page_enabled ? "secondary" : "outline"} 
+											size="sm"
+											disabled={manageSaving}
+											onClick={() => void toggleSubmissionEnabled(!managingHackathon.submission_page_enabled)}
+										>
+											{manageSaving ? "Saving..." : managingHackathon.submission_page_enabled ? "Enabled" : "Disabled"}
+										</Button>
+									</div>
+								</div>
+
+								<div className="mt-4">
+									<p className="text-sm font-medium mb-2">Submission fields</p>
+									<div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+										<label className="flex items-center gap-2">
+											<input type="checkbox" checked={submissionFields.includes("title")} onChange={(e) => {
+												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "title"])) : prev.filter(f => f !== "title"));
+											}} />
+											Title
+										</label>
+										<label className="flex items-center gap-2">
+											<input type="checkbox" checked={submissionFields.includes("description")} onChange={(e) => {
+												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "description"])) : prev.filter(f => f !== "description"));
+											}} />
+											Description
+										</label>
+										<label className="flex items-center gap-2">
+											<input type="checkbox" checked={submissionFields.includes("artifact_url")} onChange={(e) => {
+												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "artifact_url"])) : prev.filter(f => f !== "artifact_url"));
+											}} />
+											Artifact URL
+										</label>
+										<label className="flex items-center gap-2">
+											<input type="checkbox" checked={submissionFields.includes("video_url")} onChange={(e) => {
+												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "video_url"])) : prev.filter(f => f !== "video_url"));
+											}} />
+											Video URL
+										</label>
+									</div>
+									<div className="flex justify-end mt-3">
+										<Button size="sm" onClick={() => void saveSubmissionFields()} disabled={manageSaving}>
+											{manageSaving ? "Saving..." : "Save Fields"}
+										</Button>
+									</div>
+								</div>
+							</div>
+
+							<div className="border rounded-md p-4">
+								<h3 className="font-semibold mb-3">Resources</h3>
+								<div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+									<Input placeholder="Title" value={newResTitle} onChange={(e) => setNewResTitle(e.target.value)} />
+									<Input placeholder="URL" value={newResUrl} onChange={(e) => setNewResUrl(e.target.value)} className="md:col-span-2" />
+								</div>
+								<div className="flex justify-end">
+									<Button size="sm" onClick={() => void addHackathonResource()} disabled={manageSaving || !newResTitle.trim() || !newResUrl.trim()}>
+										{manageSaving ? "Adding..." : "Add Resource"}
+									</Button>
+								</div>
+								<div className="mt-4 space-y-2">
+									{manageResources.length === 0 ? (
+										<p className="text-sm text-muted-foreground">No resources yet.</p>
+									) : (
+										manageResources.map((r, idx) => (
+											<div key={r.id} className="p-2 border rounded-md flex items-center justify-between gap-2">
+												<div className="min-w-0">
+													<p className="font-medium truncate">{r.title}</p>
+													<p className="text-xs text-muted-foreground break-all">{r.content_url}</p>
+												</div>
+												<div className="flex items-center gap-2">
+													<Button size="sm" variant="outline" onClick={() => void moveResource(r, "up")} disabled={idx === 0}>↑</Button>
+													<Button size="sm" variant="outline" onClick={() => void moveResource(r, "down")} disabled={idx === manageResources.length - 1}>↓</Button>
+													<Button size="sm" variant="ghost" onClick={() => void deleteResource(r.id)}>Delete</Button>
+												</div>
+											</div>
+										))
+									)}
+								</div>
+							</div>
+
+							<div className="border rounded-md p-4">
+								<h3 className="font-semibold mb-3">Rules (Markdown supported)</h3>
+								<Textarea rows={8} value={rulesMarkdown} onChange={(e) => setRulesMarkdown(e.target.value)} placeholder="Write rules and guidelines here..." />
+								<div className="flex justify-end mt-3">
+									<Button size="sm" onClick={() => void saveRulesMarkdown()} disabled={manageSaving}>
+										{manageSaving ? "Saving..." : "Save Rules"}
+									</Button>
+								</div>
+							</div>
+						</div>
+					)}
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setManageOpen(false)}>Close</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
 					{/* Events Tab */}
 					<TabsContent value="events">
 						<Card>
@@ -1730,7 +1898,6 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 											<TableHead>When</TableHead>
 											<TableHead>Member</TableHead>
 											<TableHead>Hackathon</TableHead>
-											<TableHead>Team</TableHead>
 											<TableHead>Payment Details</TableHead>
 											<TableHead>Status</TableHead>
 											<TableHead className="text-right">Actions</TableHead>
@@ -1761,16 +1928,6 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 																	<p className="text-xs text-muted-foreground">Fee: {event.fee_amount} {event.fee_currency}</p>
 																)}
 															</div>
-														</TableCell>
-														<TableCell>
-															{reg.team ? (
-																<div>
-																	<p className="font-medium">{reg.team.team_name}</p>
-																	<p className="text-xs text-muted-foreground capitalize">{reg.team.role}</p>
-																</div>
-															) : (
-																<Badge variant="outline">Single</Badge>
-															)}
 														</TableCell>
 														<TableCell>
 															<div className="text-sm space-y-1">
@@ -1862,20 +2019,6 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 																	IBAN Info
 																</Button>
 															)}
-															<Button 
-																size="sm" 
-																variant="outline" 
-																onClick={() => { setViewingMemberId(reg.member_id); void loadMemberDetails(reg.member_id); }}
-															>
-																{viewingMemberId === reg.member_id ? (
-																	<>
-																		<Loader2 className="w-4 h-4 mr-2 animate-spin" />
-																		Loading...
-																	</>
-																) : (
-																	"View Member"
-																)}
-															</Button>
 														</TableCell>
 													</TableRow>
 												);
@@ -2172,126 +2315,6 @@ const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
 					</TabsContent>
 				</Tabs>
 			</div>
-
-			{/* Manage Hackathon Drawer */}
-			<Dialog open={manageOpen} onOpenChange={(open) => {
-				setManageOpen(open);
-				if (!open) {
-					setManagingHackathon(null);
-					setManageResources([]);
-				} else if (managingHackathon) {
-					void loadHackathonResources(managingHackathon.id);
-				}
-			}}>
-				<DialogContent className="max-w-3xl">
-					<DialogHeader>
-						<DialogTitle>Manage Hackathon</DialogTitle>
-						<DialogDescription>
-							{managingHackathon ? managingHackathon.title : ""}
-						</DialogDescription>
-					</DialogHeader>
-					{managingHackathon && (
-						<div className="space-y-6">
-							<div className="border rounded-md p-4">
-								<h3 className="font-semibold mb-3">Submission Settings</h3>
-								<div className="flex items-center justify-between">
-									<span className="text-sm text-muted-foreground">Enable submission page</span>
-									<div className="flex items-center gap-2">
-										<Button 
-											variant={managingHackathon.submission_page_enabled ? "secondary" : "outline"} 
-											size="sm"
-											disabled={manageSaving}
-											onClick={() => void toggleSubmissionEnabled(!managingHackathon.submission_page_enabled)}
-										>
-											{manageSaving ? "Saving..." : managingHackathon.submission_page_enabled ? "Enabled" : "Disabled"}
-										</Button>
-									</div>
-								</div>
-
-								<div className="mt-4">
-									<p className="text-sm font-medium mb-2">Submission fields</p>
-									<div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
-										<label className="flex items-center gap-2">
-											<input type="checkbox" checked={submissionFields.includes("title")} onChange={(e) => {
-												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "title"])) : prev.filter(f => f !== "title"));
-											}} />
-											Title
-										</label>
-										<label className="flex items-center gap-2">
-											<input type="checkbox" checked={submissionFields.includes("description")} onChange={(e) => {
-												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "description"])) : prev.filter(f => f !== "description"));
-											}} />
-											Description
-										</label>
-										<label className="flex items-center gap-2">
-											<input type="checkbox" checked={submissionFields.includes("artifact_url")} onChange={(e) => {
-												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "artifact_url"])) : prev.filter(f => f !== "artifact_url"));
-											}} />
-											Artifact URL
-										</label>
-										<label className="flex items-center gap-2">
-											<input type="checkbox" checked={submissionFields.includes("video_url")} onChange={(e) => {
-												setSubmissionFields(prev => e.target.checked ? Array.from(new Set([...prev, "video_url"])) : prev.filter(f => f !== "video_url"));
-											}} />
-											Video URL
-										</label>
-									</div>
-									<div className="flex justify-end mt-3">
-										<Button size="sm" onClick={() => void saveSubmissionFields()} disabled={manageSaving}>
-											{manageSaving ? "Saving..." : "Save Fields"}
-										</Button>
-									</div>
-								</div>
-							</div>
-
-							<div className="border rounded-md p-4">
-								<h3 className="font-semibold mb-3">Resources</h3>
-								<div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
-									<Input placeholder="Title" value={newResTitle} onChange={(e) => setNewResTitle(e.target.value)} />
-									<Input placeholder="URL" value={newResUrl} onChange={(e) => setNewResUrl(e.target.value)} className="md:col-span-2" />
-								</div>
-								<div className="flex justify-end">
-									<Button size="sm" onClick={() => void addHackathonResource()} disabled={manageSaving || !newResTitle.trim() || !newResUrl.trim()}>
-										{manageSaving ? "Adding..." : "Add Resource"}
-									</Button>
-								</div>
-								<div className="mt-4 space-y-2">
-									{manageResources.length === 0 ? (
-										<p className="text-sm text-muted-foreground">No resources yet.</p>
-									) : (
-										manageResources.map((r, idx) => (
-											<div key={r.id} className="p-2 border rounded-md flex items-center justify-between gap-2">
-												<div className="min-w-0">
-													<p className="font-medium truncate">{r.title}</p>
-													<p className="text-xs text-muted-foreground break-all">{r.content_url}</p>
-												</div>
-												<div className="flex items-center gap-2">
-													<Button size="sm" variant="outline" onClick={() => void moveResource(r, "up")} disabled={idx === 0}>↑</Button>
-													<Button size="sm" variant="outline" onClick={() => void moveResource(r, "down")} disabled={idx === manageResources.length - 1}>↓</Button>
-													<Button size="sm" variant="ghost" onClick={() => void deleteResource(r.id)}>Delete</Button>
-												</div>
-											</div>
-										))
-									)}
-								</div>
-							</div>
-
-							<div className="border rounded-md p-4">
-								<h3 className="font-semibold mb-3">Rules (Markdown supported)</h3>
-								<Textarea rows={8} value={rulesMarkdown} onChange={(e) => setRulesMarkdown(e.target.value)} placeholder="Write rules and guidelines here..." />
-								<div className="flex justify-end mt-3">
-									<Button size="sm" onClick={() => void saveRulesMarkdown()} disabled={manageSaving}>
-										{manageSaving ? "Saving..." : "Save Rules"}
-									</Button>
-								</div>
-							</div>
-						</div>
-					)}
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setManageOpen(false)}>Close</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
 
 			<Dialog open={openDetail} onOpenChange={setOpenDetail}>
 				<DialogContent className="max-w-2xl">
