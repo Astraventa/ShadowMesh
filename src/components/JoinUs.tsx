@@ -1,5 +1,5 @@
-import { Sparkles, CheckCircle2, Shield } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Sparkles, CheckCircle2, Shield, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,6 +57,11 @@ const JoinUs = () => {
   const [phraseIndex, setPhraseIndex] = useState(0);
   const [displayText, setDisplayText] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const emailValidationRequest = useRef(0);
+  const phoneValidationRequest = useRef(0);
+  const emailDebounceRef = useRef<number | undefined>(undefined);
+  const phoneDebounceRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const current = phrases[phraseIndex % phrases.length];
@@ -123,22 +128,27 @@ const JoinUs = () => {
     syntax: "Enter a valid email address.",
   };
 
-  async function validateEmailRemote(value: string, options: { silent?: boolean } = {}) {
-    const { silent = false } = options;
+  async function validateEmailRemote(value: string, options: { silent?: boolean; skipFormatCheck?: boolean } = {}) {
+    const { silent = false, skipFormatCheck = false } = options;
     const normalized = value.trim().toLowerCase();
     if (!normalized) {
       setEmailWarning("");
       return false;
     }
     if (!basicEmailValid(normalized)) {
-      const message = reasonMessages.syntax;
-      setEmailWarning(message);
-      if (!silent) {
-        toast({ title: "Email required", description: message, variant: "destructive" });
+      if (!skipFormatCheck) {
+        const message = reasonMessages.syntax;
+        setEmailWarning(message);
+        if (!silent) {
+          toast({ title: "Email required", description: message, variant: "destructive" });
+        }
+      } else {
+        setEmailWarning("");
       }
       return false;
     }
 
+    const requestId = ++emailValidationRequest.current;
     setCheckingEmail(true);
     setEmailWarning("");
     try {
@@ -155,14 +165,18 @@ const JoinUs = () => {
         throw new Error(payload?.error ?? `Email validation failed with status ${res.status}`);
       }
       if (payload?.valid === false) {
-        const message = reasonMessages[payload.reason as keyof typeof reasonMessages] ?? "Please use a real, non-temporary email.";
-        setEmailWarning(message);
-        if (!silent) {
-          toast({ title: "Use a real email", description: message, variant: "destructive" });
+        if (requestId === emailValidationRequest.current) {
+          const message = reasonMessages[payload.reason as keyof typeof reasonMessages] ?? "Please use a real, non-temporary email.";
+          setEmailWarning(message);
+          if (!silent) {
+            toast({ title: "Use a real email", description: message, variant: "destructive" });
+          }
         }
         return false;
       }
-      setEmailWarning("");
+      if (requestId === emailValidationRequest.current) {
+        setEmailWarning("");
+      }
       return true;
     } catch (err: any) {
       console.error("Email validation error", err);
@@ -173,21 +187,25 @@ const JoinUs = () => {
         });
       }
       // Fall back to allowing submission but keep warning empty so they can resubmit.
-      setEmailWarning("");
+      if (requestId === emailValidationRequest.current) {
+        setEmailWarning("");
+      }
       return basicEmailValid(normalized);
     } finally {
-      setCheckingEmail(false);
+      if (requestId === emailValidationRequest.current) {
+        setCheckingEmail(false);
+      }
     }
   }
 
-  async function validatePhoneRemote(value: string, options: { silent?: boolean } = {}) {
-    const { silent = false } = options;
+  async function validatePhoneRemote(value: string, options: { silent?: boolean; skipFormatCheck?: boolean } = {}) {
+    const { silent = false, skipFormatCheck = false } = options;
     const trimmed = value.trim();
     if (!trimmed) {
       setPhoneError("");
       return true;
     }
-    if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
+    if (!skipFormatCheck && !/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
       const message = "Enter a valid phone (e.g., +923001234567)";
       setPhoneError(message);
       if (!silent) {
@@ -195,7 +213,11 @@ const JoinUs = () => {
       }
       return false;
     }
+    if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
+      return false;
+    }
 
+    const requestId = ++phoneValidationRequest.current;
     setCheckingPhone(true);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/validate-phone`, {
@@ -211,17 +233,21 @@ const JoinUs = () => {
         throw new Error(payload?.error ?? `Phone validation failed with status ${res.status}`);
       }
       if (payload?.valid === false) {
-        const message =
-          payload.reason === "api"
-            ? "We couldn't verify this phone number. Please double-check or try a different one."
-            : "Enter a valid phone number (use international format).";
-        setPhoneError(message);
-        if (!silent) {
-          toast({ title: "Phone invalid", description: message, variant: "destructive" });
+        if (requestId === phoneValidationRequest.current) {
+          const message =
+            payload.reason === "api"
+              ? "We couldn't verify this phone number. Please double-check or try a different one."
+              : "Enter a valid phone number (use international format).";
+          setPhoneError(message);
+          if (!silent) {
+            toast({ title: "Phone invalid", description: message, variant: "destructive" });
+          }
         }
         return false;
       }
-      setPhoneError("");
+      if (requestId === phoneValidationRequest.current) {
+        setPhoneError("");
+      }
       return true;
     } catch (err: any) {
       console.error("Phone validation error", err);
@@ -231,14 +257,63 @@ const JoinUs = () => {
           description: "We couldn't verify the phone number right now. We'll trust your entry.",
         });
       }
-      setPhoneError("");
+      if (requestId === phoneValidationRequest.current) {
+        setPhoneError("");
+      }
       return true;
     } finally {
-      setCheckingPhone(false);
+      if (requestId === phoneValidationRequest.current) {
+        setCheckingPhone(false);
+      }
     }
   }
 
   // checkStatus function removed - industry level approach, users notified via email
+
+  useEffect(() => {
+    if (emailDebounceRef.current) {
+      clearTimeout(emailDebounceRef.current);
+    }
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) {
+      setEmailWarning("");
+      return;
+    }
+    if (!basicEmailValid(normalized)) {
+      setEmailWarning("");
+      return;
+    }
+    emailDebounceRef.current = window.setTimeout(() => {
+      void validateEmailRemote(normalized, { silent: true, skipFormatCheck: true });
+    }, 400);
+    return () => {
+      if (emailDebounceRef.current) {
+        clearTimeout(emailDebounceRef.current);
+      }
+    };
+  }, [email]);
+
+  useEffect(() => {
+    if (phoneDebounceRef.current) {
+      clearTimeout(phoneDebounceRef.current);
+    }
+    const trimmed = phone.trim();
+    if (!trimmed) {
+      setPhoneError("");
+      return;
+    }
+    if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
+      return;
+    }
+    phoneDebounceRef.current = window.setTimeout(() => {
+      void validatePhoneRemote(trimmed, { silent: true, skipFormatCheck: true });
+    }, 400);
+    return () => {
+      if (phoneDebounceRef.current) {
+        clearTimeout(phoneDebounceRef.current);
+      }
+    };
+  }, [phone]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -445,15 +520,19 @@ const JoinUs = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Email</label>
-                    <Input
-                      value={email}
-                      onChange={(e)=>setEmail(e.target.value)}
-                      onBlur={() => void validateEmailRemote(email, { silent: true })}
-                      type="email"
-                      placeholder="john@example.com"
-                      className={`bg-background/50 border-border focus:border-primary transition-colors ${emailWarning ? "border-destructive" : ""}`}
-                    />
-                    {checkingEmail && <p className="text-xs text-muted-foreground mt-1">Verifying email…</p>}
+                    <div className="relative">
+                      <Input
+                        value={email}
+                        onChange={(e)=>setEmail(e.target.value)}
+                        onBlur={() => void validateEmailRemote(email, { silent: true })}
+                        type="email"
+                        placeholder="john@example.com"
+                        className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${emailWarning ? "border-destructive" : ""}`}
+                      />
+                      {checkingEmail && (
+                        <Loader2 className="w-4 h-4 animate-spin absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      )}
+                    </div>
                     {emailWarning && !checkingEmail && <p className="text-xs text-destructive mt-1">{emailWarning}</p>}
                 </div>
               </div>
@@ -461,14 +540,18 @@ const JoinUs = () => {
                 <div className="grid md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium mb-2">Phone</label>
-                    <Input
-                      value={phone}
-                      onChange={(e) => handlePhoneInput(e.target.value)}
-                      onBlur={() => void validatePhoneRemote(phone, { silent: true })}
-                      placeholder="+923001234567"
-                      className={`bg-background/50 border-border focus:border-primary transition-colors ${phoneError ? 'border-destructive' : ''}`}
-                    />
-                    {checkingPhone && <p className="text-xs text-muted-foreground mt-1">Verifying phone…</p>}
+                    <div className="relative">
+                      <Input
+                        value={phone}
+                        onChange={(e) => handlePhoneInput(e.target.value)}
+                        onBlur={() => void validatePhoneRemote(phone, { silent: true })}
+                        placeholder="+923001234567"
+                        className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${phoneError ? 'border-destructive' : ''}`}
+                      />
+                      {checkingPhone && (
+                        <Loader2 className="w-4 h-4 animate-spin absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      )}
+                    </div>
                     {phoneError && !checkingPhone && <p className="text-xs text-destructive mt-1">{phoneError}</p>}
                   </div>
               <div>
