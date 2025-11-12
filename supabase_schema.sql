@@ -644,6 +644,26 @@ create policy p_admin_settings_service_role
   using (true)
   with check (true);
 
+-- Cleanup admin_settings 2FA entries when a member is deleted (match on email/username)
+create or replace function public.fn_cleanup_admin_2fa_on_member_delete()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Remove any admin_settings records that correspond to this member's email
+  delete from public.admin_settings where username = old.email;
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_cleanup_admin_2fa_on_member_delete on public.members;
+create trigger trg_cleanup_admin_2fa_on_member_delete
+after delete on public.members
+for each row
+execute function public.fn_cleanup_admin_2fa_on_member_delete();
+
 -- 9) Idempotent sanity checks (optional) -------------------------------------
 do $$
 begin
