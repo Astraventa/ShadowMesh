@@ -6,10 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-const DISPOSABLE_LIST_URL = "https://raw.githubusercontent.com/disposable/disposable-email-domains/master/domains.txt";
 const RAPIDAPI_EMAIL_HOST = "email-verifier15.p.rapidapi.com";
 const RAPIDAPI_EMAIL_ENDPOINT = `https://${RAPIDAPI_EMAIL_HOST}/verify-email`;
 const rapidApiKey = Deno.env.get("RAPIDAPI_KEY") ?? "";
+
+// Local disposable domains blacklist file (copied from supabase/assets)
+const DISPOSABLE_DOMAINS_FILE = "./disposable-email-domains.txt";
 
 let disposableDomainsPromise: Promise<Set<string>> | null = null;
 
@@ -17,16 +19,17 @@ async function loadDisposableDomains(): Promise<Set<string>> {
   if (!disposableDomainsPromise) {
     disposableDomainsPromise = (async () => {
       try {
-        const res = await fetch(DISPOSABLE_LIST_URL);
-        if (!res.ok) throw new Error(`Failed to fetch disposable list: ${res.status}`);
-        const text = await res.text();
+        // Read from local file instead of fetching from GitHub
+        const text = await Deno.readTextFile(DISPOSABLE_DOMAINS_FILE);
         const domains = text
           .split("\n")
           .map((d) => d.trim().toLowerCase())
           .filter((d) => d.length > 0 && !d.startsWith("#"));
+        console.log(`Loaded ${domains.length} disposable email domains from local file`);
         return new Set(domains);
       } catch (error) {
-        console.error("Failed to load disposable domain list", error);
+        console.error("Failed to load disposable domain list from local file", error);
+        // Fallback: return empty set (validation will still work via API and MX checks)
         return new Set();
       }
     })();

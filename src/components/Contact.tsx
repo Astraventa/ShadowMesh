@@ -418,7 +418,7 @@ const Contact = () => {
                           emailMessageType === "error"
                             ? "border-destructive"
                             : emailMessageType === "warning"
-                              ? "border-amber-500/70"
+                              ? "border-border"
                               : emailMessageType === "success"
                                 ? "border-emerald-500/70"
                                 : ""
@@ -434,7 +434,7 @@ const Contact = () => {
                       <p
                         className={`text-xs mt-1 ${
                           emailMessageType === "warning"
-                            ? "text-amber-500"
+                            ? "text-muted-foreground"
                             : emailMessageType === "success"
                               ? "text-emerald-500"
                               : "text-destructive"
@@ -457,7 +457,7 @@ const Contact = () => {
                           phoneMessageType === "error"
                             ? "border-destructive"
                             : phoneMessageType === "warning"
-                              ? "border-amber-500/70"
+                              ? "border-border"
                               : phoneMessageType === "success"
                                 ? "border-emerald-500/70"
                                 : ""
@@ -473,7 +473,7 @@ const Contact = () => {
                       <p
                         className={`text-xs mt-1 ${
                           phoneMessageType === "warning"
-                            ? "text-amber-500"
+                            ? "text-muted-foreground"
                             : phoneMessageType === "success"
                               ? "text-emerald-500"
                               : "text-destructive"
