@@ -1,3 +1,45 @@
+  const COUNTRY_LABELS: Record<string, string> = {
+    PK: "Pakistan",
+    IN: "India",
+    US: "United States",
+    GB: "United Kingdom",
+    AE: "United Arab Emirates",
+    SA: "Saudi Arabia",
+    QA: "Qatar",
+    BH: "Bahrain",
+    KW: "Kuwait",
+    TR: "Turkey",
+    DE: "Germany",
+    FR: "France",
+    ES: "Spain",
+    IT: "Italy",
+    AU: "Australia",
+    NZ: "New Zealand",
+    SG: "Singapore",
+    MY: "Malaysia",
+    CN: "China",
+    JP: "Japan",
+    TH: "Thailand",
+    PH: "Philippines",
+    ID: "Indonesia",
+    BD: "Bangladesh",
+    LK: "Sri Lanka",
+    NP: "Nepal",
+    AF: "Afghanistan",
+    IR: "Iran",
+    IQ: "Iraq",
+    JO: "Jordan",
+    LB: "Lebanon",
+    EG: "Egypt",
+    ZA: "South Africa",
+    CA: "Canada",
+  };
+
+  function formatCountryLabel(code?: string | null) {
+    if (!code) return "";
+    const upper = code.toUpperCase();
+    return COUNTRY_LABELS[upper] ?? upper;
+  }
 import { Sparkles, CheckCircle2, Shield } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -16,11 +58,12 @@ const JoinUs = () => {
   const [activeTab] = useState<"register">("register");
   const [affiliation, setAffiliation] = useState<string>("student");
   const [phone, setPhone] = useState<string>("");
-  const [phoneError, setPhoneError] = useState<string>("");
+  const [phoneMessage, setPhoneMessage] = useState("");
+  const [phoneMessageType, setPhoneMessageType] = useState<"error" | "warning" | "success" | null>(null);
   const [checkingPhone, setCheckingPhone] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [emailMessage, setEmailMessage] = useState("");
-  const [emailMessageType, setEmailMessageType] = useState<"error" | "warning" | null>(null);
+  const [emailMessageType, setEmailMessageType] = useState<"error" | "warning" | "success" | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [applicationId, setApplicationId] = useState<string | null>(null);
@@ -114,19 +157,27 @@ const JoinUs = () => {
 
   function handlePhoneInput(input: string) {
     setPhone(input);
-    setPhoneError("");
+    setPhoneMessage("");
+    setPhoneMessageType(null);
     const trimmed = input.trim();
     if (!trimmed) return;
     if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
-      setPhoneError("Enter a valid phone (e.g., +923001234567)");
+      setPhoneMessage("Enter a valid phone (e.g., +923001234567)");
+      setPhoneMessageType("error");
     }
   }
 
-  const reasonMeta: Record<string, { message: string; type: "error" | "warning" }> = {
+  const reasonMeta: Record<string, { message: string; type: "error" | "warning" | "success" }> = {
     disposable: { message: "Temporary / disposable email addresses are not allowed.", type: "error" },
     no_mx: { message: "Email domain has no valid mail server (MX records).", type: "error" },
     smtp: { message: "We couldn't verify this mailbox. We'll trust it, but please confirm it's correct.", type: "warning" },
     syntax: { message: "Enter a valid email address.", type: "error" },
+  };
+
+  const phoneReasonMeta: Record<string, { message: string; type: "error" | "warning" }> = {
+    format: { message: "Enter a valid phone number (international format, e.g., +923001234567).", type: "error" },
+    api_invalid: { message: "We couldn't verify this phone number. Please double-check or try a different one.", type: "warning" },
+    api_unverified: { message: "We couldn't verify this phone number right now. We'll trust it, but please confirm it's correct.", type: "warning" },
   };
 
   async function validateEmailRemote(value: string, options: { silent?: boolean; skipFormatCheck?: boolean } = {}) {
@@ -184,8 +235,8 @@ const JoinUs = () => {
         return meta.type === "warning";
       }
       if (requestId === emailValidationRequest.current) {
-        setEmailMessage("");
-        setEmailMessageType(null);
+        setEmailMessage("Looks good");
+        setEmailMessageType("success");
       }
       return true;
     } catch (err: any) {
@@ -198,8 +249,8 @@ const JoinUs = () => {
       }
       // Fall back to allowing submission but keep warning empty so they can resubmit.
       if (requestId === emailValidationRequest.current) {
-        setEmailMessage("");
-        setEmailMessageType(null);
+        setEmailMessage("We couldn't verify the email right now. We'll trust it, but please confirm it's correct.");
+        setEmailMessageType("warning");
       }
       return basicEmailValid(normalized);
     } finally {
@@ -213,14 +264,16 @@ const JoinUs = () => {
     const { silent = false, skipFormatCheck = false } = options;
     const trimmed = value.trim();
     if (!trimmed) {
-      setPhoneError("");
+      setPhoneMessage("");
+      setPhoneMessageType(null);
       return true;
     }
     if (!skipFormatCheck && !/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
-      const message = "Enter a valid phone (e.g., +923001234567)";
-      setPhoneError(message);
+      const meta = phoneReasonMeta.format;
+      setPhoneMessage(meta.message);
+      setPhoneMessageType(meta.type);
       if (!silent) {
-        toast({ title: "Phone invalid", description: message, variant: "destructive" });
+        toast({ title: "Phone invalid", description: meta.message, variant: "destructive" });
       }
       return false;
     }
@@ -244,20 +297,28 @@ const JoinUs = () => {
         throw new Error(payload?.error ?? `Phone validation failed with status ${res.status}`);
       }
       if (payload?.valid === false) {
+        const meta = phoneReasonMeta[payload.reason as keyof typeof phoneReasonMeta] ?? phoneReasonMeta.format;
         if (requestId === phoneValidationRequest.current) {
-          const message =
-            payload.reason === "api"
-              ? "We couldn't verify this phone number. Please double-check or try a different one."
-              : "Enter a valid phone number (use international format).";
-          setPhoneError(message);
+          setPhoneMessage(meta.message);
+          setPhoneMessageType(meta.type);
           if (!silent) {
-            toast({ title: "Phone invalid", description: message, variant: "destructive" });
+            toast({ title: "Phone invalid", description: meta.message, variant: "destructive" });
           }
         }
         return false;
       }
+
       if (requestId === phoneValidationRequest.current) {
-        setPhoneError("");
+        if (payload?.status === "warning") {
+          const meta = phoneReasonMeta[payload.reason as keyof typeof phoneReasonMeta] ?? phoneReasonMeta.api_unverified;
+          const countryLabel = formatCountryLabel(payload?.country);
+          setPhoneMessage(`${meta.message}${countryLabel ? ` (detected ${countryLabel})` : ""}`);
+          setPhoneMessageType(meta.type);
+        } else {
+          const countryLabel = formatCountryLabel(payload?.country);
+          setPhoneMessage(`Looks good${countryLabel ? ` (${countryLabel})` : ""}`);
+          setPhoneMessageType("success");
+        }
       }
       return true;
     } catch (err: any) {
@@ -269,7 +330,8 @@ const JoinUs = () => {
         });
       }
       if (requestId === phoneValidationRequest.current) {
-        setPhoneError("");
+        setPhoneMessage("We couldn't verify the phone number right now. We'll trust it, but please confirm it's correct.");
+        setPhoneMessageType("warning");
       }
       return true;
     } finally {
@@ -312,7 +374,8 @@ const JoinUs = () => {
     }
     const trimmed = phone.trim();
     if (!trimmed) {
-      setPhoneError("");
+      setPhoneMessage("");
+      setPhoneMessageType(null);
       return;
     }
     if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
@@ -461,7 +524,7 @@ const JoinUs = () => {
       // Clear form
       setFullName(""); setEmail(""); setAreaOfInterest(""); setMotivation("");
       setUniversityName(""); setDepartment(""); setRollNumber("");
-      setOrganization(""); setRoleTitle(""); setPhone(""); setPhoneError("");
+      setOrganization(""); setRoleTitle(""); setPhone(""); setPhoneMessage(""); setPhoneMessageType(null);
     } catch (err: any) {
       toast({ title: "Submission failed", description: err.message || "Please try again." });
     } finally {
@@ -545,7 +608,9 @@ const JoinUs = () => {
                             ? "border-destructive"
                             : emailMessageType === "warning"
                               ? "border-amber-500/70"
-                              : ""
+                              : emailMessageType === "success"
+                                ? "border-emerald-500/70"
+                                : ""
                         }`}
                       />
                       {checkingEmail && (
@@ -557,7 +622,11 @@ const JoinUs = () => {
                     {emailMessage && !checkingEmail && (
                       <p
                         className={`text-xs mt-1 ${
-                          emailMessageType === "warning" ? "text-amber-500" : "text-destructive"
+                          emailMessageType === "warning"
+                            ? "text-amber-500"
+                            : emailMessageType === "success"
+                              ? "text-emerald-500"
+                              : "text-destructive"
                         }`}
                       >
                         {emailMessage}
@@ -575,7 +644,15 @@ const JoinUs = () => {
                         onChange={(e) => handlePhoneInput(e.target.value)}
                         onBlur={() => void validatePhoneRemote(phone, { silent: true })}
                         placeholder="+923001234567"
-                        className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${phoneError ? 'border-destructive' : ''}`}
+                        className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${
+                          phoneMessageType === "error"
+                            ? "border-destructive"
+                            : phoneMessageType === "warning"
+                              ? "border-amber-500/70"
+                              : phoneMessageType === "success"
+                                ? "border-emerald-500/70"
+                                : ""
+                        }`}
                       />
                       {checkingPhone && (
                         <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
@@ -583,7 +660,19 @@ const JoinUs = () => {
                         </span>
                       )}
                     </div>
-                    {phoneError && !checkingPhone && <p className="text-xs text-destructive mt-1">{phoneError}</p>}
+                    {phoneMessage && !checkingPhone && (
+                      <p
+                        className={`text-xs mt-1 ${
+                          phoneMessageType === "warning"
+                            ? "text-amber-500"
+                            : phoneMessageType === "success"
+                              ? "text-emerald-500"
+                              : "text-destructive"
+                        }`}
+                      >
+                        {phoneMessage}
+                      </p>
+                    )}
                   </div>
               <div>
                     <label className="block text-sm font-medium mb-2">Affiliation</label>

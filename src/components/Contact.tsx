@@ -17,9 +17,10 @@ const Contact = () => {
   const [success, setSuccess] = useState(false);
   const [honeypot, setHoneypot] = useState("");
   const [emailMessage, setEmailMessage] = useState("");
-  const [emailMessageType, setEmailMessageType] = useState<"error" | "warning" | null>(null);
+  const [emailMessageType, setEmailMessageType] = useState<"error" | "warning" | "success" | null>(null);
   const [checkingEmail, setCheckingEmail] = useState(false);
-  const [phoneError, setPhoneError] = useState("");
+  const [phoneMessage, setPhoneMessage] = useState("");
+  const [phoneMessageType, setPhoneMessageType] = useState<"error" | "warning" | "success" | null>(null);
   const [checkingPhone, setCheckingPhone] = useState(false);
 
   const emailValidationRequest = useRef(0);
@@ -36,12 +37,61 @@ const Contact = () => {
 
   function validEmail(v: string) { return /.+@.+\..+/.test(v); }
 
-  const reasonMeta: Record<string, { message: string; type: "error" | "warning" }> = {
+  const reasonMeta: Record<string, { message: string; type: "error" | "warning" | "success" }> = {
     disposable: { message: "Temporary / disposable email addresses are not allowed.", type: "error" },
     no_mx: { message: "Email domain has no valid mail server (MX records).", type: "error" },
     smtp: { message: "We couldn't verify this mailbox. We'll trust it, but please confirm it's correct.", type: "warning" },
     syntax: { message: "Enter a valid email address.", type: "error" },
   };
+
+  const phoneReasonMeta: Record<string, { message: string; type: "error" | "warning" }> = {
+    format: { message: "Enter phone in international format (e.g., +923001234567).", type: "error" },
+    api_invalid: { message: "We couldn't verify this phone number. Please double-check or try a different one.", type: "warning" },
+    api_unverified: { message: "We couldn't verify this phone number right now. We'll trust it, but please confirm it's correct.", type: "warning" },
+  };
+
+  const COUNTRY_LABELS: Record<string, string> = {
+    PK: "Pakistan",
+    IN: "India",
+    US: "United States",
+    GB: "United Kingdom",
+    AE: "United Arab Emirates",
+    SA: "Saudi Arabia",
+    QA: "Qatar",
+    BH: "Bahrain",
+    KW: "Kuwait",
+    TR: "Turkey",
+    DE: "Germany",
+    FR: "France",
+    ES: "Spain",
+    IT: "Italy",
+    AU: "Australia",
+    NZ: "New Zealand",
+    SG: "Singapore",
+    MY: "Malaysia",
+    CN: "China",
+    JP: "Japan",
+    TH: "Thailand",
+    PH: "Philippines",
+    ID: "Indonesia",
+    BD: "Bangladesh",
+    LK: "Sri Lanka",
+    NP: "Nepal",
+    AF: "Afghanistan",
+    IR: "Iran",
+    IQ: "Iraq",
+    JO: "Jordan",
+    LB: "Lebanon",
+    EG: "Egypt",
+    ZA: "South Africa",
+    CA: "Canada",
+  };
+
+  function formatCountryLabel(code?: string | null) {
+    if (!code) return "";
+    const upper = code.toUpperCase();
+    return COUNTRY_LABELS[upper] ?? upper;
+  }
 
   async function validateEmailRemote(value: string, options: { silent?: boolean; skipFormatCheck?: boolean } = {}) {
     const { silent = false, skipFormatCheck = false } = options;
@@ -98,8 +148,8 @@ const Contact = () => {
         return meta.type === "warning";
       }
       if (requestId === emailValidationRequest.current) {
-        setEmailMessage("");
-        setEmailMessageType(null);
+        setEmailMessage("Looks good");
+        setEmailMessageType("success");
       }
       return true;
     } catch (err: any) {
@@ -111,8 +161,8 @@ const Contact = () => {
         });
       }
       if (requestId === emailValidationRequest.current) {
-        setEmailMessage("");
-        setEmailMessageType(null);
+        setEmailMessage("We couldn't verify the email right now. We'll trust it, but please confirm it's correct.");
+        setEmailMessageType("warning");
       }
       return validEmail(normalized);
     } finally {
@@ -126,14 +176,16 @@ const Contact = () => {
     const { silent = false, skipFormatCheck = false } = options;
     const trimmed = value.trim();
     if (!trimmed) {
-      setPhoneError("");
+      setPhoneMessage("");
+      setPhoneMessageType(null);
       return true;
     }
     if (!skipFormatCheck && !/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
-      const message = "Enter phone in international format (e.g., +923001234567).";
-      setPhoneError(message);
+      const meta = phoneReasonMeta.format;
+      setPhoneMessage(meta.message);
+      setPhoneMessageType(meta.type);
       if (!silent) {
-        toast({ title: "Phone invalid", description: message, variant: "destructive" });
+        toast({ title: "Phone invalid", description: meta.message, variant: "destructive" });
       }
       return false;
     }
@@ -158,19 +210,26 @@ const Contact = () => {
       }
       if (payload?.valid === false) {
         if (requestId === phoneValidationRequest.current) {
-          const message =
-            payload.reason === "api"
-              ? "We couldn't verify this phone number. Try a different one."
-              : "Enter a valid phone number.";
-          setPhoneError(message);
+          const meta = phoneReasonMeta[payload.reason as keyof typeof phoneReasonMeta] ?? phoneReasonMeta.format;
+          setPhoneMessage(meta.message);
+          setPhoneMessageType(meta.type);
           if (!silent) {
-            toast({ title: "Phone invalid", description: message, variant: "destructive" });
+            toast({ title: "Phone invalid", description: meta.message, variant: "destructive" });
           }
         }
         return false;
       }
       if (requestId === phoneValidationRequest.current) {
-        setPhoneError("");
+        if (payload?.status === "warning") {
+          const meta = phoneReasonMeta[payload.reason as keyof typeof phoneReasonMeta] ?? phoneReasonMeta.api_unverified;
+          const countryLabel = formatCountryLabel(payload?.country);
+          setPhoneMessage(`${meta.message}${countryLabel ? ` (detected ${countryLabel})` : ""}`);
+          setPhoneMessageType(meta.type);
+        } else {
+          const countryLabel = formatCountryLabel(payload?.country);
+          setPhoneMessage(`Looks good${countryLabel ? ` (${countryLabel})` : ""}`);
+          setPhoneMessageType("success");
+        }
       }
       return true;
     } catch (err: any) {
@@ -182,7 +241,8 @@ const Contact = () => {
         });
       }
       if (requestId === phoneValidationRequest.current) {
-        setPhoneError("");
+        setPhoneMessage("We couldn't verify the phone number right now. We'll trust it, but please confirm it's correct.");
+        setPhoneMessageType("warning");
       }
       return true;
     } finally {
@@ -223,7 +283,8 @@ const Contact = () => {
     }
     const trimmed = phone.trim();
     if (!trimmed) {
-      setPhoneError("");
+      setPhoneMessage("");
+      setPhoneMessageType(null);
       return;
     }
     if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
@@ -243,13 +304,16 @@ const Contact = () => {
     setPhone(v);
     const trimmed = v.trim();
     if (!trimmed) {
-      setPhoneError("");
+      setPhoneMessage("");
+      setPhoneMessageType(null);
       return;
     }
     if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
-      setPhoneError("Enter phone in international format (e.g., +923001234567).");
+      setPhoneMessage("Enter phone in international format (e.g., +923001234567).");
+      setPhoneMessageType("error");
     } else {
-      setPhoneError("");
+      setPhoneMessage("");
+      setPhoneMessageType(null);
     }
   }
 
@@ -284,6 +348,8 @@ const Contact = () => {
       setSuccess(true);
       toast({ title: 'Message sent', description: 'We will get back to you shortly.' });
       setName(''); setEmail(''); setPhone(''); setMsg('');
+      setEmailMessage(""); setEmailMessageType(null);
+      setPhoneMessage(""); setPhoneMessageType(null);
 
       try {
         await fetch(`${SUPABASE_URL}/functions/v1/notify`, {
@@ -353,7 +419,9 @@ const Contact = () => {
                             ? "border-destructive"
                             : emailMessageType === "warning"
                               ? "border-amber-500/70"
-                              : ""
+                              : emailMessageType === "success"
+                                ? "border-emerald-500/70"
+                                : ""
                         }`}
                       />
                       {checkingEmail && (
@@ -365,7 +433,11 @@ const Contact = () => {
                     {emailMessage && !checkingEmail && (
                       <p
                         className={`text-xs mt-1 ${
-                          emailMessageType === "warning" ? "text-amber-500" : "text-destructive"
+                          emailMessageType === "warning"
+                            ? "text-amber-500"
+                            : emailMessageType === "success"
+                              ? "text-emerald-500"
+                              : "text-destructive"
                         }`}
                       >
                         {emailMessage}
@@ -381,7 +453,15 @@ const Contact = () => {
                         onChange={(e)=>handlePhoneInput(e.target.value)}
                         onBlur={() => void validatePhoneRemote(phone, { silent: true })}
                         placeholder="+923001234567"
-                        className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${phoneError ? "border-destructive" : ""}`}
+                        className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${
+                          phoneMessageType === "error"
+                            ? "border-destructive"
+                            : phoneMessageType === "warning"
+                              ? "border-amber-500/70"
+                              : phoneMessageType === "success"
+                                ? "border-emerald-500/70"
+                                : ""
+                        }`}
                       />
                       {checkingPhone && (
                         <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
@@ -389,7 +469,19 @@ const Contact = () => {
                         </span>
                       )}
                     </div>
-                    {phoneError && !checkingPhone && <p className="text-xs text-destructive mt-1">{phoneError}</p>}
+                    {phoneMessage && !checkingPhone && (
+                      <p
+                        className={`text-xs mt-1 ${
+                          phoneMessageType === "warning"
+                            ? "text-amber-500"
+                            : phoneMessageType === "success"
+                              ? "text-emerald-500"
+                              : "text-destructive"
+                        }`}
+                      >
+                        {phoneMessage}
+                      </p>
+                    )}
                 </div>
 
                 <div>
