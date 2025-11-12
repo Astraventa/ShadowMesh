@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
-import { hash } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,7 +33,7 @@ serve(async (req) => {
     return error("Method not allowed", 405);
   }
 
-  // Check if admin already exists
+  // Check if admin already exists and delete it to recreate with new hashing method
   const checkRes = await fetch(
     `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(DEFAULT_ADMIN_EMAIL)}&select=id`,
     {
@@ -49,15 +48,50 @@ serve(async (req) => {
   if (checkRes.ok) {
     const data = await checkRes.json();
     if (Array.isArray(data) && data.length > 0) {
-      return ok({
-        success: false,
-        message: "Admin account already exists. Use password reset if needed.",
-      });
+      // Delete existing account to recreate with new hashing method
+      const deleteRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(DEFAULT_ADMIN_EMAIL)}`,
+        {
+          method: "DELETE",
+          headers: {
+            "apikey": SERVICE_KEY,
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      if (!deleteRes.ok) {
+        console.warn("Failed to delete existing admin account, will try to create anyway");
+      }
     }
   }
 
-  // Hash password
-  const passwordHash = await hash(DEFAULT_ADMIN_PASSWORD);
+  // Hash password using Web Crypto API (PBKDF2)
+  const encoder = new TextEncoder();
+  const passwordData = encoder.encode(DEFAULT_ADMIN_PASSWORD);
+  const saltData = encoder.encode(DEFAULT_ADMIN_EMAIL.trim().toLowerCase() + "shadowmesh_admin_salt");
+  
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    passwordData,
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits"]
+  );
+  
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: saltData,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    256
+  );
+  
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
   // Create admin account
   const createRes = await fetch(`${SUPABASE_URL}/rest/v1/admin_settings`, {

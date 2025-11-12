@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
-import { hash } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -131,8 +130,32 @@ serve(async (req) => {
       return error(passwordValidation.message ?? "Password does not meet requirements", 400);
     }
 
-    // Hash new password
-    const passwordHash = await hash(newPassword);
+    // Hash new password using Web Crypto API (PBKDF2)
+    const encoder = new TextEncoder();
+    const passwordData = encoder.encode(newPassword);
+    const saltData = encoder.encode(normalizedEmail.trim().toLowerCase() + "shadowmesh_admin_salt");
+    
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      passwordData,
+      { name: "PBKDF2" },
+      false,
+      ["deriveBits"]
+    );
+    
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: "PBKDF2",
+        salt: saltData,
+        iterations: 100000,
+        hash: "SHA-256"
+      },
+      keyMaterial,
+      256
+    );
+    
+    const hashArray = Array.from(new Uint8Array(derivedBits));
+    const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
     // Update password and clear OTP
     const updateRes = await fetch(

@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
-import { compare, hash } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +34,37 @@ function getClientIP(req: Request): string {
   }
   const realIP = req.headers.get("x-real-ip");
   return realIP ?? "unknown";
+}
+
+async function verifyPassword(password: string, hash: string, email: string): Promise<boolean> {
+  // Hash the provided password using the same method as when it was created
+  const encoder = new TextEncoder();
+  const passwordData = encoder.encode(password);
+  const saltData = encoder.encode(email.trim().toLowerCase() + "shadowmesh_admin_salt");
+  
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    passwordData,
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits"]
+  );
+  
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: saltData,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    256
+  );
+  
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  const computedHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  
+  return computedHash === hash;
 }
 
 async function checkRateLimit(email: string, ip: string): Promise<{ allowed: boolean; message?: string }> {
@@ -234,7 +264,7 @@ serve(async (req) => {
 
     let passwordValid = false;
     try {
-      passwordValid = await compare(password, admin.password_hash);
+      passwordValid = await verifyPassword(password, admin.password_hash, normalizedEmail);
     } catch (e) {
       console.error("Password comparison error:", e);
       return error("Authentication error", 500);
