@@ -152,6 +152,7 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetStep, setResetStep] = useState<"email" | "otp" | "newpassword">("email");
   const [resetLoading, setResetLoading] = useState(false);
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
 
   // Load login attempts from localStorage
   const getLoginAttempts = (): LoginAttempt[] => {
@@ -295,8 +296,8 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
 
       if (!response.ok) {
         // Check if account doesn't exist
-        if (response.status === 401 && data.error?.includes("Invalid email")) {
-          setError("Admin account not found. Please run admin_setup function first.");
+        if (response.status === 401 && (data.error?.includes("Admin account not found") || data.error?.includes("not found"))) {
+          setError("Admin account doesn't exist. Click 'Create Admin Account' button below to set it up.");
         } else {
           setError(data.error || "Invalid email or password");
         }
@@ -630,7 +631,48 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
               />
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-between items-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={async () => {
+                  setCreatingAdmin(true);
+                  setError("");
+                  try {
+                    const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_setup`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+                      },
+                    });
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                      setError("");
+                      alert(`✅ Admin account created!\n\nEmail: ${data.email}\nPassword: ${data.password}\n\n⚠️ Change this password after first login!`);
+                      setEmail(data.email);
+                    } else {
+                      setError(data.message || data.error || "Failed to create admin account");
+                    }
+                  } catch (err: any) {
+                    setError(err.message || "Unable to create admin account. Make sure admin_setup function is deployed.");
+                  } finally {
+                    setCreatingAdmin(false);
+                  }
+                }}
+                disabled={creatingAdmin}
+              >
+                {creatingAdmin ? (
+                  <>
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Admin Account"
+                )}
+              </Button>
               <Button
                 type="button"
                 variant="link"

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Admin Account</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0b1224;
+            color: #e5f0ff;
+        }
+        .container {
+            background: #1a2332;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        h1 {
+            margin-top: 0;
+            color: #60a5fa;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 20px;
+            width: 100%;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button:disabled {
+            background: #4b5563;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        .success {
+            background: #065f46;
+            color: #6ee7b7;
+            display: block;
+        }
+        .error {
+            background: #7f1d1d;
+            color: #fca5a5;
+            display: block;
+        }
+        .info {
+            background: #1e3a8a;
+            color: #93c5fd;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        code {
+            background: #0b1224;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Setup Admin Account</h1>
+        
+        <div class="info">
+            <strong>Default Credentials:</strong><br>
+            Email: <code>zeeshanjay7@gmail.com</code><br>
+            Password: <code>ShadowMesh2024!Secure#Admin</code><br><br>
+            <strong>⚠️ Change this password immediately after first login!</strong>
+        </div>
+
+        <p>Click the button below to create the admin account. This will call the <code>admin_setup</code> edge function.</p>
+        
+        <button id="setupBtn" onclick="setupAdmin()">Create Admin Account</button>
+        
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        // Replace these with your actual Supabase project values
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL'; // e.g., https://xxxxx.supabase.co
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+        async function setupAdmin() {
+            const btn = document.getElementById('setupBtn');
+            const result = document.getElementById('result');
+            
+            btn.disabled = true;
+            btn.textContent = 'Creating account...';
+            result.className = 'result';
+            result.textContent = '';
+
+            try {
+                const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_setup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    result.className = 'result success';
+                    result.innerHTML = `
+                        <strong>✅ Success!</strong><br>
+                        Admin account created successfully.<br><br>
+                        <strong>Email:</strong> ${data.email}<br>
+                        <strong>Password:</strong> ${data.password}<br><br>
+                        ${data.warning || ''}
+                    `;
+                } else {
+                    result.className = 'result error';
+                    result.innerHTML = `
+                        <strong>❌ Error:</strong><br>
+                        ${data.message || data.error || 'Failed to create admin account'}
+                    `;
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.innerHTML = `
+                    <strong>❌ Error:</strong><br>
+                    ${error.message}<br><br>
+                    <strong>Make sure:</strong><br>
+                    1. You've updated SUPABASE_URL and SUPABASE_ANON_KEY in this file<br>
+                    2. The admin_setup function is deployed<br>
+                    3. You've run supabase_schema.sql first
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Create Admin Account';
+            }
+        }
+
+        // Check if values are set
+        if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_ANON_KEY === 'YOUR_SUPABASE_ANON_KEY') {
+            document.getElementById('result').className = 'result error';
+            document.getElementById('result').innerHTML = `
+                <strong>⚠️ Configuration Required:</strong><br>
+                Please update SUPABASE_URL and SUPABASE_ANON_KEY in this HTML file before using.
+            `;
+        }
+    </script>
+</body>
+</html>
+
