@@ -152,6 +152,8 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetStep, setResetStep] = useState<"email" | "otp" | "newpassword">("email");
   const [resetLoading, setResetLoading] = useState(false);
+  const [adminExists, setAdminExists] = useState<boolean | null>(null); // null = checking, true = exists, false = doesn't exist
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
 
   // Load login attempts from localStorage
   const getLoginAttempts = (): LoginAttempt[] => {
@@ -406,6 +408,80 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
     }
   }, [isLocked, lockUntil]);
 
+  // Check if admin account exists when login dialog opens
+  useEffect(() => {
+    if (showLogin && adminExists === null) {
+      checkAdminExists();
+    }
+  }, [showLogin]);
+
+  async function checkAdminExists() {
+    try {
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        setAdminExists(true); // Assume exists if config missing
+        return;
+      }
+      
+      // Call admin_setup - it will return success: false if account already exists
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_setup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      });
+      
+      const data = await response.json();
+      // If success is false and message says "already exists", account exists
+      // If success is true, account was just created (didn't exist before)
+      if (data.success === false && data.message?.includes("already exists")) {
+        setAdminExists(true);
+      } else if (data.success === true) {
+        // Account was just created, so it didn't exist before
+        // But now it exists, so hide the button
+        setAdminExists(true);
+      } else {
+        // If we get here, assume it doesn't exist (show button)
+        setAdminExists(false);
+      }
+    } catch (err) {
+      console.error("Failed to check admin existence:", err);
+      // On error, assume exists to avoid showing button unnecessarily
+      setAdminExists(true);
+    }
+  }
+
+  async function handleCreateAdmin() {
+    setCreatingAdmin(true);
+    setError("");
+    try {
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        throw new Error("Supabase configuration missing");
+      }
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_setup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setAdminExists(true); // Hide button after creation
+        setEmail(data.email);
+        alert(`✅ Admin account created!\n\nEmail: ${data.email}\nPassword: ${data.password}\n\n⚠️ Change this password after first login!`);
+      } else {
+        setError(data.message || data.error || "Failed to create admin account");
+      }
+    } catch (err: any) {
+      setError(err.message || "Unable to create admin account. Make sure admin_setup function is deployed.");
+    } finally {
+      setCreatingAdmin(false);
+    }
+  }
+
   const handlePasswordResetRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -630,11 +706,30 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
               />
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-between items-center">
+              {adminExists === false && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs"
+                  onClick={handleCreateAdmin}
+                  disabled={creatingAdmin}
+                >
+                  {creatingAdmin ? (
+                    <>
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Create Admin Account"
+                  )}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="link"
-                className="px-0 text-xs"
+                className="px-0 text-xs ml-auto"
                 onClick={() => {
                   setShowPasswordReset(true);
                   setResetEmail(email);
@@ -654,6 +749,7 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
                   setEmail("");
                   setPassword("");
                   setError("");
+                  setAdminExists(null); // Reset check when closing
                 }}
               >
                 Cancel
