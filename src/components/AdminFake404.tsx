@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle, Lock, Shield } from "lucide-react";
+import { AlertCircle, Lock, Shield, Loader2 } from "lucide-react";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabaseClient";
 
 interface AdminFake404Props {
@@ -142,6 +142,7 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
   const [needs2FA, setNeeds2FA] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorVerifying, setTwoFactorVerifying] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
   
   // Password reset state
   const [showPasswordReset, setShowPasswordReset] = useState(false);
@@ -271,6 +272,7 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
       return;
     }
 
+    setLoginLoading(true);
     try {
       if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
         throw new Error("Supabase configuration missing");
@@ -292,7 +294,12 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error || "Invalid email or password");
+        // Check if account doesn't exist
+        if (response.status === 401 && data.error?.includes("Invalid email")) {
+          setError("Admin account not found. Please run admin_setup function first.");
+        } else {
+          setError(data.error || "Invalid email or password");
+        }
         saveLoginAttempt(false);
         setPassword("");
         return;
@@ -320,6 +327,8 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
       setError(error.message || "Unable to connect. Please try again.");
       saveLoginAttempt(false);
       setPassword("");
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -651,10 +660,19 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
               </Button>
               <Button
                 type="submit"
-                disabled={isLocked || !email || !password}
+                disabled={isLocked || !email || !password || loginLoading}
                 className="flex-1"
               >
-                {isLocked ? "Locked" : "Login"}
+                {loginLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Logging in...
+                  </>
+                ) : isLocked ? (
+                  "Locked"
+                ) : (
+                  "Login"
+                )}
               </Button>
             </DialogFooter>
           </form>

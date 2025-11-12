@@ -68,72 +68,89 @@ async function checkRateLimit(email: string, ip: string): Promise<{ allowed: boo
 }
 
 async function incrementLoginAttempts(email: string, ip: string, success: boolean): Promise<void> {
-  const updateRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(email)}`,
+  if (success) {
+    // Reset attempts and update last login on success
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(email)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "apikey": SERVICE_KEY,
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          login_attempts: 0,
+          locked_until: null,
+          last_login_at: new Date().toISOString(),
+          last_login_ip: ip,
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    );
+    return;
+  }
+
+  // On failure, fetch current attempts first
+  const fetchRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(email)}&select=login_attempts`,
     {
-      method: "PATCH",
       headers: {
         "apikey": SERVICE_KEY,
         "Authorization": `Bearer ${SERVICE_KEY}`,
         "Content-Type": "application/json",
-        "Prefer": "return=representation",
       },
-      body: JSON.stringify({
-        login_attempts: success ? 0 : undefined, // Reset on success
-        locked_until: success
-          ? null
-          : undefined, // Will be set below if needed
-        last_login_at: success ? new Date().toISOString() : undefined,
-        last_login_ip: success ? ip : undefined,
-        updated_at: new Date().toISOString(),
-      }),
     }
   );
 
-  if (!success && updateRes.ok) {
-    const data = await updateRes.json();
-    if (Array.isArray(data) && data.length > 0) {
-      const admin = data[0];
-      const attempts = (admin.login_attempts ?? 0) + 1;
+  if (!fetchRes.ok) {
+    console.error("Failed to fetch current attempts");
+    return;
+  }
 
-      if (attempts >= MAX_LOGIN_ATTEMPTS) {
-        // Lock the account
-        const lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000);
-        await fetch(
-          `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(email)}`,
-          {
-            method: "PATCH",
-            headers: {
-              "apikey": SERVICE_KEY,
-              "Authorization": `Bearer ${SERVICE_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              login_attempts: attempts,
-              locked_until: lockUntil.toISOString(),
-              updated_at: new Date().toISOString(),
-            }),
-          }
-        );
-      } else {
-        // Just increment attempts
-        await fetch(
-          `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(email)}`,
-          {
-            method: "PATCH",
-            headers: {
-              "apikey": SERVICE_KEY,
-              "Authorization": `Bearer ${SERVICE_KEY}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              login_attempts: attempts,
-              updated_at: new Date().toISOString(),
-            }),
-          }
-        );
+  const fetchData = await fetchRes.json();
+  if (!Array.isArray(fetchData) || fetchData.length === 0) {
+    return;
+  }
+
+  const currentAttempts = (fetchData[0].login_attempts ?? 0) + 1;
+
+  if (currentAttempts >= MAX_LOGIN_ATTEMPTS) {
+    // Lock the account
+    const lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000);
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(email)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "apikey": SERVICE_KEY,
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          login_attempts: currentAttempts,
+          locked_until: lockUntil.toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
       }
-    }
+    );
+  } else {
+    // Just increment attempts
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(email)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "apikey": SERVICE_KEY,
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          login_attempts: currentAttempts,
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    );
   }
 }
 
@@ -169,7 +186,7 @@ serve(async (req) => {
 
   // Fetch admin by email
   const adminRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(normalizedEmail)}&select=id,email,password_hash,two_factor_enabled,two_factor_secret`,
+    `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(normalizedEmail)}&select=id,email,password_hash,two_factor_enabled,two_factor_secret,login_attempts,locked_until`,
     {
       headers: {
         "apikey": SERVICE_KEY,
@@ -186,9 +203,8 @@ serve(async (req) => {
 
   const adminData = await adminRes.json();
   if (!Array.isArray(adminData) || adminData.length === 0) {
-    // Don't reveal if email exists - security best practice
-    await incrementLoginAttempts(normalizedEmail, ip, false);
-    return error("Invalid email or password", 401);
+    // Admin account doesn't exist - don't increment attempts for non-existent accounts
+    return error("Admin account not found. Please run admin_setup function first.", 401);
   }
 
   const admin = adminData[0];

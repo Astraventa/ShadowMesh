@@ -256,6 +256,7 @@ const Admin = () => {
 	const [moderatingId, setModeratingId] = useState<string | null>(null);
 	const [savingEvent, setSavingEvent] = useState(false);
 	const [moderatingHackathonId, setModeratingHackathonId] = useState<string | null>(null);
+	const [deletingId, setDeletingId] = useState<string | null>(null);
 
 	// Data state - separate for each status
 	const [appsPending, setAppsPending] = useState<JoinRow[]>([]);
@@ -1163,6 +1164,7 @@ const scannerLockRef = useRef(false);
 			return;
 		}
 		if (!confirm(`Are you sure you want to delete this ${type}?`)) return;
+		setDeletingId(id);
 		try {
 			const res = await fetch(`${SUPABASE_URL}/functions/v1/admin_delete`, {
 				method: "POST",
@@ -1182,6 +1184,8 @@ const scannerLockRef = useRef(false);
 			if (type === "message") void loadMsgs(true);
 		} catch (e: any) {
 			toast({ title: "Delete failed", description: e.message || String(e) });
+		} finally {
+			setDeletingId(null);
 		}
 	}
 
@@ -1470,7 +1474,21 @@ const scannerLockRef = useRef(false);
 													>
 														Reject
 													</Button>
-															<Button size="sm" variant="ghost" onClick={() => void deleteItem("application", r.id)}>Delete</Button>
+															<Button 
+																size="sm" 
+																variant="ghost" 
+																onClick={() => void deleteItem("application", r.id)}
+																disabled={deletingId === r.id}
+															>
+																{deletingId === r.id ? (
+																	<>
+																		<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+																		Deleting...
+																	</>
+																) : (
+																	"Delete"
+																)}
+															</Button>
 														</TableCell>
 													</TableRow>
 												))}
@@ -1502,7 +1520,21 @@ const scannerLockRef = useRef(false);
 														<TableCell className="capitalize">{r.affiliation}</TableCell>
 														<TableCell className="text-right space-x-2">
 															<Button size="sm" variant="outline" onClick={() => { setDetail(r); setOpenDetail(true); }}>View</Button>
-															<Button size="sm" variant="ghost" onClick={() => void deleteItem("application", r.id)}>Delete</Button>
+															<Button 
+																size="sm" 
+																variant="ghost" 
+																onClick={() => void deleteItem("application", r.id)}
+																disabled={deletingId === r.id}
+															>
+																{deletingId === r.id ? (
+																	<>
+																		<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+																		Deleting...
+																	</>
+																) : (
+																	"Delete"
+																)}
+															</Button>
 														</TableCell>
 													</TableRow>
 												))}
@@ -1534,7 +1566,21 @@ const scannerLockRef = useRef(false);
 														<TableCell className="capitalize">{r.affiliation}</TableCell>
 														<TableCell className="text-right space-x-2">
 															<Button size="sm" variant="outline" onClick={() => { setDetail(r); setOpenDetail(true); }}>View</Button>
-															<Button size="sm" variant="ghost" onClick={() => void deleteItem("application", r.id)}>Delete</Button>
+															<Button 
+																size="sm" 
+																variant="ghost" 
+																onClick={() => void deleteItem("application", r.id)}
+																disabled={deletingId === r.id}
+															>
+																{deletingId === r.id ? (
+																	<>
+																		<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+																		Deleting...
+																	</>
+																) : (
+																	"Delete"
+																)}
+															</Button>
 														</TableCell>
 													</TableRow>
 												))}
@@ -2059,7 +2105,21 @@ const scannerLockRef = useRef(false);
 												<TableCell>{m.email}</TableCell>
 												<TableCell className="max-w-[520px] truncate" title={m.message}>{m.message}</TableCell>
 												<TableCell className="text-right">
-													<Button size="sm" variant="ghost" onClick={() => void deleteItem("message", m.id)}>Delete</Button>
+													<Button 
+														size="sm" 
+														variant="ghost" 
+														onClick={() => void deleteItem("message", m.id)}
+														disabled={deletingId === m.id}
+													>
+														{deletingId === m.id ? (
+															<>
+																<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+																Deleting...
+															</>
+														) : (
+															"Delete"
+														)}
+													</Button>
 												</TableCell>
 											</TableRow>
 										))}
@@ -2974,8 +3034,15 @@ const scannerLockRef = useRef(false);
 						}}>
 							Cancel
 						</Button>
-						<Button onClick={() => void saveEvent()}>
-							{editingEvent ? "Update Event" : "Create Event"}
+						<Button onClick={() => void saveEvent()} disabled={savingEvent}>
+							{savingEvent ? (
+								<>
+									<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+									{savingEvent ? "Saving..." : editingEvent ? "Update Event" : "Create Event"}
+								</>
+							) : (
+								editingEvent ? "Update Event" : "Create Event"
+							)}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
