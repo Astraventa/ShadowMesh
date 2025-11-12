@@ -625,12 +625,57 @@ create policy p_contact_insert
 -- Admin table for storing admin 2FA settings (server-side)
 create table if not exists public.admin_settings (
   id uuid primary key default gen_random_uuid(),
-  username text not null unique,
+  username text unique, -- Keep for backward compatibility, but email is primary
+  email text not null unique, -- Primary identifier for admin login
+  password_hash text not null, -- bcrypt hashed password
   two_factor_secret text,
   two_factor_enabled boolean default false,
+  -- Password reset OTP
+  password_reset_otp text,
+  password_reset_otp_expires timestamptz,
+  -- Rate limiting / security
+  login_attempts integer default 0,
+  locked_until timestamptz,
+  last_login_at timestamptz,
+  last_login_ip text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Add new columns if they don't exist (idempotent)
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='email') then
+    alter table public.admin_settings add column email text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='password_hash') then
+    alter table public.admin_settings add column password_hash text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='password_reset_otp') then
+    alter table public.admin_settings add column password_reset_otp text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='password_reset_otp_expires') then
+    alter table public.admin_settings add column password_reset_otp_expires timestamptz;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='login_attempts') then
+    alter table public.admin_settings add column login_attempts integer default 0;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='locked_until') then
+    alter table public.admin_settings add column locked_until timestamptz;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='last_login_at') then
+    alter table public.admin_settings add column last_login_at timestamptz;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='last_login_ip') then
+    alter table public.admin_settings add column last_login_ip text;
+  end if;
+  -- Make email unique if not already
+  if not exists (select 1 from pg_constraint where conname = 'admin_settings_email_key') then
+    alter table public.admin_settings add constraint admin_settings_email_key unique (email);
+  end if;
+  -- Make email not null if it's nullable
+  alter table public.admin_settings alter column email set not null;
+end$$;
 
 -- RLS for admin_settings (only accessible via edge functions with admin token)
 alter table public.admin_settings enable row level security;

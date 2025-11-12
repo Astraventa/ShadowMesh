@@ -129,7 +129,7 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
   const navigate = useNavigate();
   const [secretClicks, setSecretClicks] = useState(0);
   const [showLogin, setShowLogin] = useState(false);
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLocked, setIsLocked] = useState(false);
@@ -142,6 +142,15 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
   const [needs2FA, setNeeds2FA] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   const [twoFactorVerifying, setTwoFactorVerifying] = useState(false);
+  
+  // Password reset state
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetOTP, setResetOTP] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [resetStep, setResetStep] = useState<"email" | "otp" | "newpassword">("email");
+  const [resetLoading, setResetLoading] = useState(false);
 
   // Load login attempts from localStorage
   const getLoginAttempts = (): LoginAttempt[] => {
@@ -257,56 +266,59 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
       }
     }
 
-    // Validate credentials
-    if (username === "zeeshanjay" && password === "haiderjax###") {
-      // Check if 2FA is enabled from server
-      try {
-        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-          throw new Error("Supabase configuration missing");
-        }
+    if (!email.trim() || !password) {
+      setError("Email and password are required");
+      return;
+    }
 
-        const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_2fa`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({ action: "check_status" }),
-        });
+    try {
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        throw new Error("Supabase configuration missing");
+      }
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("2FA check failed:", response.status, errorText);
-          throw new Error(`Failed to check 2FA status: ${response.status}`);
-        }
+      // Call admin_login edge function
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password,
+        }),
+      });
 
-        const data = await response.json();
-        console.log("2FA status check result:", data);
-        
-        // If 2FA is enabled or a secret exists (configured), require code
-        if (data.enabled === true || data.hasSecret === true) {
-          // Require 2FA code
-          console.log("2FA is enabled, requiring code");
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "Invalid email or password");
+        saveLoginAttempt(false);
+        setPassword("");
+        return;
+      }
+
+      if (data.success) {
+        // Check if 2FA is required
+        if (data.requires2FA || data.has2FASecret) {
           setNeeds2FA(true);
-          saveLoginAttempt(true); // Don't count as failed, just need 2FA
+          saveLoginAttempt(true);
         } else {
           // No 2FA, authenticate directly
-          console.log("2FA is disabled, authenticating directly");
           saveLoginAttempt(true);
           sessionStorage.setItem("shadowmesh_admin_basic_auth", "1");
           sessionStorage.setItem("shadowmesh_admin_authenticated_at", Date.now().toString());
           onAuthenticated();
         }
-      } catch (error) {
-        console.error("Error checking 2FA status:", error);
-        // SECURITY: If 2FA check fails, we MUST require 2FA to be safe
-        // Don't allow login without verifying 2FA status
-        setError("Unable to verify 2FA status. Please try again or contact support.");
-        // Do NOT authenticate - fail securely
+      } else {
+        setError("Authentication failed");
+        saveLoginAttempt(false);
+        setPassword("");
       }
-    } else {
+    } catch (error: any) {
+      console.error("Login error:", error);
+      setError(error.message || "Unable to connect. Please try again.");
       saveLoginAttempt(false);
-      setUsername("");
       setPassword("");
     }
   };
@@ -385,6 +397,138 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
     }
   }, [isLocked, lockUntil]);
 
+  const handlePasswordResetRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setResetLoading(true);
+
+    if (!resetEmail.trim()) {
+      setError("Email is required");
+      setResetLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_password_reset`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ email: resetEmail.trim().toLowerCase() }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setResetStep("otp");
+        setError("");
+      } else {
+        setError(data.error || "Failed to send reset code");
+      }
+    } catch (err: any) {
+      setError(err.message || "Unable to send reset code");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handlePasswordResetVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setResetLoading(true);
+
+    if (!resetOTP || resetOTP.length !== 6) {
+      setError("Please enter a valid 6-digit code");
+      setResetLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_password_reset_verify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          email: resetEmail.trim().toLowerCase(),
+          otp: resetOTP,
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.verified) {
+        setResetStep("newpassword");
+        setError("");
+      } else {
+        setError(data.error || "Invalid or expired code");
+      }
+    } catch (err: any) {
+      setError(err.message || "Unable to verify code");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handlePasswordResetComplete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setResetLoading(true);
+
+    if (!newPassword || !confirmPassword) {
+      setError("Please enter and confirm your new password");
+      setResetLoading(false);
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      setResetLoading(false);
+      return;
+    }
+
+    if (newPassword.length < 12) {
+      setError("Password must be at least 12 characters long");
+      setResetLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin_password_reset_verify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          email: resetEmail.trim().toLowerCase(),
+          otp: resetOTP,
+          newPassword: newPassword,
+          confirmPassword: confirmPassword,
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setShowPasswordReset(false);
+        setShowLogin(true);
+        setResetEmail("");
+        setResetOTP("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setResetStep("email");
+        setError("");
+        alert("Password reset successful! You can now login with your new password.");
+      } else {
+        setError(data.error || "Failed to reset password");
+      }
+    } catch (err: any) {
+      setError(err.message || "Unable to reset password");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   return (
     <div 
       className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900"
@@ -445,17 +589,18 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
             )}
 
             <div className="space-y-2">
-              <label htmlFor="username" className="text-sm font-medium">
-                Username
+              <label htmlFor="email" className="text-sm font-medium">
+                Email
               </label>
               <Input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 disabled={isLocked}
-                autoComplete="username"
+                autoComplete="email"
                 className="bg-background"
+                placeholder="admin@example.com"
                 required
               />
             </div>
@@ -476,13 +621,28 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
               />
             </div>
 
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="link"
+                className="px-0 text-xs"
+                onClick={() => {
+                  setShowPasswordReset(true);
+                  setResetEmail(email);
+                  setResetStep("email");
+                }}
+              >
+                Forgot password?
+              </Button>
+            </div>
+
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => {
                   setShowLogin(false);
-                  setUsername("");
+                  setEmail("");
                   setPassword("");
                   setError("");
                 }}
@@ -491,7 +651,7 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
               </Button>
               <Button
                 type="submit"
-                disabled={isLocked || !username || !password}
+                disabled={isLocked || !email || !password}
                 className="flex-1"
               >
                 {isLocked ? "Locked" : "Login"}
@@ -550,6 +710,187 @@ function AdminFake404({ onAuthenticated }: AdminFake404Props) {
                   className="flex-1"
                 >
                   {twoFactorVerifying ? "Verifying..." : "Verify & Login"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Reset Dialog */}
+      <Dialog open={showPasswordReset} onOpenChange={setShowPasswordReset}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl text-center">
+              {resetStep === "email" && "Reset Password"}
+              {resetStep === "otp" && "Enter Reset Code"}
+              {resetStep === "newpassword" && "Set New Password"}
+            </DialogTitle>
+            <DialogDescription className="text-center">
+              {resetStep === "email" && "Enter your email to receive a password reset code"}
+              {resetStep === "otp" && "Check your email for the 6-digit code"}
+              {resetStep === "newpassword" && "Enter your new password (min 12 characters, must include uppercase, lowercase, number, and special character)"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {resetStep === "email" && (
+            <form onSubmit={handlePasswordResetRequest} className="space-y-4">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <label htmlFor="reset-email" className="text-sm font-medium">
+                  Email
+                </label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  disabled={resetLoading}
+                  autoComplete="email"
+                  className="bg-background"
+                  placeholder="admin@example.com"
+                  required
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowPasswordReset(false);
+                    setResetEmail("");
+                    setError("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={resetLoading || !resetEmail.trim()}>
+                  {resetLoading ? "Sending..." : "Send Reset Code"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+
+          {resetStep === "otp" && (
+            <form onSubmit={handlePasswordResetVerify} className="space-y-4">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <label htmlFor="reset-otp" className="text-sm font-medium">
+                  6-Digit Code
+                </label>
+                <Input
+                  id="reset-otp"
+                  type="text"
+                  value={resetOTP}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    setResetOTP(val);
+                  }}
+                  disabled={resetLoading}
+                  placeholder="000000"
+                  maxLength={6}
+                  className="bg-background text-center text-2xl tracking-widest font-mono"
+                  required
+                />
+                <p className="text-xs text-muted-foreground text-center">
+                  Check your email for the code. It expires in 10 minutes.
+                </p>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setResetStep("email");
+                    setResetOTP("");
+                    setError("");
+                  }}
+                >
+                  Back
+                </Button>
+                <Button type="submit" disabled={resetLoading || resetOTP.length !== 6}>
+                  {resetLoading ? "Verifying..." : "Verify Code"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+
+          {resetStep === "newpassword" && (
+            <form onSubmit={handlePasswordResetComplete} className="space-y-4">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <label htmlFor="new-password" className="text-sm font-medium">
+                  New Password
+                </label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={resetLoading}
+                  autoComplete="new-password"
+                  className="bg-background"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Must be at least 12 characters with uppercase, lowercase, number, and special character
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="confirm-password" className="text-sm font-medium">
+                  Confirm Password
+                </label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={resetLoading}
+                  autoComplete="new-password"
+                  className="bg-background"
+                  required
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setResetStep("otp");
+                    setNewPassword("");
+                    setConfirmPassword("");
+                    setError("");
+                  }}
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={resetLoading || !newPassword || !confirmPassword || newPassword !== confirmPassword}
+                >
+                  {resetLoading ? "Resetting..." : "Reset Password"}
                 </Button>
               </DialogFooter>
             </form>
