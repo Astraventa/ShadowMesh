@@ -22,7 +22,10 @@ function ok(body: unknown, status = 200) {
 }
 
 function error(message: string, status = 400) {
-  return ok({ error: message }, status);
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }
 
 function getClientIP(req: Request): string {
@@ -155,82 +158,110 @@ async function incrementLoginAttempts(email: string, ip: string, success: boolea
 }
 
 serve(async (req) => {
+  // Handle OPTIONS request for CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
-  if (req.method !== "POST") {
-    return error("Method not allowed", 405);
-  }
-
-  let body: { email?: string; password?: string };
+  // Wrap everything in try-catch to ensure CORS headers are always returned
   try {
-    body = await req.json();
-  } catch {
-    return error("Invalid request body", 400);
-  }
-
-  const { email, password } = body;
-  if (!email || !password) {
-    return error("Email and password required", 400);
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const ip = getClientIP(req);
-
-  // Check rate limiting
-  const rateLimitCheck = await checkRateLimit(normalizedEmail, ip);
-  if (!rateLimitCheck.allowed) {
-    return error(rateLimitCheck.message ?? "Too many login attempts", 429);
-  }
-
-  // Fetch admin by email
-  const adminRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(normalizedEmail)}&select=id,email,password_hash,two_factor_enabled,two_factor_secret,login_attempts,locked_until`,
-    {
-      headers: {
-        "apikey": SERVICE_KEY,
-        "Authorization": `Bearer ${SERVICE_KEY}`,
-        "Content-Type": "application/json",
-      },
+    if (req.method !== "POST") {
+      return error("Method not allowed", 405);
     }
-  );
 
-  if (!adminRes.ok) {
-    console.error("Failed to fetch admin:", adminRes.status);
-    return error("Authentication failed", 401);
+    // Validate environment variables
+    if (!SUPABASE_URL || !SERVICE_KEY) {
+      console.error("Missing SUPABASE_URL or SERVICE_KEY");
+      return new Response(
+        JSON.stringify({ error: "Server configuration error" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    let body: { email?: string; password?: string };
+    try {
+      body = await req.json();
+    } catch (e) {
+      console.error("Failed to parse request body:", e);
+      return error("Invalid request body", 400);
+    }
+
+    const { email, password } = body;
+    if (!email || !password) {
+      return error("Email and password required", 400);
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const ip = getClientIP(req);
+
+    // Check rate limiting
+    const rateLimitCheck = await checkRateLimit(normalizedEmail, ip);
+    if (!rateLimitCheck.allowed) {
+      return error(rateLimitCheck.message ?? "Too many login attempts", 429);
+    }
+
+    // Fetch admin by email
+    const adminRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/admin_settings?email=eq.${encodeURIComponent(normalizedEmail)}&select=id,email,password_hash,two_factor_enabled,two_factor_secret,login_attempts,locked_until`,
+      {
+        headers: {
+          "apikey": SERVICE_KEY,
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!adminRes.ok) {
+      console.error("Failed to fetch admin:", adminRes.status, await adminRes.text());
+      return error("Authentication failed", 401);
+    }
+
+    const adminData = await adminRes.json();
+    if (!Array.isArray(adminData) || adminData.length === 0) {
+      // Admin account doesn't exist - don't increment attempts for non-existent accounts
+      return error("Admin account not found. Please run admin_setup function first.", 401);
+    }
+
+    const admin = adminData[0];
+
+    // Verify password
+    if (!admin.password_hash) {
+      console.error("Admin has no password hash");
+      await incrementLoginAttempts(normalizedEmail, ip, false);
+      return error("Invalid email or password", 401);
+    }
+
+    let passwordValid = false;
+    try {
+      passwordValid = await compare(password, admin.password_hash);
+    } catch (e) {
+      console.error("Password comparison error:", e);
+      return error("Authentication error", 500);
+    }
+
+    if (!passwordValid) {
+      await incrementLoginAttempts(normalizedEmail, ip, false);
+      return error("Invalid email or password", 401);
+    }
+
+    // Password correct - reset attempts and update last login
+    await incrementLoginAttempts(normalizedEmail, ip, true);
+
+    // Return success with 2FA status
+    return ok({
+      success: true,
+      email: admin.email,
+      requires2FA: admin.two_factor_enabled === true,
+      has2FASecret: !!admin.two_factor_secret,
+    });
+  } catch (error: any) {
+    // Ensure CORS headers are always returned, even on unexpected errors
+    console.error("Unexpected error in admin_login:", error);
+    return new Response(
+      JSON.stringify({ error: error.message || "Internal server error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
-
-  const adminData = await adminRes.json();
-  if (!Array.isArray(adminData) || adminData.length === 0) {
-    // Admin account doesn't exist - don't increment attempts for non-existent accounts
-    return error("Admin account not found. Please run admin_setup function first.", 401);
-  }
-
-  const admin = adminData[0];
-
-  // Verify password
-  if (!admin.password_hash) {
-    console.error("Admin has no password hash");
-    await incrementLoginAttempts(normalizedEmail, ip, false);
-    return error("Invalid email or password", 401);
-  }
-
-  const passwordValid = await compare(password, admin.password_hash);
-  if (!passwordValid) {
-    await incrementLoginAttempts(normalizedEmail, ip, false);
-    return error("Invalid email or password", 401);
-  }
-
-  // Password correct - reset attempts and update last login
-  await incrementLoginAttempts(normalizedEmail, ip, true);
-
-  // Return success with 2FA status
-  return ok({
-    success: true,
-    email: admin.email,
-    requires2FA: admin.two_factor_enabled === true,
-    has2FASecret: !!admin.two_factor_secret,
-  });
 });
 
