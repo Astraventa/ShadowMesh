@@ -1,4 +1,4 @@
-import { Mail, Instagram, Linkedin, Github, Loader2 } from "lucide-react";
+import { Mail, Instagram, Linkedin, Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,7 +16,8 @@ const Contact = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [honeypot, setHoneypot] = useState("");
-  const [emailWarning, setEmailWarning] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailMessageType, setEmailMessageType] = useState<"error" | "warning" | null>(null);
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [phoneError, setPhoneError] = useState("");
   const [checkingPhone, setCheckingPhone] = useState(false);
@@ -35,36 +36,40 @@ const Contact = () => {
 
   function validEmail(v: string) { return /.+@.+\..+/.test(v); }
 
-  const reasonMessages: Record<string, string> = {
-    disposable: "Temporary / disposable email addresses are not allowed.",
-    no_mx: "Email domain has no valid mail server (MX records).",
-    smtp: "We could not reach this mailbox. Please double-check the email.",
-    syntax: "Enter a valid email address.",
+  const reasonMeta: Record<string, { message: string; type: "error" | "warning" }> = {
+    disposable: { message: "Temporary / disposable email addresses are not allowed.", type: "error" },
+    no_mx: { message: "Email domain has no valid mail server (MX records).", type: "error" },
+    smtp: { message: "We couldn't verify this mailbox. We'll trust it, but please confirm it's correct.", type: "warning" },
+    syntax: { message: "Enter a valid email address.", type: "error" },
   };
 
   async function validateEmailRemote(value: string, options: { silent?: boolean; skipFormatCheck?: boolean } = {}) {
     const { silent = false, skipFormatCheck = false } = options;
     const normalized = value.trim().toLowerCase();
     if (!normalized) {
-      setEmailWarning("");
+      setEmailMessage("");
+      setEmailMessageType(null);
       return false;
     }
     if (!validEmail(normalized)) {
       if (!skipFormatCheck) {
-        const message = reasonMessages.syntax;
-        setEmailWarning(message);
+        const meta = reasonMeta.syntax;
+        setEmailMessage(meta.message);
+        setEmailMessageType(meta.type);
         if (!silent) {
-          toast({ title: "Email invalid", description: message, variant: "destructive" });
+          toast({ title: "Email invalid", description: meta.message, variant: "destructive" });
         }
       } else {
-        setEmailWarning("");
+        setEmailMessage("");
+        setEmailMessageType(null);
       }
       return false;
     }
 
     const requestId = ++emailValidationRequest.current;
     setCheckingEmail(true);
-    setEmailWarning("");
+    setEmailMessage("");
+    setEmailMessageType(null);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/validate-email`, {
         method: "POST",
@@ -79,17 +84,22 @@ const Contact = () => {
         throw new Error(payload?.error ?? `Email validation failed with status ${res.status}`);
       }
       if (payload?.valid === false) {
+        const meta = reasonMeta[payload.reason as keyof typeof reasonMeta] ?? {
+          message: "Please use a real, non-temporary email.",
+          type: "error",
+        };
         if (requestId === emailValidationRequest.current) {
-          const message = reasonMessages[payload.reason as keyof typeof reasonMessages] ?? "Please use a real, non-temporary email.";
-          setEmailWarning(message);
-          if (!silent) {
-            toast({ title: "Use a real email", description: message, variant: "destructive" });
+          setEmailMessage(meta.message);
+          setEmailMessageType(meta.type);
+          if (!silent && meta.type === "error") {
+            toast({ title: "Use a real email", description: meta.message, variant: "destructive" });
           }
         }
-        return false;
+        return meta.type === "warning";
       }
       if (requestId === emailValidationRequest.current) {
-        setEmailWarning("");
+        setEmailMessage("");
+        setEmailMessageType(null);
       }
       return true;
     } catch (err: any) {
@@ -101,7 +111,8 @@ const Contact = () => {
         });
       }
       if (requestId === emailValidationRequest.current) {
-        setEmailWarning("");
+        setEmailMessage("");
+        setEmailMessageType(null);
       }
       return validEmail(normalized);
     } finally {
@@ -187,11 +198,13 @@ const Contact = () => {
     }
     const normalized = email.trim().toLowerCase();
     if (!normalized) {
-      setEmailWarning("");
+      setEmailMessage("");
+      setEmailMessageType(null);
       return;
     }
     if (!validEmail(normalized)) {
-      setEmailWarning("");
+      setEmailMessage("");
+      setEmailMessageType(null);
       return;
     }
     emailDebounceRef.current = window.setTimeout(() => {
@@ -335,13 +348,29 @@ const Contact = () => {
                         onBlur={() => void validateEmailRemote(email, { silent: true })}
                         type="email"
                         placeholder="your.email@example.com"
-                        className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${emailWarning ? "border-destructive" : ""}`}
+                        className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${
+                          emailMessageType === "error"
+                            ? "border-destructive"
+                            : emailMessageType === "warning"
+                              ? "border-amber-500/70"
+                              : ""
+                        }`}
                       />
                       {checkingEmail && (
-                        <Loader2 className="w-4 h-4 animate-spin absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                          <span className="block h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/40 border-t-primary animate-spin" />
+                        </span>
                       )}
                     </div>
-                    {emailWarning && !checkingEmail && <p className="text-xs text-destructive mt-1">{emailWarning}</p>}
+                    {emailMessage && !checkingEmail && (
+                      <p
+                        className={`text-xs mt-1 ${
+                          emailMessageType === "warning" ? "text-amber-500" : "text-destructive"
+                        }`}
+                      >
+                        {emailMessage}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -355,7 +384,9 @@ const Contact = () => {
                         className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${phoneError ? "border-destructive" : ""}`}
                       />
                       {checkingPhone && (
-                        <Loader2 className="w-4 h-4 animate-spin absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                          <span className="block h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/40 border-t-primary animate-spin" />
+                        </span>
                       )}
                     </div>
                     {phoneError && !checkingPhone && <p className="text-xs text-destructive mt-1">{phoneError}</p>}
