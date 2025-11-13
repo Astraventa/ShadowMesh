@@ -11,7 +11,7 @@ const RAPIDAPI_EMAIL_ENDPOINT = `https://${RAPIDAPI_EMAIL_HOST}/verify-email`;
 const rapidApiKey = Deno.env.get("RAPIDAPI_KEY") ?? "";
 
 // Local disposable domains blacklist file (copied from supabase/assets)
-const DISPOSABLE_DOMAINS_FILE = "./disposable-email-domains.txt";
+const DISPOSABLE_DOMAINS_FILE = new URL("./disposable-email-domains.txt", import.meta.url);
 
 let disposableDomainsPromise: Promise<Set<string>> | null = null;
 
