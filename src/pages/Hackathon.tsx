@@ -135,6 +135,7 @@ export default function Hackathon() {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [deletingTeam, setDeletingTeam] = useState(false);
+  const [generatingInvite, setGeneratingInvite] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
@@ -411,6 +412,7 @@ export default function Hackathon() {
       return;
     }
 
+    setGeneratingInvite(true);
     try {
       // Use edge function to generate invite (bypasses RLS)
       const response = await fetch(`${SUPABASE_URL}/functions/v1/generate_invite`, {
@@ -432,12 +434,15 @@ export default function Hackathon() {
         throw new Error(result.error || "Failed to generate invite link");
       }
 
-      toast({ title: "Invite link generated!", description: "Share this link with your teammates." });
+      // Reload invite links to show the new one
       await loadInviteLinks(team.id);
-      setShowInviteDialog(true);
+      
+      toast({ title: "Invite link generated!", description: "Share this link with your teammates." });
     } catch (error: any) {
       console.error("Error generating invite link:", error);
       toast({ title: "Failed to generate invite link", description: error.message, variant: "destructive" });
+    } finally {
+      setGeneratingInvite(false);
     }
   }
 
@@ -967,13 +972,23 @@ export default function Hackathon() {
                           Your Team: {team.team_name}
                         </CardTitle>
                         <div className="flex items-center gap-2">
-                          {team.team_leader_id === memberId && team.members.length < team.max_members && (
+                          {team.team_leader_id === memberId && team.members.length < team.max_members && inviteLinks.length === 0 && (
                             <Button 
                               size="sm"
                               onClick={generateInviteLink}
+                              disabled={generatingInvite}
                             >
-                              <LinkIcon className="w-4 h-4 mr-2" />
-                              Generate Invite Link
+                              {generatingInvite ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Generating...
+                                </>
+                              ) : (
+                                <>
+                                  <LinkIcon className="w-4 h-4 mr-2" />
+                                  Generate Invite Link
+                                </>
+                              )}
                             </Button>
                           )}
                           {team.team_leader_id === memberId && (
@@ -1038,59 +1053,104 @@ export default function Hackathon() {
                       </div>
 
                       {/* Invite Links Section (Team Leader Only) */}
-                      {team.team_leader_id === memberId && inviteLinks.length > 0 && (
+                      {team.team_leader_id === memberId && (
                         <div className="space-y-3 pt-4 border-t">
-                          <h3 className="font-semibold text-lg">Active Invite Links</h3>
-                          <div className="space-y-2">
-                            {inviteLinks.map((invite) => {
-                              const inviteUrl = `${window.location.origin}/team-invite/${invite.invite_token}`;
-                              const isExpired = new Date(invite.expires_at) < new Date();
-                              const isUsedUp = invite.uses_count >= invite.max_uses;
-                              const isCopied = copiedLink === invite.invite_token;
-                              
-                              return (
-                                <div key={invite.id} className="p-3 bg-muted/30 rounded-lg border border-dashed">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <LinkIcon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                        <code className="text-xs bg-background px-2 py-1 rounded break-all">
-                                          {inviteUrl}
-                                        </code>
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold text-lg">Invite Links</h3>
+                            {team.members.length < team.max_members && (
+                              <Button 
+                                size="sm"
+                                variant="outline"
+                                onClick={generateInviteLink}
+                                disabled={generatingInvite}
+                              >
+                                {generatingInvite ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <LinkIcon className="w-4 h-4 mr-2" />
+                                    Generate New Link
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                          {inviteLinks.length > 0 ? (
+                            <div className="space-y-3">
+                              {inviteLinks.map((invite) => {
+                                const inviteUrl = `${window.location.origin}/team-invite/${invite.invite_token}`;
+                                const isExpired = new Date(invite.expires_at) < new Date();
+                                const isUsedUp = invite.uses_count >= invite.max_uses;
+                                const isCopied = copiedLink === invite.invite_token;
+                                
+                                return (
+                                  <div key={invite.id} className="p-4 bg-gradient-to-r from-primary/10 to-purple-500/10 rounded-lg border-2 border-primary/20">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <LinkIcon className="w-5 h-5 text-primary flex-shrink-0" />
+                                          <code className="text-sm bg-background/80 px-3 py-2 rounded border break-all font-mono">
+                                            {inviteUrl}
+                                          </code>
+                                        </div>
+                                        <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">
+                                          <span className="flex items-center gap-1">
+                                            <Users className="w-3 h-3" />
+                                            Uses: {invite.uses_count} / {invite.max_uses}
+                                          </span>
+                                          <span className="flex items-center gap-1">
+                                            <Clock className="w-3 h-3" />
+                                            Expires: {new Date(invite.expires_at).toLocaleDateString()}
+                                          </span>
+                                          {isExpired && <Badge variant="destructive" className="text-xs">Expired</Badge>}
+                                          {isUsedUp && <Badge variant="secondary" className="text-xs">Used Up</Badge>}
+                                          {!isExpired && !isUsedUp && <Badge variant="default" className="text-xs bg-green-500">Active</Badge>}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                          Share this link with teammates to invite them to your team
+                                        </p>
                                       </div>
-                                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                        <span>Uses: {invite.uses_count} / {invite.max_uses}</span>
-                                        <span>Expires: {new Date(invite.expires_at).toLocaleDateString()}</span>
-                                        {isExpired && <Badge variant="destructive" className="text-xs">Expired</Badge>}
-                                        {isUsedUp && <Badge variant="secondary" className="text-xs">Used Up</Badge>}
+                                      <div className="flex items-center gap-2">
+                                        <Button
+                                          size="sm"
+                                          onClick={() => copyInviteLink(invite.invite_token)}
+                                          disabled={isExpired || isUsedUp}
+                                          className="shrink-0"
+                                        >
+                                          {isCopied ? (
+                                            <>
+                                              <Check className="w-4 h-4 mr-2" />
+                                              Copied!
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Copy className="w-4 h-4 mr-2" />
+                                              Copy Link
+                                            </>
+                                          )}
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => deleteInviteLink(invite.id)}
+                                        >
+                                          <Trash2 className="w-4 h-4 text-destructive" />
+                                        </Button>
                                       </div>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => copyInviteLink(invite.invite_token)}
-                                        disabled={isExpired || isUsedUp}
-                                      >
-                                        {isCopied ? (
-                                          <Check className="w-4 h-4 text-green-500" />
-                                        ) : (
-                                          <Copy className="w-4 h-4" />
-                                        )}
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => deleteInviteLink(invite.id)}
-                                      >
-                                        <Trash2 className="w-4 h-4 text-destructive" />
-                                      </Button>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="text-center py-6 text-muted-foreground">
+                              <LinkIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                              <p>No invite links yet. Generate one to invite teammates!</p>
+                            </div>
+                          )}
                         </div>
                       )}
 
