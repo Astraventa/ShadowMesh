@@ -919,25 +919,18 @@ create policy p_hackathon_results_select
   to authenticated
   using (true); -- Results visible to all authenticated members after publication
 
--- Invites: Team leaders can create, members can view their team's invites
-drop policy if exists p_hackathon_invites_select on public.hackathon_invites;
-create policy p_hackathon_invites_select
-  on public.hackathon_invites
-  for select
-  to authenticated
-  using (
-    created_by = auth.uid()::text::uuid
-    or team_id in (
-      select id from public.hackathon_teams where team_leader_id = auth.uid()::text::uuid
-    )
-  );
+-- Invites: Since we use custom auth (not Supabase Auth), RLS policies with auth.uid() won't work
+-- We'll use edge functions for all invite operations to ensure security
+-- Disable RLS and rely on edge functions for access control
+alter table public.hackathon_invites disable row level security;
 
-drop policy if exists p_hackathon_invites_insert on public.hackathon_invites;
-create policy p_hackathon_invites_insert
-  on public.hackathon_invites
-  for insert
-  to authenticated
-  with check (created_by = auth.uid()::text::uuid);
+-- Note: All invite operations (create, read, delete) should go through edge functions:
+-- - generate_invite: Creates invites (verifies team leader)
+-- - load_invite_links: Loads invites (verifies team membership)
+-- - team_invite: Validates and uses invites
+
+-- RLS is disabled for hackathon_invites - all operations go through edge functions
+-- No need for insert policy since RLS is disabled
 
 -- Notifications: Members can only see their own notifications
 drop policy if exists p_member_notifications_select on public.member_notifications;

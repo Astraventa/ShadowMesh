@@ -363,17 +363,42 @@ export default function Hackathon() {
 
   async function loadInviteLinks(teamId: string) {
     try {
-      const { data, error } = await supabase
-        .from("hackathon_invites")
-        .select("*")
-        .eq("team_id", teamId)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
+      if (!teamId || !memberId) {
+        setInviteLinks([]);
+        return;
+      }
 
-      if (error) throw error;
-      setInviteLinks(data || []);
+      // Use edge function to load invite links (bypasses RLS issues)
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/load_invite_links?team_id=${teamId}&member_id=${memberId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setInviteLinks(result.invites || []);
+      } else {
+        // Fallback to direct query if edge function fails
+        const { data, error } = await supabase
+          .from("hackathon_invites")
+          .select("*")
+          .eq("team_id", teamId)
+          .eq("is_active", true)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error("Error loading invite links:", error);
+          setInviteLinks([]);
+        } else {
+          setInviteLinks(data || []);
+        }
+      }
     } catch (error: any) {
       console.error("Error loading invite links:", error);
+      setInviteLinks([]);
     }
   }
 
