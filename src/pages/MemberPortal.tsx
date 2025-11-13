@@ -203,6 +203,45 @@ export default function MemberPortal() {
     }
   }, []);
 
+  // Realtime: if admin deletes this member, show dismissal popup and redirect
+  useEffect(() => {
+    if (!member?.id) return;
+    const channel = supabase
+      .channel(`member-delete-${member.id}`)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'members', filter: `id=eq.${member.id}` }, () => {
+        localStorage.removeItem("shadowmesh_authenticated");
+        localStorage.removeItem("shadowmesh_member_email");
+        alert("Your account has been dismissed by the admin. You will be redirected to the homepage.");
+        window.location.href = "/";
+      })
+      .subscribe();
+    return () => {
+      try { supabase.removeChannel(channel); } catch {}
+    };
+  }, [member?.id]);
+
+  // Realtime: notifications and team requests
+  useEffect(() => {
+    if (!member?.id) return;
+    const channel = supabase
+      .channel(`member-notifs-${member.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'member_notifications', filter: `member_id=eq.${member.id}` }, (payload) => {
+        try {
+          const inserted: any = payload.new;
+          setNotifications((prev) => [inserted, ...prev]);
+          setUnreadCount((c) => c + 1);
+        } catch {}
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'team_requests', filter: `to_member_id=eq.${member.id}` }, async () => {
+        // Reload to synthesize invite notification with team name via join
+        await loadNotifications(member.id);
+      })
+      .subscribe();
+    return () => {
+      try { supabase.removeChannel(channel); } catch {}
+    };
+  }, [member?.id]);
+
   async function loadMemberDataByEmail(email: string) {
     setLoading(true);
     try {
@@ -1461,45 +1500,6 @@ export default function MemberPortal() {
       </div>
     );
   }
-
-  // Realtime: if admin deletes this member, show dismissal popup and redirect
-  useEffect(() => {
-    if (!member?.id) return;
-    const channel = supabase
-      .channel(`member-delete-${member?.id}`)
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'members', filter: `id=eq.${member?.id}` }, () => {
-        localStorage.removeItem("shadowmesh_authenticated");
-        localStorage.removeItem("shadowmesh_member_email");
-        alert("Your account has been dismissed by the admin. You will be redirected to the homepage.");
-        window.location.href = "/";
-      })
-      .subscribe();
-    return () => {
-      try { supabase.removeChannel(channel); } catch {}
-    };
-  }, [member?.id]);
-
-  // Realtime: notifications and team requests
-  useEffect(() => {
-    if (!member?.id) return;
-    const channel = supabase
-      .channel(`member-notifs-${member.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'member_notifications', filter: `member_id=eq.${member.id}` }, (payload) => {
-        try {
-          const inserted: any = payload.new;
-          setNotifications((prev) => [inserted, ...prev]);
-          setUnreadCount((c) => c + 1);
-        } catch {}
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'team_requests', filter: `to_member_id=eq.${member.id}` }, async () => {
-        // Reload to synthesize invite notification with team name via join
-        await loadNotifications(member.id);
-      })
-      .subscribe();
-    return () => {
-      try { supabase.removeChannel(channel); } catch {}
-    };
-  }, [member?.id]);
 
   if (loading) {
     return (
