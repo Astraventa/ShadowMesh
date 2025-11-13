@@ -180,12 +180,51 @@ const JoinUs = () => {
     api_unverified: { message: "We couldn't verify this phone number right now. We'll trust it, but please confirm it's correct.", type: "warning" },
   };
 
+  async function checkEmailExists(email: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from("members")
+        .select("id")
+        .eq("email", email.trim().toLowerCase())
+        .maybeSingle();
+      
+      if (error) {
+        console.error("Error checking email existence:", error);
+        return false; // Don't block on error
+      }
+      return !!data;
+    } catch (err) {
+      console.error("Error checking email existence:", err);
+      return false;
+    }
+  }
+
+  async function checkPhoneExists(phone: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from("members")
+        .select("id")
+        .eq("phone", phone.trim())
+        .maybeSingle();
+      
+      if (error) {
+        console.error("Error checking phone existence:", error);
+        return false; // Don't block on error
+      }
+      return !!data;
+    } catch (err) {
+      console.error("Error checking phone existence:", err);
+      return false;
+    }
+  }
+
   async function validateEmailRemote(value: string, options: { silent?: boolean; skipFormatCheck?: boolean } = {}) {
     const { silent = false, skipFormatCheck = false } = options;
     const normalized = value.trim().toLowerCase();
     if (!normalized) {
       setEmailMessage("");
       setEmailMessageType(null);
+      setCheckingEmail(false);
       return false;
     }
     if (!basicEmailValid(normalized)) {
@@ -200,6 +239,7 @@ const JoinUs = () => {
         setEmailMessage("");
         setEmailMessageType(null);
       }
+      setCheckingEmail(false);
       return false;
     }
 
@@ -208,6 +248,19 @@ const JoinUs = () => {
     setEmailMessage("");
     setEmailMessageType(null);
     try {
+      // First check if email already exists
+      const exists = await checkEmailExists(normalized);
+      if (exists && requestId === emailValidationRequest.current) {
+        setEmailMessage("This email is already registered. Please use a different email or log in.");
+        setEmailMessageType("error");
+        setCheckingEmail(false);
+        if (!silent) {
+          toast({ title: "Email already taken", description: "This email is already registered.", variant: "destructive" });
+        }
+        return false;
+      }
+
+      // Then validate email format/quality
       const res = await fetch(`${SUPABASE_URL}/functions/v1/validate-email`, {
         method: "POST",
         headers: {
@@ -232,12 +285,14 @@ const JoinUs = () => {
             toast({ title: "Use a real email", description: meta.message, variant: "destructive" });
           }
         }
+        setCheckingEmail(false);
         return meta.type === "warning";
       }
       if (requestId === emailValidationRequest.current) {
         setEmailMessage("Looks good");
         setEmailMessageType("success");
       }
+      setCheckingEmail(false);
       return true;
     } catch (err: any) {
       console.error("Email validation error", err);
@@ -252,11 +307,8 @@ const JoinUs = () => {
         setEmailMessage("We couldn't verify the email right now. We'll trust it, but please confirm it's correct.");
         setEmailMessageType("warning");
       }
+      setCheckingEmail(false);
       return basicEmailValid(normalized);
-    } finally {
-      if (requestId === emailValidationRequest.current) {
-        setCheckingEmail(false);
-      }
     }
   }
 
@@ -266,24 +318,42 @@ const JoinUs = () => {
     if (!trimmed) {
       setPhoneMessage("");
       setPhoneMessageType(null);
+      setCheckingPhone(false);
       return true;
     }
     if (!skipFormatCheck && !/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
       const meta = phoneReasonMeta.format;
       setPhoneMessage(meta.message);
       setPhoneMessageType(meta.type);
+      setCheckingPhone(false);
       if (!silent) {
         toast({ title: "Phone invalid", description: meta.message, variant: "destructive" });
       }
       return false;
     }
     if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
+      setCheckingPhone(false);
       return false;
     }
 
     const requestId = ++phoneValidationRequest.current;
     setCheckingPhone(true);
+    setPhoneMessage("");
+    setPhoneMessageType(null);
     try {
+      // First check if phone already exists
+      const exists = await checkPhoneExists(trimmed);
+      if (exists && requestId === phoneValidationRequest.current) {
+        setPhoneMessage("This phone number is already registered. Please use a different number or log in.");
+        setPhoneMessageType("error");
+        setCheckingPhone(false);
+        if (!silent) {
+          toast({ title: "Phone number already taken", description: "This phone number is already registered.", variant: "destructive" });
+        }
+        return false;
+      }
+
+      // Then validate phone format/quality
       const res = await fetch(`${SUPABASE_URL}/functions/v1/validate-phone`, {
         method: "POST",
         headers: {
@@ -305,6 +375,7 @@ const JoinUs = () => {
             toast({ title: "Phone invalid", description: meta.message, variant: "destructive" });
           }
         }
+        setCheckingPhone(false);
         return false;
       }
 
@@ -320,6 +391,7 @@ const JoinUs = () => {
           setPhoneMessageType("success");
         }
       }
+      setCheckingPhone(false);
       return true;
     } catch (err: any) {
       console.error("Phone validation error", err);
@@ -333,11 +405,8 @@ const JoinUs = () => {
         setPhoneMessage("We couldn't verify the phone number right now. We'll trust it, but please confirm it's correct.");
         setPhoneMessageType("warning");
       }
+      setCheckingPhone(false);
       return true;
-    } finally {
-      if (requestId === phoneValidationRequest.current) {
-        setCheckingPhone(false);
-      }
     }
   }
 
@@ -351,13 +420,17 @@ const JoinUs = () => {
     if (!normalized) {
       setEmailMessage("");
       setEmailMessageType(null);
+      setCheckingEmail(false);
       return;
     }
     if (!basicEmailValid(normalized)) {
       setEmailMessage("");
       setEmailMessageType(null);
+      setCheckingEmail(false);
       return;
     }
+    // Show loading spinner instantly when user types valid email
+    setCheckingEmail(true);
     emailDebounceRef.current = window.setTimeout(() => {
       void validateEmailRemote(normalized, { silent: true, skipFormatCheck: true });
     }, 400);
@@ -376,11 +449,15 @@ const JoinUs = () => {
     if (!trimmed) {
       setPhoneMessage("");
       setPhoneMessageType(null);
+      setCheckingPhone(false);
       return;
     }
     if (!/^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
+      setCheckingPhone(false);
       return;
     }
+    // Show loading spinner instantly when user types valid phone
+    setCheckingPhone(true);
     phoneDebounceRef.current = window.setTimeout(() => {
       void validatePhoneRemote(trimmed, { silent: true, skipFormatCheck: true });
     }, 400);
@@ -599,7 +676,14 @@ const JoinUs = () => {
                     <div className="relative">
                       <Input
                         value={email}
-                        onChange={(e)=>setEmail(e.target.value)}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          // Show loading instantly on change
+                          const normalized = e.target.value.trim().toLowerCase();
+                          if (normalized && basicEmailValid(normalized)) {
+                            setCheckingEmail(true);
+                          }
+                        }}
                         onBlur={() => void validateEmailRemote(email, { silent: true })}
                         type="email"
                         placeholder="john@example.com"
@@ -641,7 +725,14 @@ const JoinUs = () => {
                     <div className="relative">
                       <Input
                         value={phone}
-                        onChange={(e) => handlePhoneInput(e.target.value)}
+                        onChange={(e) => {
+                          handlePhoneInput(e.target.value);
+                          // Show loading instantly on change
+                          const trimmed = e.target.value.trim();
+                          if (trimmed && /^\+[1-9][0-9]{6,14}$/.test(trimmed)) {
+                            setCheckingPhone(true);
+                          }
+                        }}
                         onBlur={() => void validatePhoneRemote(phone, { silent: true })}
                         placeholder="+923001234567"
                         className={`pr-9 bg-background/50 border-border focus:border-primary transition-colors ${
