@@ -412,29 +412,25 @@ export default function Hackathon() {
     }
 
     try {
-      // Generate secure token
-      const token = crypto.randomUUID() + "-" + Date.now().toString(36);
-      
-      // Set expiration to 7 days from now
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      const { data, error } = await supabase
-        .from("hackathon_invites")
-        .insert({
+      // Use edge function to generate invite (bypasses RLS)
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/generate_invite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
           hackathon_id: hackathonId,
           team_id: team.id,
           created_by: memberId,
-          invite_token: token,
-          expires_at: expiresAt.toISOString(),
-          max_uses: 3, // Allow 3 uses (for team capacity)
-          uses_count: 0,
-          is_active: true
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to generate invite link");
+      }
 
       toast({ title: "Invite link generated!", description: "Share this link with your teammates." });
       await loadInviteLinks(team.id);

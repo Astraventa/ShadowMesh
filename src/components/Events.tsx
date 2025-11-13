@@ -89,7 +89,7 @@ const Events = () => {
 
   // Filter events by category
   const visible = activeCategory === "all"
-    ? events
+      ? events
     : events.filter((e) => {
         const category = getEventCategory(e.event_type, e.tags);
         return category === activeCategory;
@@ -237,8 +237,8 @@ const Events = () => {
                     }
                   }}
                 >
-                  Register Now
-                  <ExternalLink className="w-4 h-4 ml-2" />
+                    Register Now
+                    <ExternalLink className="w-4 h-4 ml-2" />
                 </Button>
               </div>
             );
