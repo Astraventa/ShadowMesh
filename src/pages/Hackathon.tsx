@@ -288,24 +288,62 @@ export default function Hackathon() {
 
     void loadTeamChat(team.id);
 
-    const channel = supabase.channel(`team-chat-${team.id}`, {
-      config: {
-        broadcast: { self: false },
-      },
-    });
+    // Use postgres_changes for reliable real-time updates (like WhatsApp)
+    const channel = supabase
+      .channel(`team-chat-${team.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "team_messages",
+          filter: `team_id=eq.${team.id}`,
+        },
+        async (payload) => {
+          const newMessage = payload.new as any;
+          // Fetch sender info for the new message
+          try {
+            const { data: senderData } = await supabase
+              .from("members")
+              .select("full_name, email")
+              .eq("id", newMessage.sender_member_id)
+              .single();
 
-    channel.on("broadcast", { event: "new-message" }, (payload) => {
-      const message = payload.payload as TeamMessage;
-      // Only append if not already in messages (avoid duplicates)
-      setChatMessages((prev) => {
-        const exists = prev.some((m) => m.id === message.id);
-        if (exists) return prev;
-        return [...prev, message].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      });
-      scrollChatToBottom();
-    });
+            const formattedMessage: TeamMessage = {
+              id: newMessage.id,
+              created_at: newMessage.created_at,
+              team_id: newMessage.team_id,
+              hackathon_id: newMessage.hackathon_id,
+              sender_member_id: newMessage.sender_member_id,
+              message: newMessage.message,
+              sender_name: senderData?.full_name || "Unknown",
+              sender_email: senderData?.email || "",
+            };
 
-    channel.subscribe();
+            // Replace optimistic message or append new one
+            setChatMessages((prev) => {
+              // Remove any optimistic messages (temp IDs) from the same sender
+              const filtered = prev.filter(
+                (m) => !(m.id.startsWith("temp-") && m.sender_member_id === formattedMessage.sender_member_id)
+              );
+              
+              // Check if message already exists
+              const exists = filtered.some((m) => m.id === formattedMessage.id);
+              if (exists) return filtered;
+              
+              // Add the real message
+              const updated = [...filtered, formattedMessage].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              );
+              return updated;
+            });
+            scrollChatToBottom();
+          } catch (error) {
+            console.error("Error processing realtime message:", error);
+          }
+        }
+      )
+      .subscribe();
 
     chatChannelRef.current = channel;
 
@@ -775,7 +813,7 @@ export default function Hackathon() {
         }),
       });
 
-      // Check response status first
+      // Check response status
       if (!response.ok) {
         // Remove optimistic message on error
         setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -798,55 +836,12 @@ export default function Hackathon() {
         throw new Error(errorMessage);
       }
 
-      // Parse successful response
-      let result;
-      let responseText = "";
-      try {
-        responseText = await response.text();
-        if (!responseText || responseText.trim() === "") {
-          // If we get 200 OK but empty response, assume message was saved
-          // Keep the optimistic message and reload chat to get the real message
-          console.warn("Empty response but 200 OK - assuming message was saved, reloading chat...");
-          setTimeout(() => {
-            if (team) void loadTeamChat(team.id);
-          }, 500);
-          return; // Exit early, keep optimistic message
-        }
-        
-        result = JSON.parse(responseText);
-      } catch (parseError: any) {
-        console.error("Failed to parse response:", parseError, "Response text:", responseText);
-        // If we got 200 OK but can't parse, assume message was saved
-        // Keep optimistic message and reload chat
-        console.warn("Parse error but 200 OK - assuming message was saved, reloading chat...");
-        setTimeout(() => {
-          if (team) void loadTeamChat(team.id);
-        }, 500);
-        return; // Exit early, keep optimistic message
-      }
-
-      if (!result || !result.message || !result.message.id) {
-        // If response is invalid but we got 200 OK, assume message was saved
-        console.warn("Invalid response structure but 200 OK - assuming message was saved, reloading chat...");
-        setTimeout(() => {
-          if (team) void loadTeamChat(team.id);
-        }, 500);
-        return; // Exit early, keep optimistic message
-      }
-
-      // Replace optimistic message with real one
-      setChatMessages((prev) => {
-        const filtered = prev.filter((m) => m.id !== tempId);
-        return [...filtered, result.message].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      });
-
-      // Broadcast to other team members via realtime
-      chatChannelRef.current?.send({
-        type: "broadcast",
-        event: "new-message",
-        payload: result.message,
-      });
-      scrollChatToBottom();
+      // If we get 200 OK, message was saved successfully
+      // Realtime (postgres_changes) will deliver it to all users instantly (like WhatsApp)
+      // We don't need to parse the response - realtime handles delivery
+      // Keep optimistic message - realtime will replace it with real one when it arrives
+      // No error shown to user - seamless experience
+      return;
     } catch (error: any) {
       console.error("Error sending chat message:", error);
       toast({ title: "Failed to send message", description: error.message || "Please try again.", variant: "destructive" });
