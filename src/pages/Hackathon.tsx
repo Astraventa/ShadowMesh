@@ -813,38 +813,57 @@ export default function Hackathon() {
         }),
       });
 
-      // Check response status
-      if (!response.ok) {
-        // Remove optimistic message on error
-        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
-        setChatInput(message); // Restore message
-        
-        let errorMessage = "Failed to send message";
-        try {
-          const responseText = await response.text();
-          if (responseText) {
-            try {
-              const errorJson = JSON.parse(responseText);
-              errorMessage = errorJson.error || errorJson.message || errorMessage;
-            } catch {
-              errorMessage = responseText || errorMessage;
-            }
-          }
-        } catch (e) {
-          console.error("Error reading error response:", e);
-        }
-        throw new Error(errorMessage);
+      // If response is OK, message was saved - realtime will deliver it instantly
+      // No need to parse response or show errors - just return
+      if (response.ok) {
+        // Message saved successfully - realtime handles delivery to all users
+        // Keep optimistic message, realtime will replace it with real one
+        // Input is already cleared, no error shown
+        return;
       }
 
-      // If we get 200 OK, message was saved successfully
-      // Realtime (postgres_changes) will deliver it to all users instantly (like WhatsApp)
-      // We don't need to parse the response - realtime handles delivery
-      // Keep optimistic message - realtime will replace it with real one when it arrives
-      // No error shown to user - seamless experience
-      return;
+      // Response is not OK - message failed to send
+      // Remove optimistic message and restore input
+      setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setChatInput(message);
+      
+      // Try to get error message (but don't fail if we can't parse)
+      let errorMessage = "Failed to send message";
+      try {
+        const responseText = await response.text();
+        if (responseText) {
+          try {
+            const errorJson = JSON.parse(responseText);
+            errorMessage = errorJson.error || errorJson.message || errorMessage;
+          } catch {
+            // Can't parse JSON, use raw text or default
+            errorMessage = responseText.slice(0, 100) || errorMessage;
+          }
+        }
+      } catch (e) {
+        // Ignore errors reading response
+      }
+      
+      toast({ title: "Failed to send message", description: errorMessage, variant: "destructive" });
     } catch (error: any) {
-      console.error("Error sending chat message:", error);
-      toast({ title: "Failed to send message", description: error.message || "Please try again.", variant: "destructive" });
+      // Network error or other exception
+      // Check if realtime already delivered the message (it might have been sent)
+      setTimeout(() => {
+        setChatMessages((currentMessages) => {
+          const messageExists = currentMessages.some(
+            (m) => !m.id.startsWith("temp-") && m.message === message && m.sender_member_id === memberId
+          );
+          
+          if (!messageExists) {
+            // Message definitely wasn't sent - show error and restore input
+            setChatInput(message);
+            setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+            toast({ title: "Failed to send message", description: error.message || "Network error. Please try again.", variant: "destructive" });
+          }
+          // If message exists, it was sent via realtime - don't show error, input already cleared
+          return currentMessages;
+        });
+      }, 1500); // Wait 1.5 seconds for realtime to deliver
     } finally {
       setSendingChat(false);
     }
