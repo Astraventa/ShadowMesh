@@ -1365,6 +1365,64 @@ export default function MemberPortal() {
     }
   }
 
+  async function handle2FALogin() {
+    if (!twoFactorCode.trim() || twoFactorCode.length !== 6) {
+      toast({ title: "Code required", description: "Please enter the 6-digit code from your authenticator app." });
+      return;
+    }
+
+    if (!pendingMemberData) {
+      toast({ title: "Session expired", description: "Please log in again.", variant: "destructive" });
+      setNeeds2FA(false);
+      setTwoFactorCode("");
+      setPendingMemberData(null);
+      return;
+    }
+
+    try {
+      setTwoFactorVerifying(true);
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/two_factor_auth`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "verify",
+          memberId: pendingMemberData.id,
+          otp: twoFactorCode.trim(),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Invalid 2FA code");
+      }
+
+      // 2FA verified - complete login
+      setMember(pendingMemberData);
+      localStorage.setItem("shadowmesh_member_email", pendingMemberData.email);
+      localStorage.setItem("shadowmesh_authenticated", "true");
+      setShowLogin(false);
+      setNeeds2FA(false);
+      setTwoFactorCode("");
+      setPendingMemberData(null);
+      setLoginPassword("");
+      setLoginEmail("");
+      setFailedAttempts(0);
+      setIsLocked(false);
+      setLockUntil(null);
+      setShowForgotPassword(false);
+      
+      // Load member data
+      await loadMemberDataByEmail(pendingMemberData.email);
+    } catch (e: any) {
+      toast({ title: "Verification failed", description: e.message || "Invalid code. Please try again.", variant: "destructive" });
+    } finally {
+      setTwoFactorVerifying(false);
+    }
+  }
+
   async function handleForgotPassword() {
     if (!resetEmail.trim()) {
       toast({ title: "Email required", description: "Please enter your registered email address." });
