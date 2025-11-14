@@ -156,6 +156,10 @@ export default function Hackathon() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
+  const [teamNameError, setTeamNameError] = useState<string | null>(null);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [selectedInvite, setSelectedInvite] = useState<any | null>(null);
+  const [respondingInvite, setRespondingInvite] = useState(false);
 
   const chatChannelRef = useRef<RealtimeChannel | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -310,6 +314,78 @@ export default function Hackathon() {
     scrollChatToBottom();
   }, [chatMessages, team]);
 
+  async function loadPendingTeamRequests(currentMemberId: string) {
+    try {
+      const { data: teamReqs } = await supabase
+        .from("team_requests")
+        .select("id, created_at, team_id, status, message")
+        .eq("to_member_id", currentMemberId)
+        .eq("status", "pending");
+
+      if (!teamReqs || teamReqs.length === 0) {
+        return [];
+      }
+
+      const teamIds = Array.from(new Set(teamReqs.map((r: any) => r.team_id).filter(Boolean)));
+      const { data: teams } = teamIds.length
+        ? await supabase
+            .from("hackathon_teams")
+            .select("id, team_name, hackathon_id, team_leader_id, max_members")
+            .in("id", teamIds)
+        : { data: [] as any[] };
+
+      const teamMap = new Map<string, any>();
+      const leaderIds = new Set<string>();
+      const hackathonIds = new Set<string>();
+      (teams || []).forEach((teamRow: any) => {
+        teamMap.set(teamRow.id, teamRow);
+        if (teamRow.team_leader_id) leaderIds.add(teamRow.team_leader_id);
+        if (teamRow.hackathon_id) hackathonIds.add(teamRow.hackathon_id);
+      });
+
+      const { data: leaders } = leaderIds.size
+        ? await supabase
+            .from("members")
+            .select("id, full_name, email, area_of_interest")
+            .in("id", Array.from(leaderIds))
+        : { data: [] as any[] };
+      const leaderMap = new Map<string, any>();
+      (leaders || []).forEach((leader: any) => leaderMap.set(leader.id, leader));
+
+      const { data: hackathons } = hackathonIds.size
+        ? await supabase
+            .from("events")
+            .select("id, title")
+            .in("id", Array.from(hackathonIds))
+        : { data: [] as any[] };
+      const hackathonMap = new Map<string, any>();
+      (hackathons || []).forEach((eventRow: any) => hackathonMap.set(eventRow.id, eventRow));
+
+      return teamReqs.map((request: any) => {
+        const teamRow = teamMap.get(request.team_id);
+        const leaderRow = teamRow ? leaderMap.get(teamRow.team_leader_id) : null;
+        const hackathonRow = teamRow ? hackathonMap.get(teamRow.hackathon_id) : null;
+        return {
+          id: request.id,
+          created_at: request.created_at,
+          team_id: request.team_id,
+          message: request.message,
+          team_name: teamRow?.team_name || "Team",
+          hackathon_id: teamRow?.hackathon_id || null,
+          hackathon_title: hackathonRow?.title || "",
+          leader_id: teamRow?.team_leader_id,
+          leader_name: leaderRow?.full_name || "Team Leader",
+          leader_email: leaderRow?.email || "",
+          leader_interest: leaderRow?.area_of_interest || "",
+          max_members: teamRow?.max_members || 4,
+        };
+      });
+    } catch (error) {
+      console.error("Failed to load pending team requests:", error);
+      return [];
+    }
+  }
+
   async function loadNotifications(currentMemberId: string) {
     try {
       // member_notifications table (admin-triggered updates)
@@ -323,18 +399,16 @@ export default function Hackathon() {
         console.error("Notifications load error:", error);
       }
       // pending team requests to this member
-      const { data: teamReqs } = await supabase
-        .from("team_requests")
-        .select("id, created_at, status, hackathon_teams(team_name)")
-        .eq("to_member_id", currentMemberId)
-        .eq("status", "pending");
-      const synthetic = (teamReqs || []).map((r: any) => ({
-        id: `teamreq_${r.id}`,
+      const pendingInvites = await loadPendingTeamRequests(currentMemberId);
+      const synthetic = pendingInvites.map((invite: any) => ({
+        id: `teamreq_${invite.id}`,
         notification_type: "team_invite",
         title: "Team Invitation",
-        body: `You have been invited to join ${r.hackathon_teams?.team_name || "a team"}.`,
-        created_at: r.created_at,
+        body: `You have been invited to join ${invite.team_name}.`,
+        created_at: invite.created_at,
         is_read: false,
+        source: "team_request",
+        invite,
       }));
       const all = [...(notifRows || []), ...synthetic].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setNotifications(all);
@@ -352,6 +426,85 @@ export default function Hackathon() {
       setUnreadCount(0);
     } catch {
       // non-fatal
+    }
+  }
+
+  function handleNotificationClick(notification: any) {
+    if (notification?.source === "team_request" && notification.invite) {
+      setSelectedInvite(notification.invite);
+      setInviteDialogOpen(true);
+      return;
+    }
+    if (notification?.action_url) {
+      navigate(notification.action_url);
+    } else if (notification?.related_type === "team" && notification.related_id && hackathonId) {
+      navigate(`/hackathons/${hackathonId}?tab=teams`);
+    }
+  }
+
+  async function respondToInvite(decision: "accepted" | "rejected") {
+    if (!selectedInvite || !memberId) return;
+    if (decision === "accepted" && hasTeam) {
+      toast({ title: "Already in a team", description: "Leave your current team before accepting another invite.", variant: "destructive" });
+      return;
+    }
+
+    setRespondingInvite(true);
+    try {
+      const nowIso = new Date().toISOString();
+      if (decision === "accepted") {
+        const { data: teamRow, error: teamError } = await supabase
+          .from("hackathon_teams")
+          .select("id, max_members")
+          .eq("id", selectedInvite.team_id)
+          .single();
+        if (teamError || !teamRow) throw new Error("Team not found or already deleted.");
+
+        const { data: members } = await supabase
+          .from("team_members")
+          .select("member_id")
+          .eq("team_id", selectedInvite.team_id);
+
+        if (members && members.length >= (teamRow.max_members || 4)) {
+          throw new Error("This team is already full.");
+        }
+
+        await supabase
+          .from("team_members")
+          .insert({
+            team_id: selectedInvite.team_id,
+            member_id: memberId,
+            role: "member",
+          });
+
+        await supabase
+          .from("team_requests")
+          .update({ status: "accepted", responded_at: nowIso })
+          .eq("id", selectedInvite.id);
+
+        toast({ title: "Invite accepted", description: `You're now part of ${selectedInvite.team_name}.` });
+        setInviteDialogOpen(false);
+        setSelectedInvite(null);
+        await loadNotifications(memberId);
+        if (hackathonId) {
+          await loadMemberTeam(hackathonId, memberId);
+        }
+      } else {
+        await supabase
+          .from("team_requests")
+          .update({ status: "rejected", responded_at: nowIso })
+          .eq("id", selectedInvite.id);
+        toast({ title: "Invite declined", description: "The team has been notified." });
+        setInviteDialogOpen(false);
+        setSelectedInvite(null);
+        if (memberId) {
+          await loadNotifications(memberId);
+        }
+      }
+    } catch (error: any) {
+      toast({ title: "Unable to process invite", description: error.message, variant: "destructive" });
+    } finally {
+      setRespondingInvite(false);
     }
   }
 
@@ -800,7 +953,10 @@ export default function Hackathon() {
   }
 
   async function createTeam() {
-    if (!memberId || !hackathonId || !teamName.trim()) {
+    if (!memberId || !hackathonId) return;
+    const trimmedName = teamName.trim();
+    if (!trimmedName) {
+      setTeamNameError("Team name is required.");
       toast({ title: "Team name required", description: "Please enter a team name." });
       return;
     }
@@ -819,12 +975,26 @@ export default function Hackathon() {
       }
 
       setCreatingTeam(true);
+      setTeamNameError(null);
+
+      const { data: existingNames } = await supabase
+        .from("hackathon_teams")
+        .select("id")
+        .eq("hackathon_id", hackathonId)
+        .ilike("team_name", trimmedName)
+        .limit(1);
+
+      if (existingNames && existingNames.length > 0) {
+        setTeamNameError("That team name is already taken for this hackathon.");
+        toast({ title: "Name unavailable", description: "Choose another team name.", variant: "destructive" });
+        return;
+      }
 
       const { data: teamData, error } = await supabase
         .from("hackathon_teams")
         .insert({
           hackathon_id: hackathonId,
-          team_name: teamName.trim(),
+          team_name: trimmedName,
           team_leader_id: memberId,
           status: "forming",
           max_members: 4
@@ -834,7 +1004,6 @@ export default function Hackathon() {
 
       if (error) throw error;
 
-      // Add leader to team_members
       await supabase
         .from("team_members")
         .insert({
@@ -843,7 +1012,6 @@ export default function Hackathon() {
           role: "leader"
         });
 
-      // Load the brand new team and switch UI without reload
       const { data: createdTeam } = await supabase
         .from("hackathon_teams")
         .select(`
@@ -874,8 +1042,14 @@ export default function Hackathon() {
       toast({ title: "Team created!", description: "You are the team leader. Generate an invite link to add members." });
       setShowCreateTeam(false);
       setTeamName("");
+      setTeamNameError(null);
     } catch (e: any) {
-      toast({ title: "Failed to create team", description: e.message });
+      if (String(e?.message || "").includes("duplicate key")) {
+        setTeamNameError("That team name is already taken.");
+        toast({ title: "Name unavailable", description: "Pick another name.", variant: "destructive" });
+      } else {
+        toast({ title: "Failed to create team", description: e.message });
+      }
     } finally {
       setCreatingTeam(false);
     }
@@ -1016,12 +1190,19 @@ export default function Hackathon() {
                     <div className="p-3 text-sm text-muted-foreground">No notifications yet</div>
                   ) : (
                     notifications.map((n) => (
-                      <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1">
+                      <DropdownMenuItem
+                        key={n.id}
+                        className="flex flex-col items-start gap-1 cursor-pointer"
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          handleNotificationClick(n);
+                        }}
+                      >
                         <div className="flex items-center gap-2">
                           <span className={`w-2 h-2 rounded-full ${n.is_read ? "bg-muted" : "bg-primary"}`}></span>
                           <span className="font-medium">{n.title || (n.notification_type === "team_invite" ? "Team Invitation" : "Update")}</span>
                         </div>
-                        <div className="text-xs text-muted-foreground">{n.body || ""}</div>
+                        <div className="text-xs text-muted-foreground">{n.body || n.message || ""}</div>
                         <div className="text-[10px] text-muted-foreground">{new Date(n.created_at).toLocaleString()}</div>
                       </DropdownMenuItem>
                     ))
@@ -1917,9 +2098,15 @@ export default function Hackathon() {
               <label className="text-sm font-medium mb-2 block">Team Name</label>
               <Input
                 value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
+                onChange={(e) => {
+                  setTeamName(e.target.value);
+                  if (teamNameError) setTeamNameError(null);
+                }}
                 placeholder="Enter team name"
               />
+              {teamNameError && (
+                <p className="text-xs text-destructive mt-1">{teamNameError}</p>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -1935,6 +2122,79 @@ export default function Hackathon() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Team Invite Dialog */}
+      <Dialog
+        open={inviteDialogOpen}
+        onOpenChange={(open) => {
+          setInviteDialogOpen(open);
+          if (!open) {
+            setSelectedInvite(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          {selectedInvite ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Join {selectedInvite.team_name}</DialogTitle>
+                <DialogDescription>
+                  {selectedInvite.hackathon_title || "Hackathon team invitation"}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="rounded-lg border p-3 bg-muted/30">
+                  <p className="text-sm text-muted-foreground mb-1">Leader</p>
+                  <p className="font-semibold">{selectedInvite.leader_name}</p>
+                  <p className="text-xs text-muted-foreground">{selectedInvite.leader_email}</p>
+                  {selectedInvite.leader_interest && (
+                    <Badge variant="outline" className="mt-2">
+                      {selectedInvite.leader_interest}
+                    </Badge>
+                  )}
+                </div>
+                {selectedInvite.message && (
+                  <div className="rounded-lg border p-3 bg-muted/10">
+                    <p className="text-sm text-muted-foreground mb-1">Message</p>
+                    <p className="text-sm">{selectedInvite.message}</p>
+                  </div>
+                )}
+                <div className="text-xs text-muted-foreground">
+                  Sent {new Date(selectedInvite.created_at).toLocaleString()}
+                </div>
+              </div>
+              <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:justify-between">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={respondingInvite}
+                  onClick={() => void respondToInvite("rejected")}
+                >
+                  {respondingInvite ? "Please wait..." : "Decline"}
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={respondingInvite}
+                  onClick={() => void respondToInvite("accepted")}
+                >
+                  {respondingInvite ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Joining...
+                    </>
+                  ) : (
+                    "Accept Invite"
+                  )}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <div className="py-10 text-center text-muted-foreground text-sm">
+              Select an invite to view details.
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -302,6 +302,7 @@ create index if not exists idx_hackathon_registrations_hackathon_id on public.ha
 create index if not exists idx_hackathon_registrations_status on public.hackathon_registrations (status);
 create index if not exists idx_hackathon_teams_hackathon_id on public.hackathon_teams (hackathon_id);
 create index if not exists idx_hackathon_teams_leader_id on public.hackathon_teams (team_leader_id);
+create unique index if not exists idx_hackathon_teams_name_unique on public.hackathon_teams (hackathon_id, lower(team_name));
 create index if not exists idx_team_members_team_id on public.team_members (team_id);
 create index if not exists idx_team_members_member_id on public.team_members (member_id);
 create index if not exists idx_team_requests_to_member_id on public.team_requests (to_member_id);

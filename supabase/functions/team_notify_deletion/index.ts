@@ -101,6 +101,20 @@ serve(async (req) => {
     recipients.add(team.team_leader_id);
     recipients.delete(actor_id);
 
+    const pendingInvitesRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/team_requests?team_id=eq.${team_id}&status=eq.pending&select=to_member_id`,
+      { headers },
+    );
+
+    if (pendingInvitesRes.ok) {
+      const pendingRows = await pendingInvitesRes.json();
+      (pendingRows || []).forEach((row: any) => {
+        if (row.to_member_id) {
+          recipients.add(row.to_member_id);
+        }
+      });
+    }
+
     if (recipients.size === 0) {
       return new Response(
         JSON.stringify({ success: true, message: "No recipients" }),
