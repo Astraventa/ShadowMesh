@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import MemberLoginDialog from "@/components/MemberLoginDialog";
 
 const Navigation = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
+  const [isMember, setIsMember] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -12,6 +15,13 @@ const Navigation = () => {
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    // Check if user is authenticated
+    const authenticated = localStorage.getItem("shadowmesh_authenticated");
+    const memberEmail = localStorage.getItem("shadowmesh_member_email");
+    setIsMember(authenticated === "true" && !!memberEmail);
   }, []);
 
   const navLinks = [
@@ -64,6 +74,25 @@ const Navigation = () => {
                 <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-primary/80 shadow-[0_0_10px_hsl(var(--primary))] transition-all duration-300 group-hover:w-full"></span>
               </a>
             ))}
+            {isMember ? (
+              <a
+                href="/member-portal"
+                className="ml-4 px-5 py-2.5 text-[15px] tracking-wide font-semibold bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-all duration-300 flex items-center gap-2"
+              >
+                <LogIn className="w-4 h-4" />
+                Portal
+              </a>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLoginDialog(true)}
+                className="ml-4 border-primary/50 text-primary hover:bg-primary/10 hover:border-primary transition-all duration-300 flex items-center gap-2"
+              >
+                <LogIn className="w-4 h-4" />
+                Member Login
+              </Button>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -90,9 +119,37 @@ const Navigation = () => {
                 {link.name}
               </a>
             ))}
+            <div className="pt-2 border-t border-border/50 mt-2">
+              {isMember ? (
+                <a
+                  href="/member-portal"
+                  className="block px-4 py-2 text-sm font-medium text-primary bg-primary/10 rounded-md transition-all duration-300 flex items-center gap-2"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  <LogIn className="w-4 h-4" />
+                  Member Portal
+                </a>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowLoginDialog(true);
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="w-full border-primary/50 text-primary hover:bg-primary/10 hover:border-primary transition-all duration-300 flex items-center gap-2"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Member Login
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      {/* Member Login Dialog */}
+      <MemberLoginDialog open={showLoginDialog} onOpenChange={setShowLoginDialog} />
     </nav>
   );
 };
