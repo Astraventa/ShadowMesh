@@ -832,12 +832,22 @@ create table if not exists public.hackathon_invites (
   is_active         boolean default true
 );
 
+-- Team chat messages (deleted automatically when a team is deleted)
+create table if not exists public.team_messages (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  team_id           uuid references public.hackathon_teams(id) on delete cascade,
+  hackathon_id      uuid references public.events(id) on delete cascade,
+  sender_member_id  uuid references public.members(id) on delete cascade,
+  message           text not null check (char_length(message) <= 2000)
+);
+
 -- Member notifications (in-app notifications)
 create table if not exists public.member_notifications (
   id                uuid primary key default gen_random_uuid(),
   created_at        timestamptz not null default now(),
   member_id         uuid references public.members(id) on delete cascade,
-  notification_type text not null check (notification_type in ('team_invite', 'team_joined', 'team_request', 'hackathon_approved', 'hackathon_started', 'submission_reminder', 'results_published', 'general')),
+  notification_type text not null check (notification_type in ('team_invite', 'team_joined', 'team_request', 'hackathon_approved', 'hackathon_started', 'submission_reminder', 'results_published', 'general', 'team_chat', 'team_deleted')),
   title             text not null,
   message           text not null,
   related_id        uuid, -- ID of related team/event/submission/etc
@@ -873,6 +883,9 @@ create index if not exists idx_hackathon_results_rank on public.hackathon_result
 create index if not exists idx_hackathon_invites_token on public.hackathon_invites (invite_token);
 create index if not exists idx_hackathon_invites_team_id on public.hackathon_invites (team_id);
 create index if not exists idx_hackathon_invites_expires_at on public.hackathon_invites (expires_at);
+create index if not exists idx_team_messages_team_id on public.team_messages (team_id);
+create index if not exists idx_team_messages_created_at on public.team_messages (created_at desc);
+create index if not exists idx_team_messages_sender on public.team_messages (sender_member_id);
 
 create index if not exists idx_member_notifications_member_id on public.member_notifications (member_id);
 create index if not exists idx_member_notifications_is_read on public.member_notifications (is_read);
@@ -885,6 +898,7 @@ create index if not exists idx_hackathon_resources_display_order on public.hacka
 alter table public.hackathon_submissions enable row level security;
 alter table public.hackathon_results enable row level security;
 alter table public.hackathon_invites enable row level security;
+alter table public.team_messages disable row level security;
 alter table public.member_notifications enable row level security;
 alter table public.hackathon_resources enable row level security;
 

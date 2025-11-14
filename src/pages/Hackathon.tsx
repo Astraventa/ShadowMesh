@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
+import { RealtimeChannel } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,8 @@ import { formatDate } from "@/lib/utils";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabaseClient";
+
+const CHAT_HISTORY_LIMIT = 150;
 
 interface Hackathon {
   id: string;
@@ -107,6 +110,17 @@ interface SinglePlayer {
   area_of_interest?: string;
 }
 
+interface TeamMessage {
+  id: string;
+  created_at: string;
+  team_id: string;
+  hackathon_id: string;
+  sender_member_id: string;
+  sender_name: string;
+  sender_email: string;
+  message: string;
+}
+
 export default function Hackathon() {
   const { hackathonId } = useParams<{ hackathonId: string }>();
   const navigate = useNavigate();
@@ -138,6 +152,13 @@ export default function Hackathon() {
   const [generatingInvite, setGeneratingInvite] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [chatMessages, setChatMessages] = useState<TeamMessage[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [sendingChat, setSendingChat] = useState(false);
+
+  const chatChannelRef = useRef<RealtimeChannel | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function loadHackathonData() {
@@ -250,6 +271,44 @@ export default function Hackathon() {
 
     loadHackathonData();
   }, [hackathonId, navigate, toast]);
+
+  useEffect(() => {
+    if (!team || !memberId) {
+      chatChannelRef.current?.unsubscribe();
+      chatChannelRef.current = null;
+      setChatMessages([]);
+      setChatInput("");
+      return;
+    }
+
+    void loadTeamChat(team.id);
+
+    const channel = supabase.channel(`team-chat-${team.id}`, {
+      config: {
+        broadcast: { self: false },
+      },
+    });
+
+    channel.on("broadcast", { event: "new-message" }, (payload) => {
+      const message = payload.payload as TeamMessage;
+      appendChatMessage(message);
+      scrollChatToBottom();
+    });
+
+    channel.subscribe();
+
+    chatChannelRef.current = channel;
+
+    return () => {
+      channel.unsubscribe();
+      chatChannelRef.current = null;
+    };
+  }, [team?.id, memberId]);
+
+  useEffect(() => {
+    if (!team) return;
+    scrollChatToBottom();
+  }, [chatMessages, team]);
 
   async function loadNotifications(currentMemberId: string) {
     try {
@@ -402,6 +461,119 @@ export default function Hackathon() {
     }
   }
 
+  function appendChatMessage(message: TeamMessage) {
+    setChatMessages((prev) => {
+      if (prev.some((m) => m.id === message.id)) {
+        return prev;
+      }
+      const next = [...prev, message].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      if (next.length > CHAT_HISTORY_LIMIT) {
+        return next.slice(next.length - CHAT_HISTORY_LIMIT);
+      }
+      return next;
+    });
+  }
+
+  function scrollChatToBottom() {
+    requestAnimationFrame(() => {
+      if (chatScrollRef.current) {
+        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+    });
+  }
+
+  async function loadTeamChat(teamId: string) {
+    if (!memberId) return;
+    setChatLoading(true);
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/functions/v1/team_chat_messages?team_id=${teamId}&member_id=${memberId}&limit=${CHAT_HISTORY_LIMIT}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to load messages");
+      }
+      setChatMessages(result.messages || []);
+    } catch (error: any) {
+      console.error("Error loading chat messages:", error);
+      toast({ title: "Unable to load chat", description: error.message, variant: "destructive" });
+    } finally {
+      setChatLoading(false);
+      scrollChatToBottom();
+    }
+  }
+
+  async function handleSendChatMessage() {
+    if (!team || !memberId) return;
+    const message = chatInput.trim();
+    if (!message || sendingChat) return;
+
+    setSendingChat(true);
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/team_chat_send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          team_id: team.id,
+          member_id: memberId,
+          message,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to send message");
+      }
+
+      setChatInput("");
+      appendChatMessage(result.message);
+      chatChannelRef.current?.send({
+        type: "broadcast",
+        event: "new-message",
+        payload: result.message,
+      });
+      scrollChatToBottom();
+    } catch (error: any) {
+      console.error("Error sending chat message:", error);
+      toast({ title: "Failed to send message", description: error.message, variant: "destructive" });
+    } finally {
+      setSendingChat(false);
+    }
+  }
+
+  function handleChatInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleSendChatMessage();
+    }
+  }
+
+  async function notifyTeamDeletion(teamId: string, leaderId: string) {
+    try {
+      await fetch(`${SUPABASE_URL}/functions/v1/team_notify_deletion`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ team_id: teamId, actor_id: leaderId }),
+      });
+    } catch (error) {
+      console.error("Failed to notify team deletion:", error);
+    }
+  }
+
   async function deleteTeam() {
     if (!team || !memberId) return;
     if (team.team_leader_id !== memberId) {
@@ -410,6 +582,7 @@ export default function Hackathon() {
     }
     try {
       setDeletingTeam(true);
+      await notifyTeamDeletion(team.id, memberId);
       // Delete the team - cascade will remove team_members, invites, etc. per schema
       const { error } = await supabase
         .from("hackathon_teams")
@@ -420,6 +593,8 @@ export default function Hackathon() {
       toast({ title: "Team deleted", description: "Your team and related memberships were removed." });
       setTeam(null);
       setInviteLinks([]);
+      setChatMessages([]);
+      setChatInput("");
       // Refresh lists so the UI reflects changes
       if (hackathonId && memberId) {
         await loadTeamsAndPlayers(hackathonId, memberId);
@@ -451,6 +626,8 @@ export default function Hackathon() {
       toast({ title: "Left team", description: "You have successfully left the team." });
       setTeam(null);
       setInviteLinks([]);
+      setChatMessages([]);
+      setChatInput("");
       // Refresh lists
       if (hackathonId && memberId) {
         await loadTeamsAndPlayers(hackathonId, memberId);
@@ -1143,7 +1320,7 @@ export default function Hackathon() {
                                     }}
                                     title="Remove member"
                                   >
-                                    <X className="w-4 h-4" />
+                                    <Trash2 className="w-4 h-4" />
                                   </Button>
                                 )}
                                 {team.team_leader_id !== memberId && member.member_id === memberId && (
@@ -1609,6 +1786,81 @@ export default function Hackathon() {
                       )}
                     </div>
                   )}
+
+                      {/* Team Chat */}
+                      <div className="space-y-3 pt-4 border-t">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-semibold text-lg">Team Chat</h3>
+                            <p className="text-xs text-muted-foreground">Only teammates can view these messages.</p>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            History clears if the team is deleted
+                          </Badge>
+                        </div>
+                        <div className="bg-muted/20 rounded-lg border flex flex-col h-80">
+                          <div className="flex-1 overflow-y-auto p-3 space-y-3" ref={chatScrollRef}>
+                            {chatLoading ? (
+                              <div className="space-y-2">
+                                <div className="h-4 bg-muted rounded animate-pulse" />
+                                <div className="h-4 bg-muted rounded animate-pulse w-2/3" />
+                                <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
+                              </div>
+                            ) : chatMessages.length === 0 ? (
+                              <div className="text-center text-xs text-muted-foreground py-8">
+                                <p>No messages yet. Be the first to say hi!</p>
+                              </div>
+                            ) : (
+                              chatMessages.map((msg) => {
+                                const isSelf = memberId === msg.sender_member_id;
+                                return (
+                                  <div key={msg.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
+                                    <div
+                                      className={`max-w-[80%] rounded-lg p-3 text-sm shadow-sm ${
+                                        isSelf ? "bg-primary text-primary-foreground" : "bg-background border"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-3 text-[11px] opacity-80 mb-1">
+                                        <span className="truncate">{isSelf ? "You" : msg.sender_name}</span>
+                                        <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                                      </div>
+                                      <p className="whitespace-pre-wrap break-words text-xs sm:text-sm">{msg.message}</p>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                          <div className="border-t p-3 flex gap-2">
+                            <Textarea
+                              value={chatInput}
+                              onChange={(e) => setChatInput(e.target.value)}
+                              onKeyDown={handleChatInputKeyDown}
+                              placeholder="Message your team..."
+                              className="resize-none"
+                              disabled={!team || sendingChat}
+                              rows={3}
+                            />
+                            <Button
+                              onClick={() => void handleSendChatMessage()}
+                              disabled={!chatInput.trim() || sendingChat}
+                              className="shrink-0 h-[52px]"
+                            >
+                              {sendingChat ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Sending
+                                </>
+                              ) : (
+                                <>
+                                  <Send className="w-4 h-4 mr-2" />
+                                  Send
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                 </CardContent>
               </Card>
             </TabsContent>
