@@ -296,7 +296,12 @@ export default function Hackathon() {
 
     channel.on("broadcast", { event: "new-message" }, (payload) => {
       const message = payload.payload as TeamMessage;
-      appendChatMessage(message);
+      // Only append if not already in messages (avoid duplicates)
+      setChatMessages((prev) => {
+        const exists = prev.some((m) => m.id === message.id);
+        if (exists) return prev;
+        return [...prev, message].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      });
       scrollChatToBottom();
     });
 
@@ -309,6 +314,73 @@ export default function Hackathon() {
       chatChannelRef.current = null;
     };
   }, [team?.id, memberId]);
+
+  // Real-time notifications subscription
+  useEffect(() => {
+    if (!memberId) return;
+
+    // Load initial notifications
+    void loadNotifications(memberId);
+
+    // Subscribe to new notifications
+    const notificationChannel = supabase
+      .channel(`member-notifications-${memberId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "member_notifications",
+          filter: `member_id=eq.${memberId}`,
+        },
+        (payload) => {
+          const newNotif = payload.new as any;
+          // Reload notifications to get full data including synthetic team requests
+          void loadNotifications(memberId);
+          // Show toast for new notification
+          if (newNotif.notification_type === "team_chat") {
+            toast({
+              title: newNotif.title || "New message",
+              description: newNotif.message || "You have a new team chat message",
+            });
+          } else if (newNotif.notification_type === "team_invite" || newNotif.notification_type === "team_request") {
+            toast({
+              title: newNotif.title || "Team Invitation",
+              description: newNotif.message || "You have a new team invitation",
+            });
+          } else {
+            toast({
+              title: newNotif.title || "New notification",
+              description: newNotif.message || "You have a new notification",
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    // Subscribe to team_requests changes
+    const teamRequestChannel = supabase
+      .channel(`team-requests-${memberId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "team_requests",
+          filter: `to_member_id=eq.${memberId}`,
+        },
+        () => {
+          // Reload notifications to include new team request
+          void loadNotifications(memberId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      notificationChannel.unsubscribe();
+      teamRequestChannel.unsubscribe();
+    };
+  }, [memberId, toast]);
 
   useEffect(() => {
     if (!team) return;
@@ -671,7 +743,24 @@ export default function Hackathon() {
     const message = chatInput.trim();
     if (!message || sendingChat) return;
 
+    // Optimistic UI: Show message immediately
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage: TeamMessage = {
+      id: tempId,
+      created_at: new Date().toISOString(),
+      team_id: team.id,
+      hackathon_id: team.hackathon_id || "",
+      sender_member_id: memberId,
+      message: message,
+      sender_name: "You",
+      sender_email: "",
+    };
+
+    setChatInput("");
+    appendChatMessage(optimisticMessage);
+    scrollChatToBottom();
     setSendingChat(true);
+
     try {
       const response = await fetch(`${SUPABASE_URL}/functions/v1/team_chat_send`, {
         method: "POST",
@@ -686,19 +775,24 @@ export default function Hackathon() {
         }),
       });
 
+      const responseText = await response.text();
+      
       if (!response.ok) {
-        const errorText = await response.text();
+        // Remove optimistic message on error
+        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setChatInput(message); // Restore message
         let errorMessage = "Failed to send message";
         try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.error || errorMessage;
+          if (responseText) {
+            const errorJson = JSON.parse(responseText);
+            errorMessage = errorJson.error || errorMessage;
+          }
         } catch {
-          errorMessage = errorText || errorMessage;
+          errorMessage = responseText || errorMessage;
         }
         throw new Error(errorMessage);
       }
 
-      const responseText = await response.text();
       if (!responseText) {
         throw new Error("Empty response from server");
       }
@@ -711,12 +805,17 @@ export default function Hackathon() {
         throw new Error("Invalid response from server");
       }
 
-      if (!result.message) {
+      if (!result.message || !result.message.id) {
         throw new Error("Message not returned from server");
       }
 
-      setChatInput("");
-      appendChatMessage(result.message);
+      // Replace optimistic message with real one
+      setChatMessages((prev) => {
+        const filtered = prev.filter((m) => m.id !== tempId);
+        return [...filtered, result.message].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      });
+
+      // Broadcast to other team members via realtime
       chatChannelRef.current?.send({
         type: "broadcast",
         event: "new-message",
@@ -1718,35 +1817,37 @@ export default function Hackathon() {
                               })
                             )}
                           </div>
-                          <div className="border-t bg-background/50 p-3 flex gap-2 items-end">
-                            <Textarea
-                              value={chatInput}
-                              onChange={(e) => setChatInput(e.target.value)}
-                              onKeyDown={handleChatInputKeyDown}
-                              placeholder="Type your message... (Press Enter to send, Shift+Enter for new line)"
-                              className="resize-none flex-1 bg-background/80 border-primary/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
-                              disabled={!team || sendingChat}
-                              rows={2}
-                              maxLength={2000}
-                            />
-                            <Button
-                              onClick={() => void handleSendChatMessage()}
-                              disabled={!chatInput.trim() || sendingChat}
-                              className="shrink-0 h-[52px] px-6 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                              size="lg"
-                            >
-                              {sendingChat ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                  Sending...
-                                </>
-                              ) : (
-                                <>
-                                  <Send className="w-4 h-4 mr-2" />
-                                  Send
-                                </>
-                              )}
-                            </Button>
+                          <div className="border-t bg-background/50 p-3">
+                            <div className="flex gap-2 items-end max-w-4xl mx-auto">
+                              <Textarea
+                                value={chatInput}
+                                onChange={(e) => setChatInput(e.target.value)}
+                                onKeyDown={handleChatInputKeyDown}
+                                placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                                className="resize-none flex-1 bg-background/80 border-primary/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
+                                disabled={!team || sendingChat}
+                                rows={2}
+                                maxLength={2000}
+                              />
+                              <Button
+                                onClick={() => void handleSendChatMessage()}
+                                disabled={!chatInput.trim() || sendingChat}
+                                className="shrink-0 h-[52px] px-5 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                size="lg"
+                              >
+                                {sendingChat ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Sending...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send className="w-4 h-4 mr-2" />
+                                    Send
+                                  </>
+                                )}
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       </div>

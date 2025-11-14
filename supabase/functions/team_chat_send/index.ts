@@ -116,11 +116,38 @@ serve(async (req) => {
     if (!insertRes.ok) {
       const errorText = await insertRes.text();
       console.error("Failed to insert chat message:", errorText);
-      throw new Error("Failed to send message");
+      let errorMsg = "Failed to send message";
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMsg = errorJson.message || errorJson.error || errorMsg;
+      } catch {
+        errorMsg = errorText || errorMsg;
+      }
+      return new Response(
+        JSON.stringify({ error: errorMsg }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    const insertedRows = await insertRes.json();
+    let insertedRows;
+    try {
+      insertedRows = await insertRes.json();
+    } catch (parseError) {
+      console.error("Failed to parse insert response:", parseError);
+      return new Response(
+        JSON.stringify({ error: "Failed to process message" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const inserted = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
+    if (!inserted || !inserted.id) {
+      console.error("Invalid insert response:", insertedRows);
+      return new Response(
+        JSON.stringify({ error: "Message was not saved properly" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const formattedMessage = {
       id: inserted.id,
@@ -197,8 +224,9 @@ serve(async (req) => {
     );
   } catch (error: any) {
     console.error("Error sending chat message:", error);
+    const errorMessage = error?.message || error?.toString() || "Failed to send message";
     return new Response(
-      JSON.stringify({ error: error.message || "Failed to send message" }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

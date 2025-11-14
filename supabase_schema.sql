@@ -969,3 +969,38 @@ create policy p_hackathon_resources_select
   for select
   to authenticated
   using (true);
+
+-- Enable Realtime for instant updates (no page refresh needed)
+-- This allows real-time notifications, chat messages, and team requests
+do $$
+begin
+  -- Add member_notifications to realtime publication if not already added
+  if not exists (
+    select 1 from pg_publication_tables 
+    where pubname = 'supabase_realtime' 
+    and tablename = 'member_notifications' 
+    and schemaname = 'public'
+  ) then
+    alter publication supabase_realtime add table public.member_notifications;
+  end if;
+
+  -- Add team_messages to realtime publication if not already added
+  if not exists (
+    select 1 from pg_publication_tables 
+    where pubname = 'supabase_realtime' 
+    and tablename = 'team_messages' 
+    and schemaname = 'public'
+  ) then
+    alter publication supabase_realtime add table public.team_messages;
+  end if;
+
+  -- Add team_requests to realtime publication if not already added
+  if not exists (
+    select 1 from pg_publication_tables 
+    where pubname = 'supabase_realtime' 
+    and tablename = 'team_requests' 
+    and schemaname = 'public'
+  ) then
+    alter publication supabase_realtime add table public.team_requests;
+  end if;
+end $$;
