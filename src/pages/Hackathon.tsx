@@ -160,6 +160,7 @@ export default function Hackathon() {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [selectedInvite, setSelectedInvite] = useState<any | null>(null);
   const [respondingInvite, setRespondingInvite] = useState(false);
+  const [invitingPlayerId, setInvitingPlayerId] = useState<string | null>(null);
 
   const chatChannelRef = useRef<RealtimeChannel | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1640,6 +1641,81 @@ export default function Hackathon() {
                           Browse & Invite Teammates
                         </Button>
                       )}
+
+                      {/* Team Chat */}
+                      <div className="space-y-3 pt-4 border-t">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-semibold text-lg">Team Chat</h3>
+                            <p className="text-xs text-muted-foreground">Only teammates can view these messages.</p>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            History clears if the team is deleted
+                          </Badge>
+                        </div>
+                        <div className="bg-muted/20 rounded-lg border flex flex-col h-80">
+                          <div className="flex-1 overflow-y-auto p-3 space-y-3" ref={chatScrollRef}>
+                            {chatLoading ? (
+                              <div className="space-y-2">
+                                <div className="h-4 bg-muted rounded animate-pulse" />
+                                <div className="h-4 bg-muted rounded animate-pulse w-2/3" />
+                                <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
+                              </div>
+                            ) : chatMessages.length === 0 ? (
+                              <div className="text-center text-xs text-muted-foreground py-8">
+                                <p>No messages yet. Be the first to say hi!</p>
+                              </div>
+                            ) : (
+                              chatMessages.map((msg) => {
+                                const isSelf = memberId === msg.sender_member_id;
+                                return (
+                                  <div key={msg.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
+                                    <div
+                                      className={`max-w-[80%] rounded-lg p-3 text-sm shadow-sm ${
+                                        isSelf ? "bg-primary text-primary-foreground" : "bg-background border"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-3 text-[11px] opacity-80 mb-1">
+                                        <span className="truncate">{isSelf ? "You" : msg.sender_name}</span>
+                                        <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                                      </div>
+                                      <p className="whitespace-pre-wrap break-words text-xs sm:text-sm">{msg.message}</p>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                          <div className="border-t p-3 flex gap-2">
+                            <Textarea
+                              value={chatInput}
+                              onChange={(e) => setChatInput(e.target.value)}
+                              onKeyDown={handleChatInputKeyDown}
+                              placeholder="Message your team..."
+                              className="resize-none"
+                              disabled={!team || sendingChat}
+                              rows={3}
+                            />
+                            <Button
+                              onClick={() => void handleSendChatMessage()}
+                              disabled={!chatInput.trim() || sendingChat}
+                              className="shrink-0 h-[52px]"
+                            >
+                              {sendingChat ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Sending
+                                </>
+                              ) : (
+                                <>
+                                  <Send className="w-4 h-4 mr-2" />
+                                  Send
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
                 </>
@@ -1816,8 +1892,9 @@ export default function Hackathon() {
                               <Button
                                 size="sm"
                                 variant="outline"
+                                disabled={invitingPlayerId === player.id}
                                 onClick={async () => {
-                                  // Send team request
+                                  setInvitingPlayerId(player.id);
                                   try {
                                     const { error } = await supabase
                                       .from("team_requests")
@@ -1828,14 +1905,36 @@ export default function Hackathon() {
                                         status: "pending"
                                       });
                                     if (error) throw error;
-                                    toast({ title: "Invitation sent!", description: `Invitation sent to ${player.full_name}` });
+                                    toast({ 
+                                      title: "Invitation sent!", 
+                                      description: `Invitation sent to ${player.full_name}. They'll receive a notification shortly.` 
+                                    });
                                   } catch (e: any) {
-                                    toast({ title: "Failed to send invitation", description: e.message, variant: "destructive" });
+                                    if (e.message?.includes("duplicate") || e.message?.includes("unique")) {
+                                      toast({ 
+                                        title: "Already invited", 
+                                        description: `${player.full_name} already has a pending invitation.`, 
+                                        variant: "destructive" 
+                                      });
+                                    } else {
+                                      toast({ title: "Failed to send invitation", description: e.message || "Please try again in a moment.", variant: "destructive" });
+                                    }
+                                  } finally {
+                                    setInvitingPlayerId(null);
                                   }
                                 }}
                               >
-                                <Send className="w-3 h-3 mr-1" />
-                                Invite
+                                {invitingPlayerId === player.id ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    Sending...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send className="w-3 h-3 mr-1" />
+                                    Invite
+                                  </>
+                                )}
                               </Button>
                             )}
                           </div>
@@ -1966,82 +2065,7 @@ export default function Hackathon() {
                         </>
                       )}
                     </div>
-                  )}
-
-                      {/* Team Chat */}
-                      <div className="space-y-3 pt-4 border-t">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="font-semibold text-lg">Team Chat</h3>
-                            <p className="text-xs text-muted-foreground">Only teammates can view these messages.</p>
-                          </div>
-                          <Badge variant="outline" className="text-xs">
-                            History clears if the team is deleted
-                          </Badge>
-                        </div>
-                        <div className="bg-muted/20 rounded-lg border flex flex-col h-80">
-                          <div className="flex-1 overflow-y-auto p-3 space-y-3" ref={chatScrollRef}>
-                            {chatLoading ? (
-                              <div className="space-y-2">
-                                <div className="h-4 bg-muted rounded animate-pulse" />
-                                <div className="h-4 bg-muted rounded animate-pulse w-2/3" />
-                                <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
-                              </div>
-                            ) : chatMessages.length === 0 ? (
-                              <div className="text-center text-xs text-muted-foreground py-8">
-                                <p>No messages yet. Be the first to say hi!</p>
-                              </div>
-                            ) : (
-                              chatMessages.map((msg) => {
-                                const isSelf = memberId === msg.sender_member_id;
-                                return (
-                                  <div key={msg.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
-                                    <div
-                                      className={`max-w-[80%] rounded-lg p-3 text-sm shadow-sm ${
-                                        isSelf ? "bg-primary text-primary-foreground" : "bg-background border"
-                                      }`}
-                                    >
-                                      <div className="flex items-center justify-between gap-3 text-[11px] opacity-80 mb-1">
-                                        <span className="truncate">{isSelf ? "You" : msg.sender_name}</span>
-                                        <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                                      </div>
-                                      <p className="whitespace-pre-wrap break-words text-xs sm:text-sm">{msg.message}</p>
-                                    </div>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                          <div className="border-t p-3 flex gap-2">
-                            <Textarea
-                              value={chatInput}
-                              onChange={(e) => setChatInput(e.target.value)}
-                              onKeyDown={handleChatInputKeyDown}
-                              placeholder="Message your team..."
-                              className="resize-none"
-                              disabled={!team || sendingChat}
-                              rows={3}
-                            />
-                            <Button
-                              onClick={() => void handleSendChatMessage()}
-                              disabled={!chatInput.trim() || sendingChat}
-                              className="shrink-0 h-[52px]"
-                            >
-                              {sendingChat ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                  Sending
-                                </>
-                              ) : (
-                                <>
-                                  <Send className="w-4 h-4 mr-2" />
-                                  Send
-                                </>
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
+                      )}
                 </CardContent>
               </Card>
             </TabsContent>
