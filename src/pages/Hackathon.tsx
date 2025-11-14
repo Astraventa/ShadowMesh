@@ -82,7 +82,7 @@ interface Team {
   team_leader_id: string;
   status: string;
   max_members: number;
-  members: Array<{ member_id: string; full_name: string; email: string; role: string }>;
+  members: Array<{ member_id: string; full_name: string; email: string; role: string; area_of_interest?: string }>;
 }
 
 interface Submission {
@@ -548,7 +548,7 @@ export default function Hackathon() {
           team_members(
             member_id,
             role,
-            members(id, full_name, email)
+            members(id, full_name, email, area_of_interest)
           )
         `)
         .eq("id", teamId)
@@ -560,7 +560,8 @@ export default function Hackathon() {
             member_id: tm.member_id,
             full_name: tm.members?.full_name || "",
             email: tm.members?.email || "",
-            role: tm.role
+            role: tm.role,
+            area_of_interest: tm.members?.area_of_interest || ""
           }))
         };
         setTeam(formattedTeam as Team);
@@ -685,9 +686,33 @@ export default function Hackathon() {
         }),
       });
 
-      const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || "Failed to send message");
+        const errorText = await response.text();
+        let errorMessage = "Failed to send message";
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const responseText = await response.text();
+      if (!responseText) {
+        throw new Error("Empty response from server");
+      }
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Failed to parse response:", responseText);
+        throw new Error("Invalid response from server");
+      }
+
+      if (!result.message) {
+        throw new Error("Message not returned from server");
       }
 
       setChatInput("");
@@ -700,7 +725,7 @@ export default function Hackathon() {
       scrollChatToBottom();
     } catch (error: any) {
       console.error("Error sending chat message:", error);
-      toast({ title: "Failed to send message", description: error.message, variant: "destructive" });
+      toast({ title: "Failed to send message", description: error.message || "Please try again.", variant: "destructive" });
     } finally {
       setSendingChat(false);
     }
@@ -910,7 +935,7 @@ export default function Hackathon() {
           team_members(
             member_id,
             role,
-            members(id, full_name, email)
+            members(id, full_name, email, area_of_interest)
           )
         `)
         .eq("hackathon_id", hackathonId)
@@ -923,7 +948,8 @@ export default function Hackathon() {
             member_id: tm.member_id,
             full_name: tm.members?.full_name || "",
             email: tm.members?.email || "",
-            role: tm.role
+            role: tm.role,
+            area_of_interest: tm.members?.area_of_interest || ""
           }))
         }));
         setAllTeams(formattedTeams as Team[]);
@@ -1020,7 +1046,7 @@ export default function Hackathon() {
           team_members(
             member_id,
             role,
-            members(id, full_name, email)
+            members(id, full_name, email, area_of_interest)
           )
         `)
         .eq("id", teamData.id)
@@ -1033,7 +1059,8 @@ export default function Hackathon() {
             member_id: tm.member_id,
             full_name: tm.members?.full_name || "",
             email: tm.members?.email || "",
-            role: tm.role
+            role: tm.role,
+            area_of_interest: tm.members?.area_of_interest || ""
           }))
         };
         setTeam(formattedTeam as Team);
@@ -1476,11 +1503,16 @@ export default function Hackathon() {
                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                   <Badge 
                                     variant={member.role === "leader" ? "default" : "secondary"} 
-                                    className="text-xs shrink-0"
+                                    className={`text-xs shrink-0 ${member.role === "leader" ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/50" : "bg-purple-500/20 text-purple-300 border-purple-500/50"}`}
                                   >
                                     {member.role === "leader" ? "Leader" : "Member"}
                                   </Badge>
                                   <p className="font-medium truncate">{member.full_name}</p>
+                                  {member.area_of_interest && (
+                                    <Badge variant="outline" className="text-xs bg-background/50 border-primary/30 text-primary shrink-0">
+                                      {member.area_of_interest}
+                                    </Badge>
+                                  )}
                                 </div>
                                 <span 
                                   className="text-xs text-muted-foreground truncate max-w-[200px]"
@@ -1686,25 +1718,27 @@ export default function Hackathon() {
                               })
                             )}
                           </div>
-                          <div className="border-t p-3 flex gap-2">
+                          <div className="border-t bg-background/50 p-3 flex gap-2 items-end">
                             <Textarea
                               value={chatInput}
                               onChange={(e) => setChatInput(e.target.value)}
                               onKeyDown={handleChatInputKeyDown}
-                              placeholder="Message your team..."
-                              className="resize-none"
+                              placeholder="Type your message... (Press Enter to send, Shift+Enter for new line)"
+                              className="resize-none flex-1 bg-background/80 border-primary/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
                               disabled={!team || sendingChat}
-                              rows={3}
+                              rows={2}
+                              maxLength={2000}
                             />
                             <Button
                               onClick={() => void handleSendChatMessage()}
                               disabled={!chatInput.trim() || sendingChat}
-                              className="shrink-0 h-[52px]"
+                              className="shrink-0 h-[52px] px-6 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                              size="lg"
                             >
                               {sendingChat ? (
                                 <>
                                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                  Sending
+                                  Sending...
                                 </>
                               ) : (
                                 <>
