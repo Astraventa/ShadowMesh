@@ -206,19 +206,45 @@ serve(async (req) => {
         },
       }));
 
-      const notifyRes = await fetch(`${SUPABASE_URL}/rest/v1/member_notifications`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(notificationsPayload),
-      });
+      try {
+        const notifyRes = await fetch(`${SUPABASE_URL}/rest/v1/member_notifications`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(notificationsPayload),
+        });
 
-      if (!notifyRes.ok) {
-        const text = await notifyRes.text();
-        console.warn("Failed to insert notifications:", text);
+        if (!notifyRes.ok) {
+          const text = await notifyRes.text();
+          console.warn("Failed to insert notifications:", text);
+        }
+      } catch (notifyError) {
+        // Don't fail the whole request if notifications fail
+        console.warn("Error creating notifications (non-fatal):", notifyError);
       }
     }
 
+    // Ensure we have all required fields before returning
+    if (!formattedMessage || !formattedMessage.id) {
+      console.error("Formatted message is invalid:", formattedMessage);
+      return new Response(
+        JSON.stringify({ error: "Message was saved but response formatting failed" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const responseBody = JSON.stringify({ success: true, message: formattedMessage });
+    
+    // Ensure response body is valid JSON
+    try {
+      JSON.parse(responseBody); // Validate JSON
+    } catch (jsonError) {
+      console.error("Response body is not valid JSON:", jsonError);
+      return new Response(
+        JSON.stringify({ error: "Response formatting error" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     return new Response(
       responseBody,
       { 

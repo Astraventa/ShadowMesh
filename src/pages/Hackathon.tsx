@@ -800,26 +800,38 @@ export default function Hackathon() {
 
       // Parse successful response
       let result;
+      let responseText = "";
       try {
-        const responseText = await response.text();
+        responseText = await response.text();
         if (!responseText || responseText.trim() === "") {
-          throw new Error("Empty response from server");
+          // If we get 200 OK but empty response, assume message was saved
+          // Keep the optimistic message and reload chat to get the real message
+          console.warn("Empty response but 200 OK - assuming message was saved, reloading chat...");
+          setTimeout(() => {
+            if (team) void loadTeamChat(team.id);
+          }, 500);
+          return; // Exit early, keep optimistic message
         }
         
         result = JSON.parse(responseText);
       } catch (parseError: any) {
-        console.error("Failed to parse response:", parseError);
-        // Remove optimistic message on parse error
-        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
-        setChatInput(message); // Restore message
-        throw new Error("Invalid response from server. Please try again.");
+        console.error("Failed to parse response:", parseError, "Response text:", responseText);
+        // If we got 200 OK but can't parse, assume message was saved
+        // Keep optimistic message and reload chat
+        console.warn("Parse error but 200 OK - assuming message was saved, reloading chat...");
+        setTimeout(() => {
+          if (team) void loadTeamChat(team.id);
+        }, 500);
+        return; // Exit early, keep optimistic message
       }
 
       if (!result || !result.message || !result.message.id) {
-        // Remove optimistic message if response is invalid
-        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
-        setChatInput(message); // Restore message
-        throw new Error("Message not returned from server");
+        // If response is invalid but we got 200 OK, assume message was saved
+        console.warn("Invalid response structure but 200 OK - assuming message was saved, reloading chat...");
+        setTimeout(() => {
+          if (team) void loadTeamChat(team.id);
+        }, 500);
+        return; // Exit early, keep optimistic message
       }
 
       // Replace optimistic message with real one
