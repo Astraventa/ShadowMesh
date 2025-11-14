@@ -775,37 +775,50 @@ export default function Hackathon() {
         }),
       });
 
-      const responseText = await response.text();
-      
+      // Check response status first
       if (!response.ok) {
         // Remove optimistic message on error
         setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
         setChatInput(message); // Restore message
+        
         let errorMessage = "Failed to send message";
         try {
+          const responseText = await response.text();
           if (responseText) {
-            const errorJson = JSON.parse(responseText);
-            errorMessage = errorJson.error || errorMessage;
+            try {
+              const errorJson = JSON.parse(responseText);
+              errorMessage = errorJson.error || errorJson.message || errorMessage;
+            } catch {
+              errorMessage = responseText || errorMessage;
+            }
           }
-        } catch {
-          errorMessage = responseText || errorMessage;
+        } catch (e) {
+          console.error("Error reading error response:", e);
         }
         throw new Error(errorMessage);
       }
 
-      if (!responseText) {
-        throw new Error("Empty response from server");
-      }
-
+      // Parse successful response
       let result;
       try {
+        const responseText = await response.text();
+        if (!responseText || responseText.trim() === "") {
+          throw new Error("Empty response from server");
+        }
+        
         result = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("Failed to parse response:", responseText);
-        throw new Error("Invalid response from server");
+      } catch (parseError: any) {
+        console.error("Failed to parse response:", parseError);
+        // Remove optimistic message on parse error
+        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setChatInput(message); // Restore message
+        throw new Error("Invalid response from server. Please try again.");
       }
 
-      if (!result.message || !result.message.id) {
+      if (!result || !result.message || !result.message.id) {
+        // Remove optimistic message if response is invalid
+        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setChatInput(message); // Restore message
         throw new Error("Message not returned from server");
       }
 
@@ -1818,7 +1831,7 @@ export default function Hackathon() {
                             )}
                           </div>
                           <div className="border-t bg-background/50 p-3">
-                            <div className="flex gap-2 items-end max-w-4xl mx-auto">
+                            <div className="flex gap-2 items-end">
                               <Textarea
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
@@ -1832,7 +1845,7 @@ export default function Hackathon() {
                               <Button
                                 onClick={() => void handleSendChatMessage()}
                                 disabled={!chatInput.trim() || sendingChat}
-                                className="shrink-0 h-[52px] px-5 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="shrink-0 h-[52px] w-[120px] bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                 size="lg"
                               >
                                 {sendingChat ? (

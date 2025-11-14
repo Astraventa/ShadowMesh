@@ -218,16 +218,32 @@ serve(async (req) => {
       }
     }
 
+    const responseBody = JSON.stringify({ success: true, message: formattedMessage });
     return new Response(
-      JSON.stringify({ success: true, message: formattedMessage }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      responseBody,
+      { 
+        status: 200, 
+        headers: { 
+          ...corsHeaders, 
+          "Content-Type": "application/json",
+          "Content-Length": responseBody.length.toString()
+        } 
+      },
     );
   } catch (error: any) {
     console.error("Error sending chat message:", error);
     const errorMessage = error?.message || error?.toString() || "Failed to send message";
+    const errorBody = JSON.stringify({ error: errorMessage });
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      errorBody,
+      { 
+        status: 500, 
+        headers: { 
+          ...corsHeaders, 
+          "Content-Type": "application/json",
+          "Content-Length": errorBody.length.toString()
+        } 
+      },
     );
   }
 });
