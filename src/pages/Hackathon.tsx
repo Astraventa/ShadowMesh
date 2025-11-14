@@ -431,6 +431,68 @@ export default function Hackathon() {
     }
   }
 
+  async function leaveTeam() {
+    if (!team || !memberId) return;
+    if (team.team_leader_id === memberId) {
+      toast({ title: "Cannot leave", description: "Team leaders cannot leave. Delete the team or transfer leadership first.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      // Remove member from team
+      const { error } = await supabase
+        .from("team_members")
+        .delete()
+        .eq("team_id", team.id)
+        .eq("member_id", memberId);
+
+      if (error) throw error;
+
+      toast({ title: "Left team", description: "You have successfully left the team." });
+      setTeam(null);
+      setInviteLinks([]);
+      // Refresh lists
+      if (hackathonId && memberId) {
+        await loadTeamsAndPlayers(hackathonId, memberId);
+      }
+    } catch (e: any) {
+      toast({ title: "Failed to leave team", description: e.message, variant: "destructive" });
+    }
+  }
+
+  async function removeMember(memberIdToRemove: string) {
+    if (!team || !memberId) return;
+    if (team.team_leader_id !== memberId) {
+      toast({ title: "Not allowed", description: "Only the team leader can remove members.", variant: "destructive" });
+      return;
+    }
+    if (memberIdToRemove === team.team_leader_id) {
+      toast({ title: "Cannot remove", description: "Team leaders cannot remove themselves.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      // Remove member from team
+      const { error } = await supabase
+        .from("team_members")
+        .delete()
+        .eq("team_id", team.id)
+        .eq("member_id", memberIdToRemove);
+
+      if (error) throw error;
+
+      // Reload team data
+      const teamId = await loadMemberTeam(hackathonId!, memberId);
+      if (teamId) {
+        await loadInviteLinks(teamId);
+      }
+
+      toast({ title: "Member removed", description: "The member has been removed from your team." });
+    } catch (e: any) {
+      toast({ title: "Failed to remove member", description: e.message, variant: "destructive" });
+    }
+  }
+
   async function generateInviteLink() {
     if (!team || !hackathonId || !memberId || team.team_leader_id !== memberId) {
       toast({ title: "Unauthorized", description: "Only team leaders can generate invite links.", variant: "destructive" });
@@ -1040,41 +1102,68 @@ export default function Hackathon() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                      {/* Team Members with Contact Info */}
+                      {/* Team Members */}
                       <div className="space-y-3">
-                        <h3 className="font-semibold text-lg">Team Members</h3>
-                        <div className="grid gap-3">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-semibold text-lg">Team Members</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {team.members.length} / {team.max_members} members
+                          </p>
+                        </div>
+                        <div className="grid gap-2">
                           {team.members.map((member) => (
-                            <div key={member.member_id} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <p className="font-semibold text-lg">{member.full_name}</p>
-                                  <Badge variant={member.role === "leader" ? "default" : "secondary"} className="text-xs">
+                            <div key={member.member_id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border hover:bg-muted/50 transition-colors">
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <Badge 
+                                    variant={member.role === "leader" ? "default" : "secondary"} 
+                                    className="text-xs shrink-0"
+                                  >
                                     {member.role === "leader" ? "Leader" : "Member"}
                                   </Badge>
+                                  <p className="font-medium truncate">{member.full_name}</p>
                                 </div>
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                  <Mail className="w-3 h-3" />
-                                  <span>{member.email}</span>
+                                <span 
+                                  className="text-xs text-muted-foreground truncate max-w-[200px]"
+                                  title={member.email}
+                                >
+                                  {member.email}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 ml-3">
+                                {team.team_leader_id === memberId && member.role !== "leader" && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-6 px-2 ml-2"
+                                    className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                                     onClick={() => {
-                                      navigator.clipboard.writeText(member.email);
-                                      toast({ title: "Email copied!", description: `${member.email} copied to clipboard.` });
+                                      if (confirm(`Remove ${member.full_name} from the team?`)) {
+                                        removeMember(member.member_id);
+                                      }
+                                    }}
+                                    title="Remove member"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                {team.team_leader_id !== memberId && member.member_id === memberId && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 px-3 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => {
+                                      if (confirm("Are you sure you want to leave this team?")) {
+                                        leaveTeam();
+                                      }
                                     }}
                                   >
-                                    <Copy className="w-3 h-3" />
+                                    Leave Team
                                   </Button>
-                                </div>
+                                )}
                               </div>
                             </div>
                           ))}
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {team.members.length} / {team.max_members} members
-                        </p>
                       </div>
 
                       {/* Invite Links Section (Team Leader Only) */}
