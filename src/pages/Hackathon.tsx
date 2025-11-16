@@ -161,6 +161,7 @@ export default function Hackathon() {
   const [selectedInvite, setSelectedInvite] = useState<any | null>(null);
   const [respondingInvite, setRespondingInvite] = useState(false);
   const [invitingPlayerId, setInvitingPlayerId] = useState<string | null>(null);
+  const [pendingRequests, setPendingRequests] = useState<Map<string, string>>(new Map()); // teamId -> requestId
 
   const chatChannelRef = useRef<RealtimeChannel | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -489,7 +490,7 @@ export default function Hackathon() {
       const hackathonMap = new Map<string, any>();
       (hackathons || []).forEach((eventRow: any) => hackathonMap.set(eventRow.id, eventRow));
 
-      return teamReqs.map((request: any) => {
+      const requests = teamReqs.map((request: any) => {
         const teamRow = teamMap.get(request.team_id);
         const leaderRow = teamRow ? leaderMap.get(teamRow.team_leader_id) : null;
         const requesterRow = requesterMap.get(request.from_member_id);
@@ -515,6 +516,17 @@ export default function Hackathon() {
           max_members: teamRow?.max_members || 4,
         };
       });
+
+      // Update pending requests map for join button status
+      const newPendingMap = new Map<string, string>();
+      requests
+        .filter((r) => !r.is_incoming) // Only requests sent by current member
+        .forEach((r) => {
+          newPendingMap.set(r.team_id, r.id);
+        });
+      setPendingRequests(newPendingMap);
+
+      return requests;
     } catch (error) {
       console.error("Failed to load pending team requests:", error);
       return [];
@@ -523,6 +535,9 @@ export default function Hackathon() {
 
   async function loadNotifications(currentMemberId: string) {
     try {
+      // Load pending team requests first to update button states
+      await loadPendingTeamRequests(currentMemberId);
+      
       // member_notifications table (admin-triggered updates)
       const { data: notifRows, error } = await supabase
         .from("member_notifications")
@@ -619,6 +634,23 @@ export default function Hackathon() {
 
         // Add the appropriate member to the team
         const memberToAdd = isLeaderResponding ? requesterId : memberId;
+        
+        // Check if member is already in another team for this hackathon
+        if (hackathonId) {
+          const { data: existingTeams } = await supabase
+            .from("team_members")
+            .select("team_id, hackathon_teams!inner(hackathon_id)")
+            .eq("member_id", memberToAdd);
+          
+          const inOtherTeam = existingTeams?.some((tm: any) => 
+            tm.hackathon_teams?.hackathon_id === hackathonId && tm.team_id !== selectedInvite.team_id
+          );
+          
+          if (inOtherTeam) {
+            throw new Error("Member is already in another team for this hackathon.");
+          }
+        }
+
         await supabase
           .from("team_members")
           .insert({
@@ -631,6 +663,53 @@ export default function Hackathon() {
           .from("team_requests")
           .update({ status: "accepted", responded_at: nowIso })
           .eq("id", selectedInvite.id);
+
+        // Elite approach: Auto-reject all other pending requests from this member to other teams
+        // This ensures first acceptance wins, others are automatically cancelled
+        if (hackathonId) {
+          const { data: otherRequests } = await supabase
+            .from("team_requests")
+            .select("id, team_id, hackathon_teams!inner(hackathon_id)")
+            .eq("from_member_id", memberToAdd)
+            .eq("status", "pending")
+            .neq("id", selectedInvite.id);
+          
+          if (otherRequests && otherRequests.length > 0) {
+            const sameHackathonRequests = otherRequests.filter((r: any) => 
+              r.hackathon_teams?.hackathon_id === hackathonId
+            );
+            
+            if (sameHackathonRequests.length > 0) {
+              const otherRequestIds = sameHackathonRequests.map((r: any) => r.id);
+              await supabase
+                .from("team_requests")
+                .update({ status: "rejected", responded_at: nowIso })
+                .in("id", otherRequestIds);
+              
+              // Notify other team leaders that the member joined another team
+              for (const req of sameHackathonRequests) {
+                const { data: teamData } = await supabase
+                  .from("hackathon_teams")
+                  .select("team_leader_id, team_name")
+                  .eq("id", req.team_id)
+                  .single();
+                
+                if (teamData?.team_leader_id) {
+                  await supabase
+                    .from("member_notifications")
+                    .insert({
+                      member_id: teamData.team_leader_id,
+                      notification_type: "general",
+                      title: "Join Request Cancelled",
+                      message: `${selectedInvite.is_incoming ? selectedInvite.requester_name : "A member"} joined another team. Their request to join "${teamData.team_name}" has been automatically cancelled.`,
+                      related_id: req.team_id,
+                      related_type: "team",
+                    });
+                }
+              }
+            }
+          }
+        }
 
         // Send notification to the requester if leader accepted
         if (isLeaderResponding && requesterId) {
@@ -1369,16 +1448,23 @@ export default function Hackathon() {
         .single();
 
       // Send join request to leader
-      const { error: requestError } = await supabase
+      const { data: requestData, error: requestError } = await supabase
         .from("team_requests")
         .insert({
           team_id: teamId,
           from_member_id: memberId,
           to_member_id: teamData.team_leader_id,
           status: "pending"
-        });
+        })
+        .select("id")
+        .single();
 
       if (requestError) throw requestError;
+
+      // Update pending requests map
+      if (requestData?.id) {
+        setPendingRequests((prev) => new Map(prev).set(teamId, requestData.id));
+      }
 
       // Create notification for leader
       if (teamData.team_leader_id && memberData) {
@@ -1406,6 +1492,11 @@ export default function Hackathon() {
         title: "Join request sent!", 
         description: `Your request has been sent to the team leader. You'll be notified once they respond.` 
       });
+      
+      // Reload teams to update button status
+      if (hackathonId) {
+        await loadTeamsAndPlayers(hackathonId, memberId);
+      }
       setShowJoinTeam(null);
     } catch (e: any) {
       toast({ title: "Failed to send join request", description: e.message, variant: "destructive" });
@@ -2122,9 +2213,16 @@ export default function Hackathon() {
                               </p>
                             </div>
                             {!hasTeam && t.members.length < t.max_members ? (
-                              <Button size="sm" onClick={() => joinTeam(t.id)}>
-                                Join
-                              </Button>
+                              pendingRequests.has(t.id) ? (
+                                <Button size="sm" variant="outline" disabled>
+                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                  Request Sent
+                                </Button>
+                              ) : (
+                                <Button size="sm" onClick={() => joinTeam(t.id)}>
+                                  Join
+                                </Button>
+                              )
                             ) : (
                               <Button size="sm" variant="outline" disabled>
                                 {hasTeam ? "In a Team" : "Full"}
