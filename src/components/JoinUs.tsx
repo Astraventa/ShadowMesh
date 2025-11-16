@@ -1,45 +1,3 @@
-  const COUNTRY_LABELS: Record<string, string> = {
-    PK: "Pakistan",
-    IN: "India",
-    US: "United States",
-    GB: "United Kingdom",
-    AE: "United Arab Emirates",
-    SA: "Saudi Arabia",
-    QA: "Qatar",
-    BH: "Bahrain",
-    KW: "Kuwait",
-    TR: "Turkey",
-    DE: "Germany",
-    FR: "France",
-    ES: "Spain",
-    IT: "Italy",
-    AU: "Australia",
-    NZ: "New Zealand",
-    SG: "Singapore",
-    MY: "Malaysia",
-    CN: "China",
-    JP: "Japan",
-    TH: "Thailand",
-    PH: "Philippines",
-    ID: "Indonesia",
-    BD: "Bangladesh",
-    LK: "Sri Lanka",
-    NP: "Nepal",
-    AF: "Afghanistan",
-    IR: "Iran",
-    IQ: "Iraq",
-    JO: "Jordan",
-    LB: "Lebanon",
-    EG: "Egypt",
-    ZA: "South Africa",
-    CA: "Canada",
-  };
-
-  function formatCountryLabel(code?: string | null) {
-    if (!code) return "";
-    const upper = code.toUpperCase();
-    return COUNTRY_LABELS[upper] ?? upper;
-  }
 import { Sparkles, CheckCircle2, Shield } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -72,6 +30,8 @@ const JoinUs = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [applicationId, setApplicationId] = useState<string | null>(null);
+  const [isSpecialUser, setIsSpecialUser] = useState(false);
+  const [autoApproved, setAutoApproved] = useState(false);
 
   // Controlled inputs
   const [fullName, setFullName] = useState("");
@@ -605,6 +565,48 @@ const JoinUs = () => {
       setApplicationId(data?.id || null);
       localStorage.setItem('shadowmesh_join_submission', JSON.stringify({ id: data?.id, ts: Date.now() }));
 
+      // Check if email is in special welcome emails list
+      let isSpecial = false;
+      try {
+        const { data: adminSettings } = await supabase
+          .from("admin_settings")
+          .select("special_welcome_emails")
+          .limit(1)
+          .maybeSingle();
+        
+        const specialEmailsList = adminSettings?.special_welcome_emails || [];
+        isSpecial = specialEmailsList.includes(normalizedEmail.toLowerCase());
+        setIsSpecialUser(isSpecial);
+        
+        // Auto-approve special users (via edge function that checks special emails list)
+        if (isSpecial && data?.id) {
+          try {
+            const approveRes = await fetch(`${SUPABASE_URL}/functions/v1/auto_approve_special`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+              },
+              body: JSON.stringify({
+                application_id: data.id,
+                email: normalizedEmail
+              })
+            });
+            
+            if (approveRes.ok) {
+              setAutoApproved(true);
+              // Welcome email is automatically sent by auto_approve_special function
+            } else {
+              console.warn('Auto-approval failed, will be manually reviewed');
+            }
+          } catch (e) {
+            console.warn('Auto-approval failed, will be manually reviewed:', e);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to check special emails:', e);
+      }
+
       try {
         await fetch(`${SUPABASE_URL}/functions/v1/notify`, {
           method: 'POST',
@@ -896,40 +898,81 @@ const JoinUs = () => {
       <Dialog open={showSuccessDialog} onOpenChange={setShowSuccessDialog}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <div className="mx-auto mb-4 w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
-              <CheckCircle2 className="w-8 h-8 text-primary" />
+            <div className={`mx-auto mb-4 w-16 h-16 rounded-full flex items-center justify-center ${
+              autoApproved ? "bg-gradient-to-br from-amber-500/20 to-yellow-500/20" : "bg-primary/20"
+            }`}>
+              {autoApproved ? (
+                <Sparkles className="w-8 h-8 text-amber-500" />
+              ) : (
+                <CheckCircle2 className="w-8 h-8 text-primary" />
+              )}
             </div>
-            <DialogTitle className="text-2xl text-center">Application Submitted Successfully!</DialogTitle>
+            <DialogTitle className="text-2xl text-center">
+              {autoApproved ? "You Are Special! ✨" : "Application Submitted Successfully!"}
+            </DialogTitle>
             <DialogDescription className="text-center pt-2">
-              Your application is <strong>under verification</strong>. You will be notified via email once a decision is made.
+              {autoApproved ? (
+                <>
+                  <p className="text-base font-semibold text-foreground mb-2">
+                    Your request has been <strong className="text-amber-500">automatically approved</strong>!
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    That's why you received this special treatment. Check your inbox for the welcome email to set up your password and access the member portal.
+                  </p>
+                </>
+              ) : (
+                <>
+                  Your application is <strong>under verification</strong>. You will be notified via email once a decision is made.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            <div className="rounded-lg bg-muted/50 p-4 border border-border">
-              <div className="flex items-start gap-3">
-                <Shield className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold mb-1">What Happens Next?</p>
-                  <div className="space-y-2 text-xs text-muted-foreground mt-2">
-                    <p>• Your application will be reviewed by our team</p>
-                    <p>• You'll receive an email notification with the decision</p>
-                    <p>• If approved, you'll get a welcome email with password setup instructions</p>
-                    <p>• You can then access the member portal and register for events</p>
+            {autoApproved ? (
+              <div className="rounded-lg bg-gradient-to-br from-amber-500/10 to-yellow-500/5 p-4 border border-amber-500/30">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold mb-1 text-amber-700 dark:text-amber-400">What Happens Next?</p>
+                    <div className="space-y-2 text-xs text-muted-foreground mt-2">
+                      <p>• Check your inbox for the welcome email (sent instantly)</p>
+                      <p>• Click the password setup link in the email</p>
+                      <p>• Set up your password and log in to the member portal</p>
+                      <p>• You'll automatically receive a Star Badge ⭐ as a special member</p>
+                      <p>• Start exploring events, hackathons, and networking opportunities</p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-lg bg-muted/50 p-4 border border-border">
+                <div className="flex items-start gap-3">
+                  <Shield className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold mb-1">What Happens Next?</p>
+                    <div className="space-y-2 text-xs text-muted-foreground mt-2">
+                      <p>• Your application will be reviewed by our team</p>
+                      <p>• You'll receive an email notification with the decision</p>
+                      <p>• If approved, you'll get a welcome email with password setup instructions</p>
+                      <p>• You can then access the member portal and register for events</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
             <Button
               onClick={() => {
                 setShowSuccessDialog(false);
+                setIsSpecialUser(false);
+                setAutoApproved(false);
               }}
               className="w-full"
             >
-              Got it, thanks!
+              {autoApproved ? "Got it, thanks! ✨" : "Got it, thanks!"}
             </Button>
           </DialogFooter>
         </DialogContent>

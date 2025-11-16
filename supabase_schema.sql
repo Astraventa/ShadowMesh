@@ -706,6 +706,9 @@ begin
   if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='last_login_ip') then
     alter table public.admin_settings add column last_login_ip text;
   end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='admin_settings' and column_name='special_welcome_emails') then
+    alter table public.admin_settings add column special_welcome_emails text[] default '{}';
+  end if;
   -- Make email unique if not already
   if not exists (select 1 from pg_constraint where conname = 'admin_settings_email_key') then
     alter table public.admin_settings add constraint admin_settings_email_key unique (email);
@@ -723,6 +726,15 @@ create policy p_admin_settings_service_role
   on public.admin_settings
   for all
   to service_role
+  using (true)
+  with check (true);
+
+-- Policy: Allow anon/authenticated to read/write special_welcome_emails (admin panel uses anon key with client-side token gate)
+drop policy if exists p_admin_settings_anon_special_emails on public.admin_settings;
+create policy p_admin_settings_anon_special_emails
+  on public.admin_settings
+  for all
+  to anon, authenticated
   using (true)
   with check (true);
 
@@ -997,6 +1009,14 @@ create policy p_member_notifications_update
   for update
   to authenticated
   using (member_id = auth.uid()::text::uuid);
+
+-- Allow anon/authenticated to insert notifications (for admin panel custom notifications)
+drop policy if exists p_member_notifications_insert on public.member_notifications;
+create policy p_member_notifications_insert
+  on public.member_notifications
+  for insert
+  to anon, authenticated
+  with check (true);
 
 -- Resources: Same as member_resources (authenticated members can view)
 drop policy if exists p_hackathon_resources_select on public.hackathon_resources;
