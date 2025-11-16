@@ -17,6 +17,7 @@ export default function TeamInvite() {
   const [inviteData, setInviteData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [memberId, setMemberId] = useState<string | null>(null);
+  const [registrationStatus, setRegistrationStatus] = useState<"none" | "pending" | "approved" | "rejected" | null>(null);
 
   useEffect(() => {
     async function verifyInvite() {
@@ -72,8 +73,25 @@ export default function TeamInvite() {
           return;
         }
 
-        // User is a member - can join immediately
+        // User is a member - check hackathon registration status
         setMemberId(memberData.id);
+        
+        // Check if member is registered for this hackathon
+        if (data.invite?.hackathon_id) {
+          const { data: regData } = await supabase
+            .from("hackathon_registrations")
+            .select("status")
+            .eq("hackathon_id", data.invite.hackathon_id)
+            .eq("member_id", memberData.id)
+            .maybeSingle();
+          
+          if (!regData) {
+            setRegistrationStatus("none");
+          } else {
+            setRegistrationStatus(regData.status as "pending" | "approved" | "rejected");
+          }
+        }
+        
         setLoading(false);
       } catch (err: any) {
         console.error("Error verifying invite:", err);
@@ -240,6 +258,143 @@ export default function TeamInvite() {
     );
   }
 
+  // Show registration status and appropriate action
+  if (memberId && registrationStatus === "none") {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-xl border-2">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
+              <Users className="w-8 h-8 text-primary" />
+            </div>
+            <CardTitle className="text-2xl">Team Invitation</CardTitle>
+            <CardDescription>You've been invited to join a team!</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">Team Name</p>
+                <p className="font-semibold text-lg">{inviteData?.team_name}</p>
+              </div>
+            </div>
+
+            <Alert className="border-amber-500/50 bg-amber-500/5">
+              <AlertCircle className="h-4 w-4 text-amber-500" />
+              <AlertTitle>Registration Required</AlertTitle>
+              <AlertDescription>
+                You need to register and be approved for this hackathon before joining teams. Register now and come back to accept this invite.
+              </AlertDescription>
+            </Alert>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => navigate("/member-portal")}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => navigate(`/hackathons/${inviteData?.hackathon_id}`)}
+              >
+                Register for Hackathon
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (memberId && registrationStatus === "pending") {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-xl border-2">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
+              <Users className="w-8 h-8 text-primary" />
+            </div>
+            <CardTitle className="text-2xl">Team Invitation</CardTitle>
+            <CardDescription>You've been invited to join a team!</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">Team Name</p>
+                <p className="font-semibold text-lg">{inviteData?.team_name}</p>
+              </div>
+            </div>
+
+            <Alert className="border-blue-500/50 bg-blue-500/5">
+              <AlertCircle className="h-4 w-4 text-blue-500" />
+              <AlertTitle>Registration Pending</AlertTitle>
+              <AlertDescription>
+                Your hackathon registration is under review. Once approved, you can join this team. We'll notify you when your registration is approved.
+              </AlertDescription>
+            </Alert>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => navigate("/member-portal")}
+              >
+                Go to Portal
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => navigate(`/hackathons/${inviteData?.hackathon_id}`)}
+              >
+                View Hackathon
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (memberId && registrationStatus === "rejected") {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-xl border-2">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center">
+              <AlertCircle className="w-8 h-8 text-destructive" />
+            </div>
+            <CardTitle className="text-2xl">Team Invitation</CardTitle>
+            <CardDescription>You've been invited to join a team!</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">Team Name</p>
+                <p className="font-semibold text-lg">{inviteData?.team_name}</p>
+              </div>
+            </div>
+
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Registration Not Approved</AlertTitle>
+              <AlertDescription>
+                Your hackathon registration was not approved. Please contact the admin if you believe this is an error.
+              </AlertDescription>
+            </Alert>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => navigate("/member-portal")}
+            >
+              Go to Portal
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-xl border-2">
@@ -297,7 +452,7 @@ export default function TeamInvite() {
             <Button
               className="flex-1"
               onClick={handleJoinTeam}
-              disabled={joining}
+              disabled={joining || registrationStatus !== "approved"}
             >
               {joining ? (
                 <>
