@@ -866,7 +866,7 @@ export default function Hackathon() {
           team_members(
             member_id,
             role,
-            members(id, full_name, email, area_of_interest)
+            members(id, full_name, email, area_of_interest, verified_badge, star_badge, custom_badge)
           )
         `)
         .eq("id", teamId)
@@ -879,7 +879,10 @@ export default function Hackathon() {
             full_name: tm.members?.full_name || "",
             email: tm.members?.email || "",
             role: tm.role,
-            area_of_interest: tm.members?.area_of_interest || ""
+            area_of_interest: tm.members?.area_of_interest || "",
+            verified_badge: tm.members?.verified_badge || false,
+            star_badge: tm.members?.star_badge || false,
+            custom_badge: tm.members?.custom_badge || null
           }))
         };
         setTeam(formattedTeam as Team);
@@ -1297,7 +1300,7 @@ export default function Hackathon() {
           team_members(
             member_id,
             role,
-            members(id, full_name, email, area_of_interest)
+            members(id, full_name, email, area_of_interest, verified_badge, star_badge, custom_badge)
           )
         `)
         .eq("hackathon_id", hackathonId)

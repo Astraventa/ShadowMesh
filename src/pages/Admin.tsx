@@ -343,7 +343,7 @@ const scannerLockRef = useRef(false);
 
 	// Detail dialog
 	const [openDetail, setOpenDetail] = useState(false);
-	const [detail, setDetail] = useState<JoinRow | null>(null);
+	const [detail, setDetail] = useState<JoinRow | any | null>(null);
 	const [rejectOpen, setRejectOpen] = useState(false);
 	const [rejectReason, setRejectReason] = useState("");
 	const [rejectingId, setRejectingId] = useState<string | null>(null);
@@ -1384,13 +1384,14 @@ const scannerLockRef = useRef(false);
 				.from("admin_settings")
 				.select("special_welcome_emails")
 				.limit(1)
-				.single();
+				.maybeSingle();
 			
-			if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows returned
+			if (error) throw error;
 			setSpecialEmails(data?.special_welcome_emails || []);
 		} catch (e: any) {
 			console.error("Failed to load special emails:", e);
-			toast({ title: "Error", description: "Failed to load special emails", variant: "destructive" });
+			toast({ title: "Error", description: e.message || "Failed to load special emails", variant: "destructive" });
+			setSpecialEmails([]);
 		} finally {
 			setLoadingSpecialEmails(false);
 		}
@@ -1419,7 +1420,7 @@ const scannerLockRef = useRef(false);
 				.from("admin_settings")
 				.select("id")
 				.limit(1)
-				.single();
+				.maybeSingle();
 			
 			if (existing) {
 				const { error } = await supabase
@@ -1454,7 +1455,7 @@ const scannerLockRef = useRef(false);
 				.from("admin_settings")
 				.select("id")
 				.limit(1)
-				.single();
+				.maybeSingle();
 			
 			if (existing) {
 				const { error } = await supabase
