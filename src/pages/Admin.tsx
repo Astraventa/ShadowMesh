@@ -289,6 +289,9 @@ const Admin = () => {
 	const [notificationTitle, setNotificationTitle] = useState("");
 	const [notificationMessage, setNotificationMessage] = useState("");
 	const [sendingNotification, setSendingNotification] = useState(false);
+	const [specialEmails, setSpecialEmails] = useState<string[]>([]);
+	const [newSpecialEmail, setNewSpecialEmail] = useState("");
+	const [loadingSpecialEmails, setLoadingSpecialEmails] = useState(false);
 
 	const [hackathonRegs, setHackathonRegs] = useState<any[]>([]);
 	const [hackRegsHasMore, setHackRegsHasMore] = useState(true);
@@ -1368,8 +1371,107 @@ const scannerLockRef = useRef(false);
 					console.error("Failed to load 2FA status:", err);
 					setTwoFactorEnabled(false);
 				});
+			
+			// Load special welcome emails
+			void loadSpecialEmails();
 		}
 	}, [authed]);
+
+	async function loadSpecialEmails() {
+		setLoadingSpecialEmails(true);
+		try {
+			const { data, error } = await supabase
+				.from("admin_settings")
+				.select("special_welcome_emails")
+				.limit(1)
+				.single();
+			
+			if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows returned
+			setSpecialEmails(data?.special_welcome_emails || []);
+		} catch (e: any) {
+			console.error("Failed to load special emails:", e);
+			toast({ title: "Error", description: "Failed to load special emails", variant: "destructive" });
+		} finally {
+			setLoadingSpecialEmails(false);
+		}
+	}
+
+	async function handleAddSpecialEmail() {
+		if (!newSpecialEmail.trim()) return;
+		const email = newSpecialEmail.trim().toLowerCase();
+		
+		if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+			toast({ title: "Invalid email", description: "Please enter a valid email address", variant: "destructive" });
+			return;
+		}
+		
+		if (specialEmails.includes(email)) {
+			toast({ title: "Already added", description: "This email is already in the list" });
+			return;
+		}
+		
+		setLoadingSpecialEmails(true);
+		try {
+			const updatedEmails = [...specialEmails, email];
+			
+			// Check if admin_settings row exists
+			const { data: existing } = await supabase
+				.from("admin_settings")
+				.select("id")
+				.limit(1)
+				.single();
+			
+			if (existing) {
+				const { error } = await supabase
+					.from("admin_settings")
+					.update({ special_welcome_emails: updatedEmails })
+					.eq("id", existing.id);
+				if (error) throw error;
+			} else {
+				// Create new row (this shouldn't happen in production, but handle it)
+				const { error } = await supabase
+					.from("admin_settings")
+					.insert({ special_welcome_emails: updatedEmails, email: "admin@shadowmesh.com", password_hash: "placeholder" });
+				if (error) throw error;
+			}
+			
+			setSpecialEmails(updatedEmails);
+			setNewSpecialEmail("");
+			toast({ title: "Success", description: "Special email added" });
+		} catch (e: any) {
+			toast({ title: "Error", description: e.message || "Failed to add email", variant: "destructive" });
+		} finally {
+			setLoadingSpecialEmails(false);
+		}
+	}
+
+	async function handleRemoveSpecialEmail(email: string) {
+		setLoadingSpecialEmails(true);
+		try {
+			const updatedEmails = specialEmails.filter(e => e !== email);
+			
+			const { data: existing } = await supabase
+				.from("admin_settings")
+				.select("id")
+				.limit(1)
+				.single();
+			
+			if (existing) {
+				const { error } = await supabase
+					.from("admin_settings")
+					.update({ special_welcome_emails: updatedEmails })
+					.eq("id", existing.id);
+				if (error) throw error;
+			}
+			
+			setSpecialEmails(updatedEmails);
+			toast({ title: "Success", description: "Special email removed" });
+		} catch (e: any) {
+			toast({ title: "Error", description: e.message || "Failed to remove email", variant: "destructive" });
+		} finally {
+			setLoadingSpecialEmails(false);
+		}
+	}
 
 	async function handleSetup2FA() {
 		try {
@@ -2567,15 +2669,68 @@ const scannerLockRef = useRef(false);
 					</TabsContent>
 
 					<TabsContent value="settings">
-						<Card>
-							<CardHeader>
-								<CardTitle className="flex items-center gap-2">
-									<Shield className="w-5 h-5" />
-									Security Settings
-								</CardTitle>
-								<CardDescription>Manage your admin account security settings</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-6">
+						<div className="space-y-6">
+							{/* Special Welcome Emails */}
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2">
+										<Sparkles className="w-5 h-5" />
+										Special Welcome Emails
+									</CardTitle>
+									<CardDescription>
+										Add email addresses here. When these users sign up for the first time, they will receive a special welcome animation and automatically get a Star Badge.
+									</CardDescription>
+								</CardHeader>
+								<CardContent className="space-y-4">
+									<div className="flex gap-2">
+										<Input
+											placeholder="Enter email address"
+											value={newSpecialEmail}
+											onChange={(e) => setNewSpecialEmail(e.target.value)}
+											onKeyDown={(e) => {
+												if (e.key === "Enter" && newSpecialEmail.trim()) {
+													void handleAddSpecialEmail();
+												}
+											}}
+										/>
+										<Button onClick={() => void handleAddSpecialEmail()} disabled={!newSpecialEmail.trim() || loadingSpecialEmails}>
+											<Plus className="w-4 h-4 mr-2" />
+											Add
+										</Button>
+									</div>
+									{loadingSpecialEmails ? (
+										<div className="text-center py-4 text-muted-foreground">Loading...</div>
+									) : specialEmails.length === 0 ? (
+										<div className="text-center py-4 text-muted-foreground">No special emails added yet</div>
+									) : (
+										<div className="space-y-2">
+											{specialEmails.map((email, index) => (
+												<div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+													<span className="text-sm font-medium">{email}</span>
+													<Button
+														size="sm"
+														variant="ghost"
+														onClick={() => void handleRemoveSpecialEmail(email)}
+													>
+														<X className="w-4 h-4" />
+													</Button>
+												</div>
+											))}
+										</div>
+									)}
+								</CardContent>
+							</Card>
+
+							{/* Security Settings */}
+							<Card>
+								<CardHeader>
+									<CardTitle className="flex items-center gap-2">
+										<Shield className="w-5 h-5" />
+										Security Settings
+									</CardTitle>
+									<CardDescription>Manage your admin account security settings</CardDescription>
+								</CardHeader>
+								<CardContent className="space-y-6">
 								{/* Two-Factor Authentication Section */}
 								<div className="border rounded-lg p-6 space-y-4">
 									<div className="flex items-center justify-between">

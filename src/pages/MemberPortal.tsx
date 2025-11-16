@@ -196,6 +196,9 @@ export default function MemberPortal() {
   const [globalResources, setGlobalResources] = useState<Resource[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<any | null>(null);
+  const [showSpecialWelcome, setShowSpecialWelcome] = useState(false);
+  const [showStarBadgeAnimation, setShowStarBadgeAnimation] = useState(false);
+  const [isFirstTime, setIsFirstTime] = useState(false);
   const [registeredEvents, setRegisteredEvents] = useState<Set<string>>(new Set());
   const [hackathons, setHackathons] = useState<Event[]>([]);
   const [hackathonRegistrations, setHackathonRegistrations] = useState<HackathonRegistration[]>([]);
@@ -366,19 +369,65 @@ export default function MemberPortal() {
       }
 
       // Track portal access - mark as accessed if not already
-      if (!memberData.portal_accessed) {
+      const isFirstAccess = !memberData.portal_accessed;
+      setIsFirstTime(isFirstAccess);
+      
+      if (isFirstAccess) {
         const params = new URLSearchParams(window.location.search);
         const setupParam = params.get("setup");
         const joinedFromEmail = !!setupParam; // If setup token exists, user came from email
         
-        await supabase
-          .from("members")
-          .update({
+        // Check if user is in special emails list
+        const { data: adminSettings } = await supabase
+          .from("admin_settings")
+          .select("special_welcome_emails")
+          .limit(1)
+          .single();
+        
+        const specialEmailsList = adminSettings?.special_welcome_emails || [];
+        const isSpecial = specialEmailsList.includes(memberData.email.toLowerCase());
+        
+        if (isSpecial) {
+          // Grant star badge automatically for special users
+          const updateData: any = {
             portal_accessed: true,
             first_portal_access_at: new Date().toISOString(),
-            joined_from_email: joinedFromEmail
-          })
-          .eq("id", memberData.id);
+            joined_from_email: joinedFromEmail,
+            star_badge: true,
+            badge_granted_at: new Date().toISOString(),
+            badge_granted_by: "system",
+          };
+          
+          await supabase
+            .from("members")
+            .update(updateData)
+            .eq("id", memberData.id);
+          
+          // Show special welcome animation
+          setShowSpecialWelcome(true);
+          setShowStarBadgeAnimation(true);
+          
+          // Reload member data to get updated badge
+          const { data: updatedMember } = await supabase
+            .from("members")
+            .select("*")
+            .eq("id", memberData.id)
+            .single();
+          
+          if (updatedMember) {
+            setMember(updatedMember);
+          }
+        } else {
+          // Regular first-time access
+          await supabase
+            .from("members")
+            .update({
+              portal_accessed: true,
+              first_portal_access_at: new Date().toISOString(),
+              joined_from_email: joinedFromEmail
+            })
+            .eq("id", memberData.id);
+        }
       }
 
       // Load events (workshops and other events, excluding hackathons)
@@ -1905,7 +1954,7 @@ export default function MemberPortal() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-3 flex-wrap">
-                <h1 className={`text-5xl font-bold mb-3 bg-clip-text text-transparent ${
+                <h1 className={`text-5xl font-bold mb-3 bg-clip-text text-transparent break-words ${
                   (member.priority_level || 0) >= 90 
                     ? "bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 animate-pulse" 
                     : (member.priority_level || 0) >= 50
@@ -3623,11 +3672,18 @@ export default function MemberPortal() {
                                   <p className="text-xs font-medium text-muted-foreground">Members:</p>
                                   {team.members.map((m: any) => (
                                     <div key={m.member_id} className="flex items-center justify-between text-sm">
-                                      <div className="flex-1">
-                                        <p className="font-medium">
-                                          {m.full_name} {m.role === "leader" && <Badge variant="outline" className="ml-2 text-xs">Leader</Badge>}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">{m.email}</p>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <p className="font-medium break-words">{m.full_name}</p>
+                                          <PremiumBadge 
+                                            verified={m.verified_badge} 
+                                            star={m.star_badge} 
+                                            custom={m.custom_badge} 
+                                            size="sm" 
+                                          />
+                                          {m.role === "leader" && <Badge variant="outline" className="text-xs">Leader</Badge>}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground truncate">{m.email}</p>
                                         {m.area_of_interest && (
                                           <Badge variant="outline" className="mt-1 text-xs">
                                             {m.area_of_interest}
@@ -3851,6 +3907,43 @@ export default function MemberPortal() {
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setSelectedAnnouncement(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Special Welcome Animation Dialog */}
+        <Dialog open={showSpecialWelcome} onOpenChange={setShowSpecialWelcome}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-center text-2xl">You Are Special! ✨</DialogTitle>
+            </DialogHeader>
+            <div className="py-6 text-center space-y-4">
+              <div className="animate-bounce">
+                <Sparkles className="w-16 h-16 mx-auto text-yellow-500" />
+              </div>
+              <p className="text-lg font-semibold">Welcome to ShadowMesh!</p>
+              <p className="text-sm text-muted-foreground">
+                You've been selected as a special member. We're excited to have you here!
+              </p>
+              {showStarBadgeAnimation && (
+                <div className="pt-4 space-y-3 animate-pulse">
+                  <p className="text-sm font-medium text-amber-500">You've received a Star Badge! ⭐</p>
+                  <div className="flex justify-center">
+                    <PremiumBadge verified={false} star={true} size="lg" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This badge recognizes your special status in our community
+                  </p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => {
+                setShowSpecialWelcome(false);
+                setShowStarBadgeAnimation(false);
+              }} className="w-full">
+                Get Started
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
