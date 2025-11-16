@@ -673,6 +673,8 @@ create table if not exists public.admin_settings (
   locked_until timestamptz,
   last_login_at timestamptz,
   last_login_ip text,
+  -- Special welcome emails (array of email addresses)
+  special_welcome_emails text[] default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

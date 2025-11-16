@@ -1916,7 +1916,7 @@ export default function MemberPortal() {
                     ? "bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600"
                     : "bg-gradient-to-r from-primary via-purple-500 to-primary"
                 }`}>
-                  Welcome back, {member.full_name.split(' ')[0]}!
+                  {isFirstTime ? "Welcome" : "Welcome back"}, {member.full_name.split(' ')[0]}!
                 </h1>
                 <div className="flex items-center gap-2 mb-3">
                   <PremiumBadge 
