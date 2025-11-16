@@ -2882,6 +2882,7 @@ const scannerLockRef = useRef(false);
 								</div>
 							</CardContent>
 						</Card>
+						</div>
 					</TabsContent>
 				</Tabs>
 			</div>
