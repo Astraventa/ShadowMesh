@@ -12,8 +12,10 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { QrScanner } from "@yudiel/react-qr-scanner";
 import AdminFake404 from "@/components/AdminFake404";
-import { Shield, QrCode, Loader2 } from "lucide-react";
+import { Shield, QrCode, Loader2, Search, Star, CheckCircle2, Eye, EyeOff, Crown, Heart, Users, Sparkles, Award, Edit, Save, X, Bell } from "lucide-react";
+import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
+import MemberEditForm from "./MemberEditForm";
 
 // Simple token gate using a shared moderator token stored in sessionStorage
 function useAdminToken() {
@@ -271,6 +273,21 @@ const Admin = () => {
 	const [members, setMembers] = useState<any[]>([]);
 	const [membersHasMore, setMembersHasMore] = useState(true);
 	const [membersLoading, setMembersLoading] = useState(false);
+	
+	// Member management enhancements
+	const [memberCategoryFilter, setMemberCategoryFilter] = useState<string>("all");
+	const [showHiddenMembers, setShowHiddenMembers] = useState(false);
+	const [badgeSearchEmail, setBadgeSearchEmail] = useState("");
+	const [badgeSearchResult, setBadgeSearchResult] = useState<any | null>(null);
+	const [badgeDialogOpen, setBadgeDialogOpen] = useState(false);
+	const [editingMember, setEditingMember] = useState<any | null>(null);
+	const [memberEditDialogOpen, setMemberEditDialogOpen] = useState(false);
+	const [notificationDialogOpen, setNotificationDialogOpen] = useState(false);
+	const [notificationMemberEmail, setNotificationMemberEmail] = useState("");
+	const [notificationMember, setNotificationMember] = useState<any | null>(null);
+	const [notificationTitle, setNotificationTitle] = useState("");
+	const [notificationMessage, setNotificationMessage] = useState("");
+	const [sendingNotification, setSendingNotification] = useState(false);
 
 	const [hackathonRegs, setHackathonRegs] = useState<any[]>([]);
 	const [hackRegsHasMore, setHackRegsHasMore] = useState(true);
@@ -463,6 +480,108 @@ const scannerLockRef = useRef(false);
 			toast({ title: "Failed to load members", description: e.message || String(e) });
 		} finally {
 			setMembersLoading(false);
+		}
+	}
+	
+	async function searchMemberForBadge() {
+		if (!badgeSearchEmail.trim()) return;
+		try {
+			const { data, error } = await supabase
+				.from("members")
+				.select("id, full_name, email, verified_badge, star_badge, custom_badge, member_category, priority_level, is_hidden")
+				.eq("email", badgeSearchEmail.trim().toLowerCase())
+				.single();
+			
+			if (error) throw error;
+			setBadgeSearchResult(data);
+		} catch (e: any) {
+			toast({ title: "Member not found", description: e.message, variant: "destructive" });
+			setBadgeSearchResult(null);
+		}
+	}
+	
+	async function toggleBadge(badgeType: "verified" | "star") {
+		if (!badgeSearchResult) return;
+		try {
+			const updateData: any = {
+				[`${badgeType}_badge`]: !badgeSearchResult[`${badgeType}_badge`],
+				badge_granted_at: new Date().toISOString(),
+				badge_granted_by: "admin"
+			};
+			
+			const { error } = await supabase
+				.from("members")
+				.update(updateData)
+				.eq("id", badgeSearchResult.id);
+			
+			if (error) throw error;
+			
+			setBadgeSearchResult({ ...badgeSearchResult, ...updateData });
+			setMembers((prev) =>
+				prev.map((m) => (m.id === badgeSearchResult.id ? { ...m, ...updateData } : m))
+			);
+			
+			toast({
+				title: "Success",
+				description: `${badgeType === "verified" ? "Verified" : "Star"} badge ${updateData[`${badgeType}_badge`] ? "granted" : "removed"}`
+			});
+		} catch (e: any) {
+			toast({ title: "Error", description: e.message, variant: "destructive" });
+		}
+	}
+	
+	async function searchMemberForNotification() {
+		if (!notificationMemberEmail.trim()) return;
+		try {
+			const { data, error } = await supabase
+				.from("members")
+				.select("id, full_name, email")
+				.eq("email", notificationMemberEmail.trim().toLowerCase())
+				.single();
+			
+			if (error) throw error;
+			setNotificationMember(data);
+		} catch (e: any) {
+			toast({ title: "Member not found", description: e.message, variant: "destructive" });
+			setNotificationMember(null);
+		}
+	}
+	
+	async function sendCustomNotification() {
+		if (!notificationMember || !notificationTitle.trim() || !notificationMessage.trim()) return;
+		setSendingNotification(true);
+		try {
+			const { error } = await supabase
+				.from("member_notifications")
+				.insert({
+					member_id: notificationMember.id,
+					notification_type: "admin_message",
+					title: notificationTitle.trim(),
+					message: notificationMessage.trim(),
+					metadata: {
+						sent_by: "admin",
+						sent_at: new Date().toISOString(),
+						custom: true
+					}
+				});
+			
+			if (error) throw error;
+			
+			toast({
+				title: "Success",
+				description: `Notification sent to ${notificationMember.full_name}`
+			});
+			
+			// Reset form
+			setNotificationMember(null);
+			setNotificationMemberEmail("");
+			setNotificationTitle("");
+			setNotificationMessage("");
+			setNotificationDialogOpen(false);
+		} catch (e: any) {
+			toast({ title: "Error", description: e.message, variant: "destructive" });
+		} finally {
+			setSendingNotification(false);
 		}
 	}
 
@@ -1555,68 +1674,171 @@ const scannerLockRef = useRef(false);
 		<TabsContent value="members">
 						<Card>
 							<CardHeader>
-								<CardTitle>Verified Members ({members.length})</CardTitle>
+								<CardTitle className="flex items-center justify-between">
+									<div className="flex items-center gap-3">
+										<Users className="w-5 h-5" />
+										<span>Member Management ({members.length})</span>
+									</div>
+									<div className="flex gap-2">
+										<Button onClick={() => setBadgeDialogOpen(true)} variant="outline" size="sm">
+											<Award className="w-4 h-4 mr-2" />
+											Manage Badges
+										</Button>
+										<Button onClick={() => {
+											setNotificationMember(null);
+											setNotificationMemberEmail("");
+											setNotificationTitle("");
+											setNotificationMessage("");
+											setNotificationDialogOpen(true);
+										}} variant="outline" size="sm">
+											<Bell className="w-4 h-4 mr-2" />
+											Send Notification
+										</Button>
+									</div>
+								</CardTitle>
 							</CardHeader>
 							<CardContent>
 								<Table>
 									<TableHeader>
 										<TableRow>
+											<TableHead>Priority</TableHead>
 											<TableHead>Joined</TableHead>
 											<TableHead>Name</TableHead>
 											<TableHead>Email</TableHead>
-											<TableHead>Cohort</TableHead>
+											<TableHead>Category</TableHead>
+											<TableHead>Badges</TableHead>
 											<TableHead>Status</TableHead>
-											<TableHead>Portal Access</TableHead>
-											<TableHead>From Email</TableHead>
+											<TableHead>Visibility</TableHead>
 											<TableHead className="text-right">Actions</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
 										{members.length === 0 && !membersLoading ? (
 											<TableRow>
-												<TableCell colSpan={8} className="text-center text-muted-foreground">No members yet</TableCell>
+												<TableCell colSpan={9} className="text-center text-muted-foreground">No members yet</TableCell>
 											</TableRow>
 										) : (
-											members.map((m) => (
-												<TableRow key={m.id} className="hover:bg-card/50">
-													<TableCell>{formatDate(m.created_at)}</TableCell>
-													<TableCell>{m.full_name}</TableCell>
-													<TableCell>{m.email}</TableCell>
-													<TableCell>{m.cohort || "-"}</TableCell>
-											<TableCell>
-														<Badge variant="secondary">{m.status || "active"}</Badge>
-													</TableCell>
-													<TableCell>
-														{m.portal_accessed ? (
-															<Badge variant="secondary" className="bg-green-500/20 text-green-700 dark:text-green-400">
-																✓ Accessed
-															</Badge>
-														) : (
-															<Badge variant="outline" className="text-muted-foreground">
-																Not Yet
-															</Badge>
-														)}
-														{m.first_portal_access_at && (
-															<p className="text-xs text-muted-foreground mt-1">
-																{formatDate(m.first_portal_access_at)}
-															</p>
-														)}
-													</TableCell>
-													<TableCell>
-														{m.joined_from_email ? (
-															<Badge variant="secondary" className="bg-blue-500/20 text-blue-700 dark:text-blue-400">
-																✓ Email
-															</Badge>
-														) : (
-															<span className="text-muted-foreground text-sm">-</span>
-														)}
-													</TableCell>
-													<TableCell className="text-right space-x-2">
-														<Button size="sm" variant="outline" onClick={() => void loadMemberDetails(m.id)}>View Details</Button>
-														<Button size="sm" variant="destructive" onClick={() => { setDeleteMemberId(m.id); setDeleteMemberOpen(true); }}>Delete</Button>
-													</TableCell>
-												</TableRow>
-											))
+											members
+												.filter((m) => {
+													if (memberCategoryFilter !== "all" && m.member_category !== memberCategoryFilter) return false;
+													if (!showHiddenMembers && m.is_hidden) return false;
+													return true;
+												})
+												.sort((a, b) => {
+													// Sort by priority level (higher first), then by verified badge, then star badge
+													const priorityA = a.priority_level || 0;
+													const priorityB = b.priority_level || 0;
+													if (priorityA !== priorityB) return priorityB - priorityA;
+													if (a.verified_badge !== b.verified_badge) return a.verified_badge ? -1 : 1;
+													if (a.star_badge !== b.star_badge) return a.star_badge ? -1 : 1;
+													return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+												})
+												.map((m) => {
+													const categoryColors: Record<string, string> = {
+														admin: "bg-red-500/20 text-red-700 dark:text-red-400 border-red-500/30",
+														core_team: "bg-purple-500/20 text-purple-700 dark:text-purple-400 border-purple-500/30",
+														friend: "bg-pink-500/20 text-pink-700 dark:text-pink-400 border-pink-500/30",
+														special: "bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30",
+														vip: "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 border-yellow-500/30",
+														regular: "bg-gray-500/20 text-gray-700 dark:text-gray-400 border-gray-500/30"
+													};
+													const categoryIcons: Record<string, any> = {
+														admin: Shield,
+														core_team: Crown,
+														friend: Heart,
+														special: Sparkles,
+														vip: Award,
+														regular: Users
+													};
+													const CategoryIcon = categoryIcons[m.member_category || "regular"] || Users;
+													
+													return (
+														<TableRow key={m.id} className={`hover:bg-card/50 ${m.is_hidden ? "opacity-60" : ""}`}>
+															<TableCell>
+																<div className="flex items-center gap-1">
+																	{m.priority_level > 0 ? (
+																		<Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+																			{m.priority_level}
+																		</Badge>
+																	) : (
+																		<span className="text-muted-foreground text-xs">-</span>
+																	)}
+																</div>
+															</TableCell>
+															<TableCell>{formatDate(m.created_at)}</TableCell>
+															<TableCell>
+																<div className="flex items-center gap-2">
+																	<span className="font-medium">{m.full_name}</span>
+																	<PremiumBadge verified={m.verified_badge} star={m.star_badge} custom={m.custom_badge} size="sm" />
+																</div>
+															</TableCell>
+															<TableCell>
+																<div className="flex items-center gap-2">
+																	<span>{m.email_hidden ? "***@hidden" : m.email}</span>
+																	{m.email_hidden && (
+																		<Badge variant="outline" className="text-xs">Hidden</Badge>
+																	)}
+																</div>
+															</TableCell>
+															<TableCell>
+																<Badge variant="outline" className={categoryColors[m.member_category || "regular"]}>
+																	<CategoryIcon className="w-3 h-3 mr-1" />
+																	{(m.member_category || "regular").replace("_", " ").toUpperCase()}
+																</Badge>
+															</TableCell>
+															<TableCell>
+																<PremiumBadge verified={m.verified_badge} star={m.star_badge} custom={m.custom_badge} size="sm" />
+															</TableCell>
+															<TableCell>
+																<Badge variant="secondary">{m.status || "active"}</Badge>
+															</TableCell>
+															<TableCell>
+																<Button
+																	size="sm"
+																	variant={m.is_hidden ? "outline" : "secondary"}
+																	onClick={async () => {
+																		try {
+																			const { error } = await supabase
+																				.from("members")
+																				.update({ is_hidden: !m.is_hidden })
+																				.eq("id", m.id);
+																			if (error) throw error;
+																			setMembers((prev) =>
+																				prev.map((mem) => (mem.id === m.id ? { ...mem, is_hidden: !m.is_hidden } : mem))
+																			);
+																			toast({ title: "Success", description: `Member ${m.is_hidden ? "shown" : "hidden"}` });
+																		} catch (e: any) {
+																			toast({ title: "Error", description: e.message, variant: "destructive" });
+																		}
+																	}}
+																>
+																	{m.is_hidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+																</Button>
+															</TableCell>
+															<TableCell className="text-right space-x-2">
+																<Button size="sm" variant="outline" onClick={() => {
+																	setEditingMember(m);
+																	setMemberEditDialogOpen(true);
+																}}>
+																	<Edit className="w-3 h-3 mr-1" />
+																	Edit
+																</Button>
+																<Button size="sm" variant="outline" onClick={() => {
+																	setNotificationMember(m);
+																	setNotificationMemberEmail(m.email);
+																	setNotificationTitle("");
+																	setNotificationMessage("");
+																	setNotificationDialogOpen(true);
+																}}>
+																	<Bell className="w-3 h-3 mr-1" />
+																	Notify
+																</Button>
+																<Button size="sm" variant="outline" onClick={() => void loadMemberDetails(m.id)}>Details</Button>
+																<Button size="sm" variant="destructive" onClick={() => { setDeleteMemberId(m.id); setDeleteMemberOpen(true); }}>Delete</Button>
+															</TableCell>
+														</TableRow>
+													);
+												})
 										)}
 									</TableBody>
 								</Table>
@@ -1627,6 +1849,211 @@ const scannerLockRef = useRef(false);
 								</div>
 							</CardContent>
 						</Card>
+						
+						{/* Badge Management Dialog */}
+						<Dialog open={badgeDialogOpen} onOpenChange={setBadgeDialogOpen}>
+							<DialogContent className="max-w-2xl">
+								<DialogHeader>
+									<DialogTitle className="flex items-center gap-2">
+										<Award className="w-5 h-5" />
+										Badge Management
+									</DialogTitle>
+									<DialogDescription>
+										Search for a member by email to manage their badges
+									</DialogDescription>
+								</DialogHeader>
+								<div className="space-y-4 py-4">
+									<div className="flex gap-2">
+										<Input
+											placeholder="Enter member email..."
+											value={badgeSearchEmail}
+											onChange={(e) => setBadgeSearchEmail(e.target.value)}
+											onKeyDown={(e) => {
+												if (e.key === "Enter") {
+													void searchMemberForBadge();
+												}
+											}}
+										/>
+										<Button onClick={() => void searchMemberForBadge()} disabled={!badgeSearchEmail.trim()}>
+											<Search className="w-4 h-4 mr-2" />
+											Search
+										</Button>
+									</div>
+									
+									{badgeSearchResult && (
+										<div className="p-4 border rounded-lg space-y-4">
+											<div className="flex items-center justify-between">
+												<div>
+													<h3 className="font-semibold text-lg">{badgeSearchResult.full_name}</h3>
+													<p className="text-sm text-muted-foreground">{badgeSearchResult.email}</p>
+												</div>
+												<PremiumBadge verified={badgeSearchResult.verified_badge} star={badgeSearchResult.star_badge} custom={badgeSearchResult.custom_badge} />
+											</div>
+											
+											<div className="grid grid-cols-2 gap-4">
+												<div className="space-y-2">
+													<label className="text-sm font-medium">Verified Badge (Top Priority)</label>
+													<Button
+														variant={badgeSearchResult.verified_badge ? "default" : "outline"}
+														className="w-full"
+														onClick={() => void toggleBadge("verified")}
+													>
+														<CheckCircle2 className="w-4 h-4 mr-2" />
+														{badgeSearchResult.verified_badge ? "Remove Verified" : "Grant Verified"}
+													</Button>
+												</div>
+												<div className="space-y-2">
+													<label className="text-sm font-medium">Star Badge (Second Priority)</label>
+													<Button
+														variant={badgeSearchResult.star_badge ? "default" : "outline"}
+														className="w-full"
+														onClick={() => void toggleBadge("star")}
+													>
+														<Star className="w-4 h-4 mr-2" />
+														{badgeSearchResult.star_badge ? "Remove Star" : "Grant Star"}
+													</Button>
+												</div>
+											</div>
+										</div>
+									)}
+								</div>
+							</DialogContent>
+						</Dialog>
+						
+						{/* Member Edit Dialog */}
+						<Dialog open={memberEditDialogOpen} onOpenChange={setMemberEditDialogOpen}>
+							<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+								<DialogHeader>
+									<DialogTitle>Edit Member</DialogTitle>
+									<DialogDescription>
+										Manage member category, priority, visibility, and notes
+									</DialogDescription>
+								</DialogHeader>
+								{editingMember && (
+									<MemberEditForm
+										member={editingMember}
+										onSave={async (updates) => {
+											try {
+												const { error } = await supabase
+													.from("members")
+													.update(updates)
+													.eq("id", editingMember.id);
+												if (error) throw error;
+												setMembers((prev) =>
+													prev.map((m) => (m.id === editingMember.id ? { ...m, ...updates } : m))
+												);
+												toast({ title: "Success", description: "Member updated successfully" });
+												setMemberEditDialogOpen(false);
+												setEditingMember(null);
+											} catch (e: any) {
+												toast({ title: "Error", description: e.message, variant: "destructive" });
+											}
+										}}
+										onCancel={() => {
+											setMemberEditDialogOpen(false);
+											setEditingMember(null);
+										}}
+									/>
+								)}
+							</DialogContent>
+						</Dialog>
+						
+						{/* Send Notification Dialog */}
+						<Dialog open={notificationDialogOpen} onOpenChange={setNotificationDialogOpen}>
+							<DialogContent className="max-w-2xl">
+								<DialogHeader>
+									<DialogTitle className="flex items-center gap-2">
+										<Bell className="w-5 h-5" />
+										Send Custom Notification
+									</DialogTitle>
+									<DialogDescription>
+										Send a custom notification message to a member
+									</DialogDescription>
+								</DialogHeader>
+								<div className="space-y-4 py-4">
+									<div className="flex gap-2">
+										<Input
+											placeholder="Enter member email..."
+											value={notificationMemberEmail}
+											onChange={(e) => setNotificationMemberEmail(e.target.value)}
+											onKeyDown={(e) => {
+												if (e.key === "Enter" && !notificationMember) {
+													void searchMemberForNotification();
+												}
+											}}
+											disabled={!!notificationMember}
+										/>
+										{!notificationMember && (
+											<Button onClick={() => void searchMemberForNotification()} disabled={!notificationMemberEmail.trim()}>
+												<Search className="w-4 h-4 mr-2" />
+												Search
+											</Button>
+										)}
+									</div>
+									
+									{notificationMember && (
+										<div className="p-4 border rounded-lg space-y-4">
+											<div>
+												<p className="text-sm text-muted-foreground mb-1">Sending to:</p>
+												<p className="font-semibold">{notificationMember.full_name}</p>
+												<p className="text-sm text-muted-foreground">{notificationMember.email}</p>
+											</div>
+											
+											<div className="space-y-2">
+												<label className="text-sm font-medium">Notification Title</label>
+												<Input
+													placeholder="e.g., Important Update, Welcome Message..."
+													value={notificationTitle}
+													onChange={(e) => setNotificationTitle(e.target.value)}
+												/>
+											</div>
+											
+											<div className="space-y-2">
+												<label className="text-sm font-medium">Notification Message</label>
+												<Textarea
+													placeholder="Enter your custom message..."
+													value={notificationMessage}
+													onChange={(e) => setNotificationMessage(e.target.value)}
+													rows={5}
+												/>
+											</div>
+											
+											<div className="flex gap-2">
+												<Button
+													variant="outline"
+													className="flex-1"
+													onClick={() => {
+														setNotificationMember(null);
+														setNotificationMemberEmail("");
+														setNotificationTitle("");
+														setNotificationMessage("");
+													}}
+												>
+													Change Member
+												</Button>
+												<Button
+													className="flex-1"
+													onClick={() => void sendCustomNotification()}
+													disabled={!notificationTitle.trim() || !notificationMessage.trim() || sendingNotification}
+												>
+													{sendingNotification ? (
+														<>
+															<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+															Sending...
+														</>
+													) : (
+														<>
+															<Bell className="w-4 h-4 mr-2" />
+															Send Notification
+														</>
+													)}
+												</Button>
+											</div>
+										</div>
+									)}
+								</div>
+							</DialogContent>
+						</Dialog>
 					</TabsContent>
 
 			{/* Manage Hackathon Drawer (re-added) */}

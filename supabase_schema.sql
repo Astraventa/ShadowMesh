@@ -164,6 +164,23 @@ begin
   if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'badge_granted_by') then
     alter table public.members add column badge_granted_by text; -- Admin who granted the badge
   end if;
+  
+  -- Member management features
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'is_hidden') then
+    alter table public.members add column is_hidden boolean default false; -- Hide member from public lists
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'member_category') then
+    alter table public.members add column member_category text default 'regular' check (member_category in ('regular', 'admin', 'friend', 'special', 'vip', 'core_team')); -- Member category
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'priority_level') then
+    alter table public.members add column priority_level integer default 0; -- Priority for sorting (higher = more important)
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'special_notes') then
+    alter table public.members add column special_notes text; -- Admin notes about this member
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'email_hidden') then
+    alter table public.members add column email_hidden boolean default false; -- Hide email from public view
+  end if;
 end$$;
 
 -- Events table for workshops, hackathons, etc.
@@ -865,7 +882,7 @@ create table if not exists public.member_notifications (
   id                uuid primary key default gen_random_uuid(),
   created_at        timestamptz not null default now(),
   member_id         uuid references public.members(id) on delete cascade,
-  notification_type text not null check (notification_type in ('team_invite', 'team_joined', 'team_request', 'hackathon_approved', 'hackathon_started', 'submission_reminder', 'results_published', 'general', 'team_chat', 'team_deleted')),
+  notification_type text not null check (notification_type in ('team_invite', 'team_joined', 'team_request', 'hackathon_approved', 'hackathon_started', 'submission_reminder', 'results_published', 'general', 'team_chat', 'team_deleted', 'admin_message')),
   title             text not null,
   message           text not null,
   related_id        uuid, -- ID of related team/event/submission/etc
