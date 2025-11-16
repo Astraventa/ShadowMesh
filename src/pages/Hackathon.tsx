@@ -164,6 +164,7 @@ export default function Hackathon() {
 
   const chatChannelRef = useRef<RealtimeChannel | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const pendingMessagesRef = useRef<Set<string>>(new Set()); // Track messages we're waiting for via realtime
 
   useEffect(() => {
     async function loadHackathonData() {
@@ -330,6 +331,9 @@ export default function Hackathon() {
               // Check if message already exists
               const exists = filtered.some((m) => m.id === formattedMessage.id);
               if (exists) return filtered;
+              
+              // Mark this message as delivered (clear from pending)
+              pendingMessagesRef.current.delete(formattedMessage.message);
               
               // Add the real message
               const updated = [...filtered, formattedMessage].sort(
@@ -799,6 +803,11 @@ export default function Hackathon() {
     scrollChatToBottom();
     setSendingChat(true);
 
+    // Track this message as pending (waiting for realtime delivery)
+    pendingMessagesRef.current.add(message);
+
+    let responseOk = false;
+
     try {
       const response = await fetch(`${SUPABASE_URL}/functions/v1/team_chat_send`, {
         method: "POST",
@@ -813,21 +822,23 @@ export default function Hackathon() {
         }),
       });
 
+      responseOk = response.ok;
+
       // If response is OK, message was saved - realtime will deliver it instantly
-      // No need to parse response or show errors - just return
       if (response.ok) {
         // Message saved successfully - realtime handles delivery to all users
         // Keep optimistic message, realtime will replace it with real one
         // Input is already cleared, no error shown
+        // Clear from pending after a delay (realtime should deliver it quickly)
+        setTimeout(() => {
+          pendingMessagesRef.current.delete(message);
+        }, 3000);
         return;
       }
 
-      // Response is not OK - message failed to send
-      // Remove optimistic message and restore input
-      setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setChatInput(message);
-      
-      // Try to get error message (but don't fail if we can't parse)
+      // Response is not OK - message might have failed to send
+      // But wait for realtime to confirm before showing error
+      // Read response text first (can only read once)
       let errorMessage = "Failed to send message";
       try {
         const responseText = await response.text();
@@ -836,7 +847,6 @@ export default function Hackathon() {
             const errorJson = JSON.parse(responseText);
             errorMessage = errorJson.error || errorJson.message || errorMessage;
           } catch {
-            // Can't parse JSON, use raw text or default
             errorMessage = responseText.slice(0, 100) || errorMessage;
           }
         }
@@ -844,26 +854,36 @@ export default function Hackathon() {
         // Ignore errors reading response
       }
       
-      toast({ title: "Failed to send message", description: errorMessage, variant: "destructive" });
+      // Wait a bit to see if realtime delivered it anyway
+      setTimeout(() => {
+        // Check if realtime delivered it
+        if (!pendingMessagesRef.current.has(message)) {
+          // Message was delivered via realtime - don't show error
+          return;
+        }
+        
+        // Message wasn't delivered - it failed
+        pendingMessagesRef.current.delete(message);
+        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setChatInput(message);
+        toast({ title: "Failed to send message", description: errorMessage, variant: "destructive" });
+      }, 2000); // Wait 2 seconds for realtime to deliver
+      
     } catch (error: any) {
       // Network error or other exception
-      // Check if realtime already delivered the message (it might have been sent)
+      // Wait to see if realtime delivered the message anyway
       setTimeout(() => {
-        setChatMessages((currentMessages) => {
-          const messageExists = currentMessages.some(
-            (m) => !m.id.startsWith("temp-") && m.message === message && m.sender_member_id === memberId
-          );
-          
-          if (!messageExists) {
-            // Message definitely wasn't sent - show error and restore input
-            setChatInput(message);
-            setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
-            toast({ title: "Failed to send message", description: error.message || "Network error. Please try again.", variant: "destructive" });
-          }
-          // If message exists, it was sent via realtime - don't show error, input already cleared
-          return currentMessages;
-        });
-      }, 1500); // Wait 1.5 seconds for realtime to deliver
+        if (!pendingMessagesRef.current.has(message)) {
+          // Message was delivered via realtime - don't show error
+          return;
+        }
+        
+        // Message wasn't delivered - it failed
+        pendingMessagesRef.current.delete(message);
+        setChatInput(message);
+        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+        toast({ title: "Failed to send message", description: error.message || "Network error. Please try again.", variant: "destructive" });
+      }, 2000); // Wait 2 seconds for realtime to deliver
     } finally {
       setSendingChat(false);
     }
