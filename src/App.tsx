@@ -11,6 +11,7 @@ import MemberPortal from "./pages/MemberPortal";
 import AttendanceCheckin from "./pages/AttendanceCheckin";
 import Hackathon from "./pages/Hackathon";
 import TeamInvite from "./pages/TeamInvite";
+import JoinUsPage from "./pages/JoinUsPage";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/join-us" element={<JoinUsPage />} />
           <Route path="/resources/:category" element={<ResourcesCategory />} />
           {/* Secret admin route - obscured path */}
           <Route path="/shadow-ops-portal" element={<Admin />} />

@@ -42,6 +42,7 @@
   }
 import { Sparkles, CheckCircle2, Shield } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +56,9 @@ import { useToast } from "@/components/ui/use-toast";
 
 const JoinUs = () => {
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const inviteParam = searchParams.get("invite");
   const [activeTab] = useState<"register">("register");
   const [hasPendingInvite, setHasPendingInvite] = useState(false);
   const [affiliation, setAffiliation] = useState<string>("student");
@@ -108,10 +112,19 @@ const JoinUs = () => {
   // Check for pending invite on mount
   useEffect(() => {
     const pendingInvite = localStorage.getItem("pending_team_invite");
-    const urlParams = new URLSearchParams(window.location.search);
-    const inviteParam = urlParams.get("invite");
     setHasPendingInvite(!!pendingInvite || inviteParam === "true");
-  }, []);
+    
+    // Scroll to join section if coming from invite link
+    if (inviteParam === "true" || pendingInvite) {
+      // Small delay to ensure page is rendered
+      setTimeout(() => {
+        const joinSection = document.getElementById("join");
+        if (joinSection) {
+          joinSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 100);
+    }
+  }, [inviteParam]);
   const phoneValidationRequest = useRef(0);
   const emailDebounceRef = useRef<number | undefined>(undefined);
   const phoneDebounceRef = useRef<number | undefined>(undefined);
