@@ -142,16 +142,17 @@ export default function MemberEditForm({ member, onSave, onCancel }: MemberEditF
 							</Button>
 						</div>
 						<p className="text-xs text-muted-foreground">
-							Higher priority = appears first in lists. Use for special members (e.g., university crush 😉)
+							Higher priority = appears first in lists. Use for special members, VIPs, or important contributors.
 						</p>
 						<div className="mt-2 p-2 bg-muted rounded text-xs">
-							<p><strong>How it works:</strong></p>
+							<p><strong>How Priority Works:</strong></p>
 							<ul className="list-disc list-inside space-y-1 mt-1">
 								<li>0 = Normal priority (default)</li>
 								<li>1-50 = Medium priority</li>
 								<li>51-90 = High priority</li>
 								<li>91-100 = Maximum priority (appears at top)</li>
-								<li>Sorting: Priority → Verified Badge → Star Badge → Join Date</li>
+								<li><strong>Note:</strong> Priority affects leaderboard ranking only. Badges are separate and must be granted manually.</li>
+								<li><strong>Sorting Order:</strong> Priority Level → Verified Badge → Star Badge → Join Date</li>
 							</ul>
 						</div>
 					</div>
@@ -229,7 +230,10 @@ export default function MemberEditForm({ member, onSave, onCancel }: MemberEditF
 								<strong>Total Badges Available:</strong> 2 (Both are premium/elite styled)
 							</p>
 							<p className="text-muted-foreground">
-								Use "Manage Badges" button to grant/remove badges. Custom badges coming soon with GPT Pro support.
+								<strong>Important:</strong> Badges are separate from priority. High priority does NOT automatically grant badges. Use "Manage Badges" button in admin panel to grant/remove badges manually.
+							</p>
+							<p className="text-muted-foreground mt-1">
+								Badges appear everywhere: team lists, leaderboard, chat, member profiles. Custom badges coming soon with GPT Pro support.
 							</p>
 						</CardContent>
 					</Card>

@@ -92,7 +92,7 @@ serve(async (req) => {
       );
     }
 
-    let query = `${SUPABASE_URL}/rest/v1/team_messages?team_id=eq.${teamId}&select=id,created_at,team_id,hackathon_id,sender_member_id,message,member:sender_member_id(full_name,email)&order=created_at.asc&limit=${limit}`;
+    let query = `${SUPABASE_URL}/rest/v1/team_messages?team_id=eq.${teamId}&select=id,created_at,team_id,hackathon_id,sender_member_id,message,member:sender_member_id(full_name,email,verified_badge,star_badge,custom_badge)&order=created_at.asc&limit=${limit}`;
     if (before) {
       query += `&created_at=lt.${encodeURIComponent(before)}`;
     }
@@ -118,6 +118,9 @@ serve(async (req) => {
       message: row.message,
       sender_name: row.member?.full_name || "Unknown",
       sender_email: row.member?.email || "",
+      sender_verified_badge: row.member?.verified_badge || false,
+      sender_star_badge: row.member?.star_badge || false,
+      sender_custom_badge: row.member?.custom_badge || null,
     }));
 
     return new Response(

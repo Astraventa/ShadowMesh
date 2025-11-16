@@ -1796,6 +1796,7 @@ const scannerLockRef = useRef(false);
 																<Button
 																	size="sm"
 																	variant={m.is_hidden ? "outline" : "secondary"}
+																	title={m.is_hidden ? "Click to show member in public lists" : "Click to hide member from public lists"}
 																	onClick={async () => {
 																		try {
 																			const { error } = await supabase
@@ -1806,7 +1807,10 @@ const scannerLockRef = useRef(false);
 																			setMembers((prev) =>
 																				prev.map((mem) => (mem.id === m.id ? { ...mem, is_hidden: !m.is_hidden } : mem))
 																			);
-																			toast({ title: "Success", description: `Member ${m.is_hidden ? "shown" : "hidden"}` });
+																			toast({ 
+																				title: "Visibility Updated", 
+																				description: `Member will ${m.is_hidden ? "now appear" : "now be hidden"} in public lists` 
+																			});
 																		} catch (e: any) {
 																			toast({ title: "Error", description: e.message, variant: "destructive" });
 																		}

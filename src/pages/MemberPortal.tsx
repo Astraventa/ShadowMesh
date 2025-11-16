@@ -39,6 +39,9 @@ interface Member {
   verified_badge?: boolean;
   star_badge?: boolean;
   custom_badge?: string;
+  priority_level?: number;
+  member_category?: string;
+  email_hidden?: boolean;
 }
 
 interface Event {
@@ -117,8 +120,10 @@ function LeaderboardSection() {
       try {
         const { data, error } = await supabase
           .from("members")
-          .select("id, full_name, email, verified_badge, star_badge, custom_badge, created_at")
+          .select("id, full_name, email, verified_badge, star_badge, custom_badge, created_at, priority_level, member_category")
           .eq("status", "active")
+          .eq("is_hidden", false)
+          .order("priority_level", { ascending: false, nullsFirst: false })
           .order("verified_badge", { ascending: false, nullsFirst: false })
           .order("star_badge", { ascending: false, nullsFirst: false })
           .order("created_at", { ascending: true })
@@ -2269,7 +2274,7 @@ export default function MemberPortal() {
                     <Trophy className="w-6 h-6 text-primary" />
                     Member Leaderboard
                   </CardTitle>
-                  <CardDescription>Top members by badge status</CardDescription>
+                  <CardDescription>Top members ranked by priority, badges, and activity. This is a community ranking system showing active members, not hackathon winners.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <LeaderboardSection />

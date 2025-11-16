@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { RealtimeChannel } from "@supabase/supabase-js";
+import PremiumBadge from "@/components/PremiumBadge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,7 +84,7 @@ interface Team {
   team_leader_id: string;
   status: string;
   max_members: number;
-  members: Array<{ member_id: string; full_name: string; email: string; role: string; area_of_interest?: string }>;
+  members: Array<{ member_id: string; full_name: string; email: string; role: string; area_of_interest?: string; verified_badge?: boolean; star_badge?: boolean; custom_badge?: string }>;
 }
 
 interface Submission {
@@ -120,6 +121,9 @@ interface TeamMessage {
   sender_name: string;
   sender_email: string;
   message: string;
+  sender_verified_badge?: boolean;
+  sender_star_badge?: boolean;
+  sender_custom_badge?: string;
 }
 
 export default function Hackathon() {
@@ -308,7 +312,7 @@ export default function Hackathon() {
           try {
             const { data: senderData } = await supabase
               .from("members")
-              .select("full_name, email")
+              .select("full_name, email, verified_badge, star_badge, custom_badge")
               .eq("id", newMessage.sender_member_id)
               .single();
 
@@ -321,6 +325,9 @@ export default function Hackathon() {
               message: newMessage.message,
               sender_name: senderData?.full_name || "Unknown",
               sender_email: senderData?.email || "",
+              sender_verified_badge: senderData?.verified_badge || false,
+              sender_star_badge: senderData?.star_badge || false,
+              sender_custom_badge: senderData?.custom_badge || null,
             };
 
             // Replace optimistic message or append new one
@@ -829,7 +836,7 @@ export default function Hackathon() {
         team_members(
           member_id,
           role,
-          members(id, full_name, email)
+          members(id, full_name, email, verified_badge, star_badge, custom_badge)
         )
       `)
       .eq("hackathon_id", hackathonId)
@@ -1304,7 +1311,10 @@ export default function Hackathon() {
             full_name: tm.members?.full_name || "",
             email: tm.members?.email || "",
             role: tm.role,
-            area_of_interest: tm.members?.area_of_interest || ""
+            area_of_interest: tm.members?.area_of_interest || "",
+            verified_badge: tm.members?.verified_badge || false,
+            star_badge: tm.members?.star_badge || false,
+            custom_badge: tm.members?.custom_badge || null
           }))
         }));
         setAllTeams(formattedTeams as Team[]);
@@ -1945,6 +1955,12 @@ export default function Hackathon() {
                                     {member.role === "leader" ? "Leader" : "Member"}
                                   </Badge>
                                   <p className="font-medium truncate">{member.full_name}</p>
+                                  <PremiumBadge 
+                                    verified={member.verified_badge} 
+                                    star={member.star_badge} 
+                                    custom={member.custom_badge} 
+                                    size="sm" 
+                                  />
                                   {member.area_of_interest && (
                                     <Badge variant="outline" className="text-xs bg-background/50 border-primary/30 text-primary shrink-0">
                                       {member.area_of_interest}
@@ -2145,7 +2161,17 @@ export default function Hackathon() {
                                       }`}
                                     >
                                       <div className="flex items-center justify-between gap-3 text-[11px] opacity-80 mb-1">
-                                        <span className="truncate">{isSelf ? "You" : msg.sender_name}</span>
+                                        <div className="flex items-center gap-2 truncate">
+                                          <span>{isSelf ? "You" : msg.sender_name}</span>
+                                          {!isSelf && (
+                                            <PremiumBadge 
+                                              verified={msg.sender_verified_badge} 
+                                              star={msg.sender_star_badge} 
+                                              custom={msg.sender_custom_badge} 
+                                              size="sm" 
+                                            />
+                                          )}
+                                        </div>
                                         <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                                       </div>
                                       <p className="whitespace-pre-wrap break-words text-xs sm:text-sm">{msg.message}</p>
