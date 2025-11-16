@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabaseClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,31 @@ export default function TeamInvite() {
   const [error, setError] = useState<string | null>(null);
   const [memberId, setMemberId] = useState<string | null>(null);
   const [registrationStatus, setRegistrationStatus] = useState<"none" | "pending" | "approved" | "rejected" | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+
+  const checkRegistrationStatus = useCallback(async () => {
+    if (!memberId || !inviteData?.hackathon_id) return;
+    
+    setCheckingStatus(true);
+    try {
+      const { data: regData } = await supabase
+        .from("hackathon_registrations")
+        .select("status")
+        .eq("hackathon_id", inviteData.hackathon_id)
+        .eq("member_id", memberId)
+        .maybeSingle();
+      
+      if (!regData) {
+        setRegistrationStatus("none");
+      } else {
+        setRegistrationStatus(regData.status as "pending" | "approved" | "rejected");
+      }
+    } catch (err) {
+      console.error("Error checking registration status:", err);
+    } finally {
+      setCheckingStatus(false);
+    }
+  }, [memberId, inviteData?.hackathon_id]);
 
   useEffect(() => {
     async function verifyInvite() {
@@ -102,6 +127,21 @@ export default function TeamInvite() {
 
     verifyInvite();
   }, [token]);
+
+  // Auto-refresh registration status when page becomes visible (user comes back after registration)
+  useEffect(() => {
+    if (!memberId || !inviteData?.hackathon_id) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && registrationStatus === "pending") {
+        // Re-check status when user returns to the page
+        void checkRegistrationStatus();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [memberId, inviteData?.hackathon_id, registrationStatus, checkRegistrationStatus]);
 
   async function handleJoinTeam() {
     if (!memberId || !inviteData) return;
@@ -330,7 +370,7 @@ export default function TeamInvite() {
               <AlertCircle className="h-4 w-4 text-blue-500" />
               <AlertTitle>Registration Pending</AlertTitle>
               <AlertDescription>
-                Your hackathon registration is under review. Once approved, you can join this team. We'll notify you when your registration is approved.
+                Your hackathon registration is under review. Once approved, you can join this team. Click "Check Status" to refresh.
               </AlertDescription>
             </Alert>
 
@@ -339,14 +379,34 @@ export default function TeamInvite() {
                 variant="outline"
                 className="flex-1"
                 onClick={() => navigate("/member-portal")}
+                disabled={checkingStatus}
               >
                 Go to Portal
               </Button>
               <Button
+                variant="outline"
                 className="flex-1"
                 onClick={() => navigate(`/hackathons/${inviteData?.hackathon_id}`)}
+                disabled={checkingStatus}
               >
                 View Hackathon
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={checkRegistrationStatus}
+                disabled={checkingStatus}
+              >
+                {checkingStatus ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Checking...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    Check Status
+                  </>
+                )}
               </Button>
             </div>
           </CardContent>

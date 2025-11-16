@@ -431,10 +431,12 @@ export default function Hackathon() {
 
   async function loadPendingTeamRequests(currentMemberId: string) {
     try {
+      // Load requests sent TO current member (they're the leader receiving join requests)
+      // AND requests sent FROM current member (they're requesting to join teams)
       const { data: teamReqs } = await supabase
         .from("team_requests")
-        .select("id, created_at, team_id, status, message")
-        .eq("to_member_id", currentMemberId)
+        .select("id, created_at, team_id, status, message, from_member_id, to_member_id")
+        .or(`to_member_id.eq.${currentMemberId},from_member_id.eq.${currentMemberId}`)
         .eq("status", "pending");
 
       if (!teamReqs || teamReqs.length === 0) {
@@ -442,6 +444,7 @@ export default function Hackathon() {
       }
 
       const teamIds = Array.from(new Set(teamReqs.map((r: any) => r.team_id).filter(Boolean)));
+      const requesterIds = Array.from(new Set(teamReqs.map((r: any) => r.from_member_id).filter(Boolean)));
       const { data: teams } = teamIds.length
         ? await supabase
             .from("hackathon_teams")
@@ -467,6 +470,16 @@ export default function Hackathon() {
       const leaderMap = new Map<string, any>();
       (leaders || []).forEach((leader: any) => leaderMap.set(leader.id, leader));
 
+      // Load requester info (members who want to join)
+      const { data: requesters } = requesterIds.length
+        ? await supabase
+            .from("members")
+            .select("id, full_name, email, area_of_interest")
+            .in("id", Array.from(requesterIds))
+        : { data: [] as any[] };
+      const requesterMap = new Map<string, any>();
+      (requesters || []).forEach((requester: any) => requesterMap.set(requester.id, requester));
+
       const { data: hackathons } = hackathonIds.size
         ? await supabase
             .from("events")
@@ -479,7 +492,9 @@ export default function Hackathon() {
       return teamReqs.map((request: any) => {
         const teamRow = teamMap.get(request.team_id);
         const leaderRow = teamRow ? leaderMap.get(teamRow.team_leader_id) : null;
+        const requesterRow = requesterMap.get(request.from_member_id);
         const hackathonRow = teamRow ? hackathonMap.get(teamRow.hackathon_id) : null;
+        const isIncoming = request.to_member_id === currentMemberId; // Leader receiving request
         return {
           id: request.id,
           created_at: request.created_at,
@@ -492,6 +507,11 @@ export default function Hackathon() {
           leader_name: leaderRow?.full_name || "Team Leader",
           leader_email: leaderRow?.email || "",
           leader_interest: leaderRow?.area_of_interest || "",
+          requester_id: request.from_member_id,
+          requester_name: requesterRow?.full_name || "Member",
+          requester_email: requesterRow?.email || "",
+          requester_interest: requesterRow?.area_of_interest || "",
+          is_incoming: isIncoming, // true if leader receiving, false if member sent request
           max_members: teamRow?.max_members || 4,
         };
       });
@@ -559,9 +579,22 @@ export default function Hackathon() {
 
   async function respondToInvite(decision: "accepted" | "rejected") {
     if (!selectedInvite || !memberId) return;
-    if (decision === "accepted" && hasTeam) {
-      toast({ title: "Already in a team", description: "Leave your current team before accepting another invite.", variant: "destructive" });
-      return;
+    
+    const isLeaderResponding = selectedInvite.is_incoming; // Leader responding to join request
+    const requesterId = selectedInvite.requester_id;
+    
+    if (isLeaderResponding) {
+      // Leader accepting/rejecting a join request
+      if (decision === "accepted" && hasTeam && team?.id !== selectedInvite.team_id) {
+        toast({ title: "Already in a team", description: "You can only be in one team per hackathon.", variant: "destructive" });
+        return;
+      }
+    } else {
+      // Member accepting/rejecting an invitation
+      if (decision === "accepted" && hasTeam) {
+        toast({ title: "Already in a team", description: "Leave your current team before accepting another invite.", variant: "destructive" });
+        return;
+      }
     }
 
     setRespondingInvite(true);
@@ -584,11 +617,13 @@ export default function Hackathon() {
           throw new Error("This team is already full.");
         }
 
+        // Add the appropriate member to the team
+        const memberToAdd = isLeaderResponding ? requesterId : memberId;
         await supabase
           .from("team_members")
           .insert({
             team_id: selectedInvite.team_id,
-            member_id: memberId,
+            member_id: memberToAdd,
             role: "member",
           });
 
@@ -597,19 +632,60 @@ export default function Hackathon() {
           .update({ status: "accepted", responded_at: nowIso })
           .eq("id", selectedInvite.id);
 
-        toast({ title: "Invite accepted", description: `You're now part of ${selectedInvite.team_name}.` });
+        // Send notification to the requester if leader accepted
+        if (isLeaderResponding && requesterId) {
+          await supabase
+            .from("member_notifications")
+            .insert({
+              member_id: requesterId,
+              notification_type: "team_joined",
+              title: `Join Request Accepted`,
+              message: `Your request to join "${selectedInvite.team_name}" has been accepted!`,
+              related_id: selectedInvite.team_id,
+              related_type: "team",
+              action_url: `/hackathons/${selectedInvite.hackathon_id}?tab=teams`,
+            });
+        }
+
+        toast({ 
+          title: isLeaderResponding ? "Request accepted" : "Invite accepted", 
+          description: isLeaderResponding 
+            ? `${selectedInvite.requester_name} has been added to your team.`
+            : `You're now part of ${selectedInvite.team_name}.` 
+        });
         setInviteDialogOpen(false);
         setSelectedInvite(null);
         await loadNotifications(memberId);
         if (hackathonId) {
           await loadMemberTeam(hackathonId, memberId);
+          await loadTeamsAndPlayers(hackathonId, memberId);
         }
       } else {
         await supabase
           .from("team_requests")
           .update({ status: "rejected", responded_at: nowIso })
           .eq("id", selectedInvite.id);
-        toast({ title: "Invite declined", description: "The team has been notified." });
+
+        // Send notification to requester if leader rejected
+        if (isLeaderResponding && requesterId) {
+          await supabase
+            .from("member_notifications")
+            .insert({
+              member_id: requesterId,
+              notification_type: "general",
+              title: `Join Request Declined`,
+              message: `Your request to join "${selectedInvite.team_name}" was declined.`,
+              related_id: selectedInvite.team_id,
+              related_type: "team",
+            });
+        }
+
+        toast({ 
+          title: isLeaderResponding ? "Request declined" : "Invite declined", 
+          description: isLeaderResponding 
+            ? "The requester has been notified."
+            : "The team has been notified." 
+        });
         setInviteDialogOpen(false);
         setSelectedInvite(null);
         if (memberId) {
@@ -617,7 +693,7 @@ export default function Hackathon() {
         }
       }
     } catch (error: any) {
-      toast({ title: "Unable to process invite", description: error.message, variant: "destructive" });
+      toast({ title: "Unable to process request", description: error.message, variant: "destructive" });
     } finally {
       setRespondingInvite(false);
     }
@@ -1242,43 +1318,97 @@ export default function Hackathon() {
   }
 
   async function joinTeam(teamId: string) {
-    if (!memberId) return;
+    if (!memberId || !hackathonId) return;
     if (hasTeam) {
       toast({ title: "Already in a team", description: "You can only be in one team per hackathon.", variant: "destructive" });
       return;
     }
 
     try {
-      // Check if team has space
-      const { data: teamData } = await supabase
+      // Get team and leader info
+      const { data: teamData, error: teamError } = await supabase
         .from("hackathon_teams")
-        .select("id, max_members, team_members(count)")
+        .select("id, team_name, team_leader_id, max_members, team_members(count)")
         .eq("id", teamId)
         .single();
 
+      if (teamError || !teamData) {
+        throw new Error("Team not found");
+      }
+
+      // Check if team has space
       const { data: members } = await supabase
         .from("team_members")
         .select("member_id")
         .eq("team_id", teamId);
 
-      if (members && members.length >= (teamData?.max_members || 4)) {
+      if (members && members.length >= (teamData.max_members || 4)) {
         toast({ title: "Team full", description: "This team has reached maximum capacity." });
         return;
       }
 
-      await supabase
-        .from("team_members")
+      // Check if request already exists
+      const { data: existingRequest } = await supabase
+        .from("team_requests")
+        .select("id, status")
+        .eq("team_id", teamId)
+        .eq("from_member_id", memberId)
+        .eq("status", "pending")
+        .maybeSingle();
+
+      if (existingRequest) {
+        toast({ title: "Request already sent", description: "You've already sent a join request to this team.", variant: "default" });
+        return;
+      }
+
+      // Get current member info for notification
+      const { data: memberData } = await supabase
+        .from("members")
+        .select("id, full_name, email, area_of_interest")
+        .eq("id", memberId)
+        .single();
+
+      // Send join request to leader
+      const { error: requestError } = await supabase
+        .from("team_requests")
         .insert({
           team_id: teamId,
-          member_id: memberId,
-          role: "member"
+          from_member_id: memberId,
+          to_member_id: teamData.team_leader_id,
+          status: "pending"
         });
 
-      toast({ title: "Joined team!", description: "You've successfully joined the team." });
+      if (requestError) throw requestError;
+
+      // Create notification for leader
+      if (teamData.team_leader_id && memberData) {
+        await supabase
+          .from("member_notifications")
+          .insert({
+            member_id: teamData.team_leader_id,
+            notification_type: "team_request",
+            title: `Join Request: ${teamData.team_name}`,
+            message: `${memberData.full_name}${memberData.area_of_interest ? ` (${memberData.area_of_interest})` : ""} wants to join your team "${teamData.team_name}"`,
+            related_id: teamId,
+            related_type: "team",
+            action_url: `/hackathons/${hackathonId}?tab=teams`,
+            metadata: {
+              team_id: teamId,
+              hackathon_id: hackathonId,
+              from_member_id: memberId,
+              from_member_name: memberData.full_name,
+              from_member_interest: memberData.area_of_interest || null,
+            }
+          });
+      }
+
+      toast({ 
+        title: "Join request sent!", 
+        description: `Your request has been sent to the team leader. You'll be notified once they respond.` 
+      });
       setShowJoinTeam(null);
-      window.location.reload();
     } catch (e: any) {
-      toast({ title: "Failed to join team", description: e.message });
+      toast({ title: "Failed to send join request", description: e.message, variant: "destructive" });
     }
   }
 
@@ -2002,33 +2132,18 @@ export default function Hackathon() {
                             )}
                           </div>
                           <div className="space-y-2">
-                            <p className="text-xs text-muted-foreground font-semibold">Members:</p>
-                            <div className="space-y-1">
-                              {t.members.map((m) => (
-                                <div key={m.member_id} className="flex items-center justify-between p-2 bg-background/50 rounded text-sm">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-medium">{m.full_name}</span>
-                                    {m.role === "leader" && (
-                                      <Badge variant="default" className="text-xs">Leader</Badge>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <Mail className="w-3 h-3" />
-                                    <span>{m.email}</span>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-5 px-1"
-                                      onClick={() => {
-                                        navigator.clipboard.writeText(m.email);
-                                        toast({ title: "Email copied!", description: `${m.email} copied to clipboard.` });
-                                      }}
-                                    >
-                                      <Copy className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
+                            <p className="text-xs text-muted-foreground font-semibold">Member Interests:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {t.members
+                                .filter((m) => m.area_of_interest)
+                                .map((m, idx) => (
+                                  <Badge key={idx} variant="outline" className="text-xs">
+                                    {m.area_of_interest}
+                                  </Badge>
+                                ))}
+                              {t.members.filter((m) => m.area_of_interest).length === 0 && (
+                                <p className="text-xs text-muted-foreground italic">No interests listed</p>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2357,22 +2472,40 @@ export default function Hackathon() {
           {selectedInvite ? (
             <>
               <DialogHeader>
-                <DialogTitle>Join {selectedInvite.team_name}</DialogTitle>
+                <DialogTitle>
+                  {selectedInvite.is_incoming ? `Join Request: ${selectedInvite.team_name}` : `Join ${selectedInvite.team_name}`}
+                </DialogTitle>
                 <DialogDescription>
-                  {selectedInvite.hackathon_title || "Hackathon team invitation"}
+                  {selectedInvite.is_incoming 
+                    ? "A member wants to join your team"
+                    : selectedInvite.hackathon_title || "Hackathon team invitation"}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
-                <div className="rounded-lg border p-3 bg-muted/30">
-                  <p className="text-sm text-muted-foreground mb-1">Leader</p>
-                  <p className="font-semibold">{selectedInvite.leader_name}</p>
-                  <p className="text-xs text-muted-foreground">{selectedInvite.leader_email}</p>
-                  {selectedInvite.leader_interest && (
-                    <Badge variant="outline" className="mt-2">
-                      {selectedInvite.leader_interest}
-                    </Badge>
-                  )}
-                </div>
+                {selectedInvite.is_incoming ? (
+                  // Leader viewing join request from a member
+                  <div className="rounded-lg border p-3 bg-muted/30">
+                    <p className="text-sm text-muted-foreground mb-1">Join Request From</p>
+                    <p className="font-semibold">{selectedInvite.requester_name}</p>
+                    {selectedInvite.requester_interest && (
+                      <Badge variant="outline" className="mt-2">
+                        {selectedInvite.requester_interest}
+                      </Badge>
+                    )}
+                  </div>
+                ) : (
+                  // Member viewing invitation from leader
+                  <div className="rounded-lg border p-3 bg-muted/30">
+                    <p className="text-sm text-muted-foreground mb-1">Leader</p>
+                    <p className="font-semibold">{selectedInvite.leader_name}</p>
+                    <p className="text-xs text-muted-foreground">{selectedInvite.leader_email}</p>
+                    {selectedInvite.leader_interest && (
+                      <Badge variant="outline" className="mt-2">
+                        {selectedInvite.leader_interest}
+                      </Badge>
+                    )}
+                  </div>
+                )}
                 {selectedInvite.message && (
                   <div className="rounded-lg border p-3 bg-muted/10">
                     <p className="text-sm text-muted-foreground mb-1">Message</p>
