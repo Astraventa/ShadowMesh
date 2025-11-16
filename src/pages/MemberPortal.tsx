@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
@@ -1904,9 +1904,29 @@ export default function MemberPortal() {
         <div className="mb-10">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-5xl font-bold mb-3 bg-gradient-to-r from-primary via-purple-500 to-primary bg-clip-text text-transparent">
-                Welcome back, {member.full_name.split(' ')[0]}!
-              </h1>
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className={`text-5xl font-bold mb-3 bg-clip-text text-transparent ${
+                  (member.priority_level || 0) >= 90 
+                    ? "bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 animate-pulse" 
+                    : (member.priority_level || 0) >= 50
+                    ? "bg-gradient-to-r from-purple-400 via-pink-500 to-purple-600"
+                    : member.verified_badge
+                    ? "bg-gradient-to-r from-blue-400 via-cyan-500 to-blue-600"
+                    : member.star_badge
+                    ? "bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600"
+                    : "bg-gradient-to-r from-primary via-purple-500 to-primary"
+                }`}>
+                  Welcome back, {member.full_name.split(' ')[0]}!
+                </h1>
+                <div className="flex items-center gap-2 mb-3">
+                  <PremiumBadge 
+                    verified={member.verified_badge} 
+                    star={member.star_badge} 
+                    custom={member.custom_badge} 
+                    size="lg" 
+                  />
+                </div>
+              </div>
               <p className="text-lg text-muted-foreground">ShadowMesh Member Portal • Your gateway to AI × Cyber</p>
             </div>
             <div className="hidden md:flex items-center gap-3">
@@ -2876,48 +2896,124 @@ export default function MemberPortal() {
 
           {/* Profile Tab */}
           <TabsContent value="profile">
-            <Card>
-              <CardHeader>
-                <CardTitle>Member Profile</CardTitle>
-                <CardDescription>Your ShadowMesh membership information</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Full Name</label>
-                  <p className="text-lg">{member.full_name}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Email</label>
-                  <p className="text-lg">{member.email}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Email Verified</label>
-                  <p className="text-lg">{member.email_verified ? "✓ Verified" : "Not verified"}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Member Since</label>
-                  <p className="text-lg">{formatDate(member.created_at)}</p>
-                </div>
-                {member.cohort && (
+            <div className="space-y-6">
+              {/* Profile Header Card - Beautiful and Priority-Based */}
+              <Card className="relative overflow-hidden border-2 shadow-xl">
+                <div className={`absolute inset-0 bg-gradient-to-br ${
+                  (member.priority_level || 0) >= 90 
+                    ? "from-yellow-500/20 via-amber-500/10 to-yellow-600/20" 
+                    : (member.priority_level || 0) >= 50
+                    ? "from-purple-500/20 via-pink-500/10 to-purple-600/20"
+                    : member.verified_badge
+                    ? "from-blue-500/20 via-cyan-500/10 to-blue-600/20"
+                    : member.star_badge
+                    ? "from-amber-500/20 via-yellow-500/10 to-amber-600/20"
+                    : "from-primary/10 via-purple-500/5 to-primary/10"
+                }`}></div>
+                <CardHeader className="relative">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2 flex-wrap">
+                        <h2 className={`text-4xl font-bold ${
+                          (member.priority_level || 0) >= 90 
+                            ? "bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 bg-clip-text text-transparent" 
+                            : (member.priority_level || 0) >= 50
+                            ? "bg-gradient-to-r from-purple-400 via-pink-500 to-purple-600 bg-clip-text text-transparent"
+                            : member.verified_badge
+                            ? "bg-gradient-to-r from-blue-400 via-cyan-500 to-blue-600 bg-clip-text text-transparent"
+                            : member.star_badge
+                            ? "bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent"
+                            : "text-foreground"
+                        }`}>
+                          {member.full_name}
+                        </h2>
+                        <div className="flex items-center gap-2">
+                          <PremiumBadge 
+                            verified={member.verified_badge} 
+                            star={member.star_badge} 
+                            custom={member.custom_badge} 
+                            size="lg" 
+                          />
+                        </div>
+                      </div>
+                      {member.priority_level && member.priority_level > 0 && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge variant="outline" className={`${
+                            member.priority_level >= 90 
+                              ? "border-yellow-500/50 text-yellow-500 bg-yellow-500/10" 
+                              : member.priority_level >= 50
+                              ? "border-purple-500/50 text-purple-500 bg-purple-500/10"
+                              : "border-primary/50 text-primary bg-primary/10"
+                          }`}>
+                            <Sparkles className="w-3 h-3 mr-1" />
+                            Priority Level: {member.priority_level}
+                          </Badge>
+                          {member.member_category && member.member_category !== "regular" && (
+                            <Badge variant="secondary" className="capitalize">
+                              {member.member_category === "admin" && <Shield className="w-3 h-3 mr-1" />}
+                              {member.member_category === "friend" && <Heart className="w-3 h-3 mr-1" />}
+                              {member.member_category === "vip" && <Crown className="w-3 h-3 mr-1" />}
+                              {member.member_category === "core_team" && <Users className="w-3 h-3 mr-1" />}
+                              {member.member_category === "special" && <Award className="w-3 h-3 mr-1" />}
+                              {member.member_category}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="relative">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email Address</label>
+                      <p className="text-base font-medium flex items-center gap-2">
+                        {member.email}
+                        {member.email_verified && (
+                          <Badge variant="outline" className="text-xs border-green-500/50 text-green-500 bg-green-500/10">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Verified
+                          </Badge>
+                        )}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Member Since</label>
+                      <p className="text-base font-medium">{formatDate(member.created_at)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Additional Profile Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Profile Information</CardTitle>
+                  <CardDescription>Your ShadowMesh membership details</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {member.cohort && (
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">Cohort</label>
                     <p className="text-lg">{member.cohort}</p>
                   </div>
                 )}
-                {member.area_of_interest && (
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Area of Interest</label>
-                    <p className="text-lg">
-                      <Badge variant="secondary" className="text-base">
-                        {member.area_of_interest === "AI" ? "AI / Machine Learning" :
-                         member.area_of_interest === "Cyber" ? "Cybersecurity" :
-                         member.area_of_interest === "Both" ? "Both (AI × Cyber)" :
-                         member.area_of_interest}
-                      </Badge>
-                    </p>
+                    {member.area_of_interest && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Area of Interest</label>
+                        <div className="mt-1">
+                          <Badge variant="secondary" className="text-base px-3 py-1">
+                            {member.area_of_interest === "AI" ? "AI / Machine Learning" :
+                             member.area_of_interest === "Cyber" ? "Cybersecurity" :
+                             member.area_of_interest === "Both" ? "Both (AI × Cyber)" :
+                             member.area_of_interest}
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-                {member.affiliation && (
+                  {member.affiliation && (
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">Affiliation</label>
                     <p className="text-lg capitalize">{member.affiliation}</p>
