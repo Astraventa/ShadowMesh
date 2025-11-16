@@ -3151,7 +3151,8 @@ export default function MemberPortal() {
                   </div>
                 )}
               </CardContent>
-            </Card>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
 
