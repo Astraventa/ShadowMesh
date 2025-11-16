@@ -12,10 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { QrScanner } from "@yudiel/react-qr-scanner";
 import AdminFake404 from "@/components/AdminFake404";
-import { Shield, QrCode, Loader2, Search, Star, CheckCircle2, Eye, EyeOff, Crown, Heart, Users, Sparkles, Award, Edit, Save, X, Bell } from "lucide-react";
+import { Shield, QrCode, Loader2, Search, Star, CheckCircle2, Eye, EyeOff, Crown, Heart, Users, Sparkles, Award, Edit, Save, X, Bell, Megaphone, BookOpen, Plus, Trash2, ExternalLink } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import MemberEditForm from "./MemberEditForm";
+import AnnouncementsManager from "@/components/AnnouncementsManager";
+import ResourcesManager from "@/components/ResourcesManager";
 
 // Simple token gate using a shared moderator token stored in sessionStorage
 function useAdminToken() {
@@ -276,7 +278,6 @@ const Admin = () => {
 	
 	// Member management enhancements
 	const [memberCategoryFilter, setMemberCategoryFilter] = useState<string>("all");
-	const [showHiddenMembers, setShowHiddenMembers] = useState(false);
 	const [badgeSearchEmail, setBadgeSearchEmail] = useState("");
 	const [badgeSearchResult, setBadgeSearchResult] = useState<any | null>(null);
 	const [badgeDialogOpen, setBadgeDialogOpen] = useState(false);
@@ -1531,6 +1532,8 @@ const scannerLockRef = useRef(false);
                         <TabsTrigger value="events">Events</TabsTrigger>
                         <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
                         <TabsTrigger value="feedback">Feedback</TabsTrigger>
+                        <TabsTrigger value="announcements">Announcements</TabsTrigger>
+                        <TabsTrigger value="resources">Resources</TabsTrigger>
                         <TabsTrigger value="settings">Settings</TabsTrigger>
 					</TabsList>
 
@@ -1708,20 +1711,18 @@ const scannerLockRef = useRef(false);
 											<TableHead>Category</TableHead>
 											<TableHead>Badges</TableHead>
 											<TableHead>Status</TableHead>
-											<TableHead>Visibility</TableHead>
 											<TableHead className="text-right">Actions</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
 										{members.length === 0 && !membersLoading ? (
 											<TableRow>
-												<TableCell colSpan={9} className="text-center text-muted-foreground">No members yet</TableCell>
+												<TableCell colSpan={8} className="text-center text-muted-foreground">No members yet</TableCell>
 											</TableRow>
 										) : (
 											members
 												.filter((m) => {
 													if (memberCategoryFilter !== "all" && m.member_category !== memberCategoryFilter) return false;
-													if (!showHiddenMembers && m.is_hidden) return false;
 													return true;
 												})
 												.sort((a, b) => {
@@ -1791,33 +1792,6 @@ const scannerLockRef = useRef(false);
 															</TableCell>
 															<TableCell>
 																<Badge variant="secondary">{m.status || "active"}</Badge>
-															</TableCell>
-															<TableCell>
-																<Button
-																	size="sm"
-																	variant={m.is_hidden ? "outline" : "secondary"}
-																	title={m.is_hidden ? "Click to show member in public lists" : "Click to hide member from public lists"}
-																	onClick={async () => {
-																		try {
-																			const { error } = await supabase
-																				.from("members")
-																				.update({ is_hidden: !m.is_hidden })
-																				.eq("id", m.id);
-																			if (error) throw error;
-																			setMembers((prev) =>
-																				prev.map((mem) => (mem.id === m.id ? { ...mem, is_hidden: !m.is_hidden } : mem))
-																			);
-																			toast({ 
-																				title: "Visibility Updated", 
-																				description: `Member will ${m.is_hidden ? "now appear" : "now be hidden"} in public lists` 
-																			});
-																		} catch (e: any) {
-																			toast({ title: "Error", description: e.message, variant: "destructive" });
-																		}
-																	}}
-																>
-																	{m.is_hidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-																</Button>
 															</TableCell>
 															<TableCell className="text-right space-x-2">
 																<Button size="sm" variant="outline" onClick={() => {
@@ -2580,6 +2554,16 @@ const scannerLockRef = useRef(false);
 								</div>
 							</CardContent>
 						</Card>
+					</TabsContent>
+
+					{/* Announcements Tab */}
+					<TabsContent value="announcements">
+						<AnnouncementsManager />
+					</TabsContent>
+
+					{/* Resources Tab */}
+					<TabsContent value="resources">
+						<ResourcesManager />
 					</TabsContent>
 
 					<TabsContent value="settings">

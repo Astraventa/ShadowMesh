@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
@@ -193,6 +193,9 @@ export default function MemberPortal() {
   const [member, setMember] = useState<Member | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
+  const [globalResources, setGlobalResources] = useState<Resource[]>([]);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<any | null>(null);
   const [registeredEvents, setRegisteredEvents] = useState<Set<string>>(new Set());
   const [hackathons, setHackathons] = useState<Event[]>([]);
   const [hackathonRegistrations, setHackathonRegistrations] = useState<HackathonRegistration[]>([]);
@@ -421,6 +424,36 @@ export default function MemberPortal() {
       const { data: resourcesData } = await resourcesQuery.order("created_at", { ascending: false });
 
       if (resourcesData) setResources(resourcesData);
+
+      // Load global resources
+      const { data: globalResData } = await supabase
+        .from("global_resources")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true });
+
+      if (globalResData) {
+        // Filter by access level
+        const filtered = globalResData.filter((res) => {
+          if (res.access_level === "all") return true;
+          if (res.access_level === "premium" && (memberData.star_badge || memberData.verified_badge)) return true;
+          if (res.access_level === "verified" && memberData.verified_badge) return true;
+          return false;
+        });
+        setGlobalResources(filtered);
+      }
+
+      // Load announcements
+      const { data: annData } = await supabase
+        .from("global_announcements")
+        .select("*")
+        .eq("is_active", true)
+        .or("expires_at.is.null,expires_at.gt." + new Date().toISOString())
+        .order("priority", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (annData) setAnnouncements(annData);
 
       // Load registered events
       const { data: registrations } = await supabase
@@ -1995,6 +2028,36 @@ export default function MemberPortal() {
           </div>
         </div>
 
+        {/* Announcements Display */}
+        {announcements.length > 0 && announcements.filter(a => a.display_position === "top").map((ann) => {
+          const animationClass = {
+            pulse: "animate-pulse",
+            bounce: "animate-bounce",
+            shake: "animate-pulse",
+            glow: "animate-pulse shadow-lg shadow-primary/50",
+            none: "",
+          }[ann.animation_type] || "";
+          
+          return (
+            <div
+              key={ann.id}
+              className={`mb-4 p-4 rounded-lg border-2 border-primary/30 bg-gradient-to-r from-primary/10 to-purple-500/10 cursor-pointer transition-all hover:scale-[1.02] ${animationClass}`}
+              onClick={() => setSelectedAnnouncement(ann)}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Megaphone className="w-5 h-5 text-primary" />
+                  <div>
+                    <h3 className="font-semibold text-lg">{ann.title}</h3>
+                    {ann.description && <p className="text-sm text-muted-foreground">{ann.description}</p>}
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              </div>
+            </div>
+          );
+        })}
+
         <Tabs defaultValue="events" className="space-y-6">
           <TabsList className="grid w-full grid-cols-6 bg-muted/50 backdrop-blur-sm border border-border/50 p-1 rounded-lg">
             <TabsTrigger value="events" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
@@ -2286,7 +2349,7 @@ export default function MemberPortal() {
           {/* Resources Tab */}
           <TabsContent value="resources">
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {resources.length === 0 ? (
+              {resources.length === 0 && globalResources.length === 0 ? (
                 <Card className="col-span-full">
                   <CardContent className="py-12 text-center">
                     <BookOpen className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
@@ -2294,7 +2357,47 @@ export default function MemberPortal() {
                   </CardContent>
                 </Card>
               ) : (
-                resources.map((resource) => (
+                <>
+                  {globalResources.map((resource) => (
+                    <Card key={`global-${resource.id}`}>
+                      <CardHeader>
+                        <div className="flex items-center gap-2 mb-2">
+                          {getResourceIcon(resource.resource_type)}
+                          <CardTitle className="text-lg">{resource.title}</CardTitle>
+                          <Badge variant="secondary" className="ml-auto">Global</Badge>
+                        </div>
+                        <CardDescription>
+                          <Badge variant="outline">{resource.resource_type}</Badge>
+                          {resource.access_level === "premium" && (
+                            <Badge variant="secondary" className="ml-2">Premium</Badge>
+                          )}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {resource.description && (
+                          <p className="text-sm text-muted-foreground mb-4">{resource.description}</p>
+                        )}
+                        {resource.content_url && (
+                          <Button variant="outline" className="w-full" asChild>
+                            <a href={resource.content_url} target="_blank" rel="noopener noreferrer">
+                              {resource.resource_type === "download" ? (
+                                <>
+                                  <Download className="w-4 h-4 mr-2" />
+                                  Download
+                                </>
+                              ) : (
+                                <>
+                                  <ExternalLink className="w-4 h-4 mr-2" />
+                                  Open
+                                </>
+                              )}
+                            </a>
+                          </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {resources.map((resource) => (
                   <Card key={resource.id}>
                     <CardHeader>
                       <div className="flex items-center gap-2 mb-2">
@@ -3625,6 +3728,34 @@ export default function MemberPortal() {
             </DialogContent>
           </Dialog>
         )}
+
+        {/* Announcement Detail Dialog */}
+        <Dialog open={!!selectedAnnouncement} onOpenChange={(open) => !open && setSelectedAnnouncement(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Megaphone className="w-5 h-5" />
+                {selectedAnnouncement?.title}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedAnnouncement?.description}
+              </DialogDescription>
+            </DialogHeader>
+            {selectedAnnouncement?.link && (
+              <div className="py-4">
+                <Button className="w-full" asChild>
+                  <a href={selectedAnnouncement.link} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Open Link
+                  </a>
+                </Button>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSelectedAnnouncement(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

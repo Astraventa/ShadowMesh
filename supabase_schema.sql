@@ -1038,3 +1038,60 @@ begin
     alter publication supabase_realtime add table public.team_requests;
   end if;
 end $$;
+
+-- Global announcements table (for community links, announcements, etc.)
+create table if not exists public.global_announcements (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  title             text        not null,
+  link              text,
+  description       text,
+  is_active         boolean     default true,
+  display_position  text        default 'top' check (display_position in ('top', 'bottom', 'sidebar')),
+  animation_type    text        default 'pulse' check (animation_type in ('pulse', 'bounce', 'shake', 'glow', 'none')),
+  priority          integer     default 0,
+  created_by        text,
+  expires_at        timestamptz
+);
+
+create index if not exists idx_global_announcements_active on public.global_announcements (is_active, priority desc);
+create index if not exists idx_global_announcements_position on public.global_announcements (display_position);
+
+-- Global resources table (for resources available to all members)
+create table if not exists public.global_resources (
+  id                uuid primary key default gen_random_uuid(),
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now(),
+  title             text        not null,
+  description       text,
+  resource_type     text        not null default 'link' check (resource_type in ('link', 'document', 'video', 'tutorial', 'tool', 'other')),
+  content_url       text        not null,
+  access_level      text        default 'all' check (access_level in ('all', 'premium', 'verified')),
+  is_active         boolean     default true,
+  display_order     integer     default 0,
+  created_by        text,
+  tags              text[]
+);
+
+create index if not exists idx_global_resources_active on public.global_resources (is_active, display_order);
+create index if not exists idx_global_resources_type on public.global_resources (resource_type);
+
+-- RLS for new tables
+alter table public.global_announcements enable row level security;
+alter table public.global_resources enable row level security;
+
+-- Policies: All authenticated members can view active announcements and resources
+drop policy if exists p_global_announcements_select on public.global_announcements;
+create policy p_global_announcements_select
+  on public.global_announcements
+  for select
+  to authenticated
+  using (is_active = true and (expires_at is null or expires_at > now()));
+
+drop policy if exists p_global_resources_select on public.global_resources;
+create policy p_global_resources_select
+  on public.global_resources
+  for select
+  to authenticated
+  using (is_active = true);
