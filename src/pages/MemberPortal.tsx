@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award } from "lucide-react";
+import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
 import EventRegistration from "@/components/EventRegistration";
@@ -35,6 +36,9 @@ interface Member {
   two_factor_enabled?: boolean;
   two_factor_secret?: string;
   email_verified?: boolean;
+  verified_badge?: boolean;
+  star_badge?: boolean;
+  custom_badge?: string;
 }
 
 interface Event {
@@ -102,6 +106,79 @@ interface Activity {
   activity_type: string;
   created_at: string;
   activity_data?: any;
+}
+
+function LeaderboardSection() {
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadLeaderboard() {
+      try {
+        const { data, error } = await supabase
+          .from("members")
+          .select("id, full_name, email, verified_badge, star_badge, custom_badge, created_at")
+          .eq("status", "active")
+          .order("verified_badge", { ascending: false, nullsFirst: false })
+          .order("star_badge", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: true })
+          .limit(50);
+
+        if (error) throw error;
+        setLeaderboard(data || []);
+      } catch (error) {
+        console.error("Error loading leaderboard:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    void loadLeaderboard();
+  }, []);
+
+  if (loading) {
+    return <div className="text-center py-8 text-muted-foreground">Loading leaderboard...</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {leaderboard.length === 0 ? (
+        <p className="text-center text-muted-foreground py-8">No members found</p>
+      ) : (
+        leaderboard.map((member, index) => {
+          const hasVerified = member.verified_badge;
+          const hasStar = member.star_badge;
+          const rank = index + 1;
+          
+          return (
+            <div
+              key={member.id}
+              className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                rank <= 3
+                  ? "bg-gradient-to-r from-amber-500/10 to-yellow-500/5 border-amber-500/30"
+                  : "bg-muted/30 border-border/50"
+              }`}
+            >
+              <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                rank === 1 ? "bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-lg shadow-amber-500/50" :
+                rank === 2 ? "bg-gradient-to-br from-gray-300 to-gray-400 text-white shadow-lg shadow-gray-400/50" :
+                rank === 3 ? "bg-gradient-to-br from-amber-600 to-amber-700 text-white shadow-lg shadow-amber-600/50" :
+                "bg-muted text-muted-foreground"
+              }`}>
+                {rank}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium truncate">{member.full_name}</span>
+                  <PremiumBadge verified={hasVerified} star={hasStar} custom={member.custom_badge} size="sm" />
+                </div>
+                <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
 }
 
 export default function MemberPortal() {
@@ -1914,7 +1991,7 @@ export default function MemberPortal() {
         </div>
 
         <Tabs defaultValue="events" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 bg-muted/50 backdrop-blur-sm border border-border/50 p-1 rounded-lg">
+          <TabsList className="grid w-full grid-cols-6 bg-muted/50 backdrop-blur-sm border border-border/50 p-1 rounded-lg">
             <TabsTrigger value="events" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Calendar className="w-4 h-4 mr-2" />
               Events
@@ -1930,6 +2007,10 @@ export default function MemberPortal() {
             <TabsTrigger value="resources" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <BookOpen className="w-4 h-4 mr-2" />
               Resources
+            </TabsTrigger>
+            <TabsTrigger value="leaderboard" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Award className="w-4 h-4 mr-2" />
+              Leaderboard
             </TabsTrigger>
             <TabsTrigger value="profile" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Activity className="w-4 h-4 mr-2" />
@@ -2132,6 +2213,69 @@ export default function MemberPortal() {
                 })}
               </div>
             )}
+          </TabsContent>
+
+          {/* Leaderboard Tab */}
+          <TabsContent value="leaderboard" className="space-y-6">
+            <div className="grid gap-6 md:grid-cols-2">
+              {/* Badge Values Section */}
+              <Card className="shadow-xl border-2">
+                <CardHeader>
+                  <CardTitle className="text-2xl flex items-center gap-2">
+                    <Sparkles className="w-6 h-6 text-primary" />
+                    Badge Values
+                  </CardTitle>
+                  <CardDescription>Understanding our premium badge system</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Verified Badge */}
+                  <div className="p-4 bg-gradient-to-br from-blue-500/10 to-blue-600/5 rounded-lg border border-blue-500/20">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 shadow-lg shadow-blue-500/50 border-2 border-blue-400/80 flex items-center justify-center">
+                        <CheckCircle2 className="w-5 h-5 text-white" strokeWidth={2.5} />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-lg">Verified Badge</h3>
+                        <p className="text-xs text-muted-foreground">Top Priority - Premium Elite</p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Awarded to core team members, admins, and verified contributors. Represents the highest level of trust and recognition in the ShadowMesh community.
+                    </p>
+                  </div>
+
+                  {/* Star Badge */}
+                  <div className="p-4 bg-gradient-to-br from-amber-500/10 to-yellow-600/5 rounded-lg border border-amber-500/20">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-600 shadow-lg shadow-amber-500/50 border-2 border-amber-300/80 flex items-center justify-center">
+                        <Star className="w-5 h-5 text-white fill-white" strokeWidth={2.5} />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-lg">Star Badge</h3>
+                        <p className="text-xs text-muted-foreground">Second Priority - Special Contributor</p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Awarded to special friends, active contributors, and members who go above and beyond. Recognizes exceptional dedication and value to the community.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Leaderboard Section */}
+              <Card className="shadow-xl border-2">
+                <CardHeader>
+                  <CardTitle className="text-2xl flex items-center gap-2">
+                    <Trophy className="w-6 h-6 text-primary" />
+                    Member Leaderboard
+                  </CardTitle>
+                  <CardDescription>Top members by badge status</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <LeaderboardSection />
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Resources Tab */}

@@ -147,6 +147,23 @@ begin
   if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'joined_from_email') then
     alter table public.members add column joined_from_email boolean default false;
   end if;
+  
+  -- Premium badges (elite system)
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'verified_badge') then
+    alter table public.members add column verified_badge boolean default false; -- Top priority: Verified (blue checkmark)
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'star_badge') then
+    alter table public.members add column star_badge boolean default false; -- Second priority: Star (gold star)
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'custom_badge') then
+    alter table public.members add column custom_badge text; -- Custom badge name/icon (for future GPT Pro generated badges)
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'badge_granted_at') then
+    alter table public.members add column badge_granted_at timestamptz; -- When badge was granted
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name = 'members' and column_name = 'badge_granted_by') then
+    alter table public.members add column badge_granted_by text; -- Admin who granted the badge
+  end if;
 end$$;
 
 -- Events table for workshops, hackathons, etc.

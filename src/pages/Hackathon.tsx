@@ -28,6 +28,7 @@ import {
   UserPlus,
   Bell,
   Check,
+  Trash2,
   Search,
   Loader2,
   X,
@@ -571,11 +572,52 @@ export default function Hackathon() {
   async function markAllRead() {
     try {
       if (!memberId) return;
-      await supabase.from("member_notifications").update({ is_read: true }).eq("member_id", memberId).eq("is_read", false);
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      const now = new Date().toISOString();
+      await supabase
+        .from("member_notifications")
+        .update({ is_read: true, read_at: now })
+        .eq("member_id", memberId)
+        .eq("is_read", false);
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true, read_at: now })));
       setUnreadCount(0);
     } catch {
       // non-fatal
+    }
+  }
+
+  async function markNotificationRead(notificationId: string) {
+    if (!memberId) return;
+    try {
+      const now = new Date().toISOString();
+      await supabase
+        .from("member_notifications")
+        .update({ is_read: true, read_at: now })
+        .eq("id", notificationId)
+        .eq("member_id", memberId);
+      setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, is_read: true, read_at: now } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+    }
+  }
+
+  async function deleteNotification(notificationId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!memberId) return;
+    try {
+      await supabase
+        .from("member_notifications")
+        .delete()
+        .eq("id", notificationId)
+        .eq("member_id", memberId);
+      setNotifications(prev => {
+        const filtered = prev.filter(n => n.id !== notificationId);
+        setUnreadCount(filtered.filter(n => !n.is_read).length);
+        return filtered;
+      });
+      toast({ title: "Notification deleted", description: "The notification has been removed." });
+    } catch (error: any) {
+      toast({ title: "Failed to delete", description: error.message, variant: "destructive" });
     }
   }
 
@@ -1599,17 +1641,33 @@ export default function Hackathon() {
                     notifications.map((n) => (
                       <DropdownMenuItem
                         key={n.id}
-                        className="flex flex-col items-start gap-1 cursor-pointer"
+                        className="flex flex-col items-start gap-1 cursor-pointer group relative"
                         onSelect={(event) => {
                           event.preventDefault();
+                          if (!n.is_read) {
+                            void markNotificationRead(n.id);
+                          }
                           handleNotificationClick(n);
                         }}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${n.is_read ? "bg-muted" : "bg-primary"}`}></span>
-                          <span className="font-medium">{n.title || (n.notification_type === "team_invite" ? "Team Invitation" : "Update")}</span>
+                        <div className="flex items-center justify-between w-full gap-2">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${n.is_read ? "bg-muted" : "bg-primary"}`}></span>
+                            <span className="font-medium truncate">{n.title || (n.notification_type === "team_invite" ? "Team Invitation" : "Update")}</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void deleteNotification(n.id, e);
+                            }}
+                          >
+                            <Trash2 className="w-3 h-3 text-destructive" />
+                          </Button>
                         </div>
-                        <div className="text-xs text-muted-foreground">{n.body || n.message || ""}</div>
+                        <div className="text-xs text-muted-foreground line-clamp-2 w-full">{n.body || n.message || ""}</div>
                         <div className="text-[10px] text-muted-foreground">{new Date(n.created_at).toLocaleString()}</div>
                       </DropdownMenuItem>
                     ))
