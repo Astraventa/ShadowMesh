@@ -270,6 +270,16 @@ export default function MemberPortal() {
       localStorage.setItem("shadowmesh_member_email", email.trim().toLowerCase());
       localStorage.setItem("shadowmesh_authenticated", "true");
 
+      // Check for pending team invite (elite approach - auto-accept after approval)
+      const pendingInviteToken = localStorage.getItem("pending_team_invite");
+      if (pendingInviteToken) {
+        // Clear the pending invite token
+        localStorage.removeItem("pending_team_invite");
+        // Redirect to accept invite
+        navigate(`/team-invite/${pendingInviteToken}`);
+        return; // Don't continue loading - let TeamInvite handle it
+      }
+
       // Track portal access - mark as accessed if not already
       if (!memberData.portal_accessed) {
         const params = new URLSearchParams(window.location.search);

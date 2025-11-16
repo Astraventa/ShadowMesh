@@ -27,32 +27,7 @@ export default function TeamInvite() {
       }
 
       try {
-        // Check if user is authenticated
-        const authenticated = localStorage.getItem("shadowmesh_authenticated");
-        const memberEmail = localStorage.getItem("shadowmesh_member_email");
-        
-        if (!authenticated || !memberEmail) {
-          setError("Please log in to join the team");
-          setLoading(false);
-          return;
-        }
-
-        // Get member ID
-        const { data: memberData } = await supabase
-          .from("members")
-          .select("id")
-          .eq("email", memberEmail)
-          .single();
-
-        if (!memberData) {
-          setError("Member not found. Please log in again.");
-          setLoading(false);
-          return;
-        }
-
-        setMemberId(memberData.id);
-
-        // Verify invite via edge function
+        // First, verify the invite link is valid (even for non-members)
         const response = await fetch(`${SUPABASE_URL}/functions/v1/team_invite?token=${token}`, {
           method: "GET",
           headers: {
@@ -69,7 +44,36 @@ export default function TeamInvite() {
           return;
         }
 
+        // Invite is valid - show details
         setInviteData(data.invite);
+
+        // Check if user is authenticated and is a member
+        const authenticated = localStorage.getItem("shadowmesh_authenticated");
+        const memberEmail = localStorage.getItem("shadowmesh_member_email");
+        
+        if (!authenticated || !memberEmail) {
+          // Non-member: Store invite token for later, show registration prompt
+          localStorage.setItem("pending_team_invite", token);
+          setLoading(false);
+          return;
+        }
+
+        // User is authenticated - check if they're a member
+        const { data: memberData } = await supabase
+          .from("members")
+          .select("id")
+          .eq("email", memberEmail)
+          .single();
+
+        if (!memberData) {
+          // Not a member yet - store invite token, show registration prompt
+          localStorage.setItem("pending_team_invite", token);
+          setLoading(false);
+          return;
+        }
+
+        // User is a member - can join immediately
+        setMemberId(memberData.id);
         setLoading(false);
       } catch (err: any) {
         console.error("Error verifying invite:", err);
@@ -153,10 +157,83 @@ export default function TeamInvite() {
             <Button 
               variant="outline" 
               className="w-full"
-              onClick={() => navigate("/member-portal")}
+              onClick={() => navigate("/")}
             >
-              Go to Member Portal
+              Go to Home
             </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show invite details even if user is not a member (elite approach)
+  if (inviteData && !memberId) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-xl border-2">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
+              <Users className="w-8 h-8 text-primary" />
+            </div>
+            <CardTitle className="text-2xl">Team Invitation</CardTitle>
+            <CardDescription>You've been invited to join a team!</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">Team Name</p>
+                <p className="font-semibold text-lg">{inviteData?.team_name}</p>
+              </div>
+              
+              {inviteData?.expires_at && (
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Expires
+                  </p>
+                  <p className="font-semibold">
+                    {new Date(inviteData.expires_at).toLocaleDateString()}
+                  </p>
+                </div>
+              )}
+
+              {inviteData?.uses_remaining !== undefined && (
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">Uses Remaining</p>
+                  <p className="font-semibold">{inviteData.uses_remaining} / {inviteData.max_uses || 3}</p>
+                </div>
+              )}
+            </div>
+
+            <Alert className="border-primary/50 bg-primary/5">
+              <Users className="h-4 w-4 text-primary" />
+              <AlertTitle>Join ShadowMesh to Accept</AlertTitle>
+              <AlertDescription>
+                You need to be a ShadowMesh member to join this team. Register now and we'll automatically accept this invite once you're approved.
+              </AlertDescription>
+            </Alert>
+
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => navigate("/")}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  // Store invite token and redirect to registration
+                  localStorage.setItem("pending_team_invite", token || "");
+                  navigate("/join-us?tab=register&invite=true");
+                }}
+              >
+                <Users className="w-4 h-4 mr-2" />
+                Join ShadowMesh
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

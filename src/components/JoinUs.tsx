@@ -56,6 +56,7 @@ import { useToast } from "@/components/ui/use-toast";
 const JoinUs = () => {
   const { toast } = useToast();
   const [activeTab] = useState<"register">("register");
+  const [hasPendingInvite, setHasPendingInvite] = useState(false);
   const [affiliation, setAffiliation] = useState<string>("student");
   const [phone, setPhone] = useState<string>("");
   const [phoneMessage, setPhoneMessage] = useState("");
@@ -103,6 +104,14 @@ const JoinUs = () => {
   const [isDeleting, setIsDeleting] = useState(false);
 
   const emailValidationRequest = useRef(0);
+
+  // Check for pending invite on mount
+  useEffect(() => {
+    const pendingInvite = localStorage.getItem("pending_team_invite");
+    const urlParams = new URLSearchParams(window.location.search);
+    const inviteParam = urlParams.get("invite");
+    setHasPendingInvite(!!pendingInvite || inviteParam === "true");
+  }, []);
   const phoneValidationRequest = useRef(0);
   const emailDebounceRef = useRef<number | undefined>(undefined);
   const phoneDebounceRef = useRef<number | undefined>(undefined);
@@ -628,6 +637,13 @@ const JoinUs = () => {
               <span className="text-gradient">Join</span> ShadowMesh
             </h2>
           <p className="text-muted-foreground text-lg">Students and professionals welcome — build with AI × Cyber.</p>
+          {hasPendingInvite && (
+            <div className="mt-4 p-4 bg-primary/10 border border-primary/30 rounded-lg">
+              <p className="text-sm text-primary font-medium">
+                ✨ You have a pending team invitation! After approval, you'll automatically be redirected to accept it.
+              </p>
+            </div>
+          )}
           </div>
 
         {/* Content Layout */}
