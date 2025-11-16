@@ -2434,7 +2434,8 @@ export default function MemberPortal() {
                       )}
                     </CardContent>
                   </Card>
-                ))
+                  ))}
+                </>
               )}
             </div>
           </TabsContent>
