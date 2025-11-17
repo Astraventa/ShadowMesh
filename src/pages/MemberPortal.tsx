@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
@@ -87,10 +87,12 @@ interface HackathonRegistration {
 interface Team {
   id: string;
   team_name: string;
-  hackathon_id: string;
+  hackathon_id: string | null;
   team_leader_id: string;
   status: string;
-  members: Array<{ member_id: string; full_name: string; email: string; role: string }>;
+  max_members?: number;
+  is_practice?: boolean;
+  members: Array<{ member_id: string; full_name: string; email: string; role: string; verified_badge?: boolean; star_badge?: boolean; custom_badge?: string | null }>;
 }
 
 interface TeamRequest {
@@ -249,11 +251,36 @@ export default function MemberPortal() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [needs2FA, setNeeds2FA] = useState(false);
   const [pendingMemberData, setPendingMemberData] = useState<any>(null);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [unreadCount, setUnreadCount] = useState<number>(0);
-  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [selectedInvite, setSelectedInvite] = useState<any | null>(null);
-  const [respondingInvite, setRespondingInvite] = useState(false);
+const [notifications, setNotifications] = useState<any[]>([]);
+const [unreadCount, setUnreadCount] = useState<number>(0);
+const [notificationDetail, setNotificationDetail] = useState<any | null>(null);
+const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+const [selectedInvite, setSelectedInvite] = useState<any | null>(null);
+const [respondingInvite, setRespondingInvite] = useState(false);
+const [teamHubLoading, setTeamHubLoading] = useState(false);
+const [teamHubTeams, setTeamHubTeams] = useState<any[]>([]);
+const [teamUpdates, setTeamUpdates] = useState<any[]>([]);
+const [showCreatePracticeTeam, setShowCreatePracticeTeam] = useState(false);
+const [practiceTeamForm, setPracticeTeamForm] = useState({ team_name: "", max_members: 4 });
+const [creatingPracticeTeam, setCreatingPracticeTeam] = useState(false);
+const [teamUpdateMessage, setTeamUpdateMessage] = useState("");
+const [selectedUpdateTeam, setSelectedUpdateTeam] = useState<string>("");
+const [postingTeamUpdate, setPostingTeamUpdate] = useState(false);
+const [requestingTeamId, setRequestingTeamId] = useState<string | null>(null);
+const [teamHubRequestMessage, setTeamHubRequestMessage] = useState("");
+
+const openSeatTeams = useMemo(() => {
+  return (teamHubTeams || [])
+    .filter(team => (team.team_members?.length || 0) < (team.max_members || 4))
+    .slice(0, 6);
+}, [teamHubTeams]);
+
+const weeklyHighlights = useMemo(() => {
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return (teamUpdates || [])
+    .filter(update => new Date(update.created_at).getTime() >= sevenDaysAgo)
+    .slice(0, 6);
+}, [teamUpdates]);
 
   useEffect(() => {
     // Load viewed hackathons from localStorage (if needed in future)
@@ -333,6 +360,22 @@ export default function MemberPortal() {
       try { supabase.removeChannel(channel); } catch {}
     };
   }, [member?.id]);
+
+useEffect(() => {
+  if (member?.id) {
+    void loadTeamHubData();
+  }
+}, [member?.id]);
+
+useEffect(() => {
+  if (teams.length === 0) {
+    setSelectedUpdateTeam("");
+    return;
+  }
+  if (!selectedUpdateTeam || !teams.some((team) => team.id === selectedUpdateTeam)) {
+    setSelectedUpdateTeam(teams[0].id);
+  }
+}, [teams, selectedUpdateTeam]);
 
   async function loadMemberDataByEmail(email: string) {
     setLoading(true);
@@ -739,11 +782,51 @@ export default function MemberPortal() {
         is_read: false,
         source: "team_request",
         invite,
+        synthetic: true,
       }));
       const all = [...(notifRows || []), ...synthetic].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setNotifications(all);
       setUnreadCount(all.filter(n => !n.is_read).length);
     } catch {}
+  }
+
+  async function loadTeamHubData() {
+    setTeamHubLoading(true);
+    try {
+      const { data: hubTeams } = await supabase
+        .from("hackathon_teams")
+        .select(`
+          id,
+          team_name,
+          team_leader_id,
+          status,
+          max_members,
+          is_practice,
+          created_at,
+          team_members(member_id)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(40);
+      setTeamHubTeams(hubTeams || []);
+
+      const { data: updates } = await supabase
+        .from("team_updates")
+        .select(`
+          id,
+          created_at,
+          message,
+          team_id,
+          hackathon_teams(team_name),
+          author:members!team_updates_member_id_fkey(full_name, star_badge, verified_badge)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      setTeamUpdates(updates || []);
+    } catch (error) {
+      console.warn("Failed to load team hub data:", error);
+    } finally {
+      setTeamHubLoading(false);
+    }
   }
 
   async function markAllRead() {
@@ -755,14 +838,154 @@ export default function MemberPortal() {
     } catch {}
   }
 
+  async function markSingleNotificationRead(notificationId: string) {
+    try {
+      await supabase
+        .from("member_notifications")
+        .update({ is_read: true, read_at: new Date().toISOString() })
+        .eq("id", notificationId);
+      setNotifications(prev =>
+        prev.map(n => (n.id === notificationId ? { ...n, is_read: true, read_at: new Date().toISOString() } : n))
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch {}
+  }
+
+  async function deleteNotificationEntry(notification: any) {
+    if (!notification || notification.synthetic || !notification.id) {
+      setNotificationDetail(null);
+      return;
+    }
+    try {
+      await supabase.from("member_notifications").delete().eq("id", notification.id);
+      setNotifications(prev => prev.filter(n => n.id !== notification.id));
+      if (!notification.is_read) {
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+      toast({ title: "Notification removed" });
+    } catch (error: any) {
+      toast({ title: "Failed to remove", description: error.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setNotificationDetail(null);
+    }
+  }
+
   function handleNotificationClick(notification: any) {
     if (notification?.source === "team_request" && notification.invite) {
       setSelectedInvite(notification.invite);
       setInviteDialogOpen(true);
       return;
     }
+    setNotificationDetail(notification);
+    if (!notification.synthetic && !notification.is_read && notification.id) {
+      void markSingleNotificationRead(notification.id);
+    }
     if (notification?.action_url) {
       navigate(notification.action_url);
+    }
+  }
+
+  async function createPracticeTeam() {
+    if (!member) {
+      toast({ title: "Login required", description: "Please sign in first.", variant: "destructive" });
+      return;
+    }
+    const name = practiceTeamForm.team_name.trim();
+    if (!name) {
+      toast({ title: "Team name required", description: "Give your practice team a name." });
+      return;
+    }
+    if (practiceTeamForm.max_members < 2 || practiceTeamForm.max_members > 4) {
+      toast({ title: "Invalid team size", description: "Max members must be between 2 and 4." });
+      return;
+    }
+    setCreatingPracticeTeam(true);
+    try {
+      const { data, error } = await supabase
+        .from("hackathon_teams")
+        .insert({
+          team_name: name,
+          team_leader_id: member.id,
+          status: "forming",
+          max_members: practiceTeamForm.max_members,
+          is_practice: true,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+
+      if (data?.id) {
+        await supabase.from("team_members").insert({
+          team_id: data.id,
+          member_id: member.id,
+          role: "leader",
+        });
+        toast({ title: "Practice team created" });
+        setShowCreatePracticeTeam(false);
+        setPracticeTeamForm({ team_name: "", max_members: 4 });
+        await loadMemberDataByEmail(member.email);
+        await loadTeamHubData();
+      }
+    } catch (error: any) {
+      toast({ title: "Failed to create team", description: error.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setCreatingPracticeTeam(false);
+    }
+  }
+
+  async function requestJoinTeam(teamId: string, leaderId: string) {
+    if (!member) {
+      toast({ title: "Login required", description: "Please sign in first.", variant: "destructive" });
+      return;
+    }
+    if (requestingTeamId === teamId) return;
+    setRequestingTeamId(teamId);
+    try {
+      const { error } = await supabase.from("team_requests").insert({
+        team_id: teamId,
+        from_member_id: member.id,
+        to_member_id: leaderId,
+        message: teamHubRequestMessage.trim() || null,
+      });
+      if (error) throw error;
+      toast({ title: "Request sent", description: "Team leader has been notified." });
+      setTeamHubRequestMessage("");
+    } catch (error: any) {
+      toast({ title: "Failed to send request", description: error.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setRequestingTeamId(null);
+    }
+  }
+
+  async function submitTeamUpdate() {
+    if (!member) {
+      toast({ title: "Login required", description: "Please sign in first.", variant: "destructive" });
+      return;
+    }
+    if (!selectedUpdateTeam) {
+      toast({ title: "Select team", description: "Choose a team to post an update." });
+      return;
+    }
+    const body = teamUpdateMessage.trim();
+    if (!body) {
+      toast({ title: "Message required", description: "Write a quick update before posting." });
+      return;
+    }
+    setPostingTeamUpdate(true);
+    try {
+      const { error } = await supabase.from("team_updates").insert({
+        team_id: selectedUpdateTeam,
+        member_id: member.id,
+        message: body,
+      });
+      if (error) throw error;
+      setTeamUpdateMessage("");
+      toast({ title: "Update shared" });
+      await loadTeamHubData();
+    } catch (error: any) {
+      toast({ title: "Failed to share update", description: error.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setPostingTeamUpdate(false);
     }
   }
 
@@ -2155,6 +2378,10 @@ export default function MemberPortal() {
               <Trophy className="w-4 h-4 mr-2" />
               Hackathons
             </TabsTrigger>
+            <TabsTrigger value="teamhub" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Sparkles className="w-4 h-4 mr-2" />
+              Team Hub
+            </TabsTrigger>
             <TabsTrigger value="teams" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Users className="w-4 h-4 mr-2" />
               Teams
@@ -2918,6 +3145,229 @@ export default function MemberPortal() {
                   );
                 })
               )}
+            </div>
+          </TabsContent>
+
+          {/* Team Hub Tab */}
+          <TabsContent value="teamhub">
+            <div className="space-y-6">
+              <Card className="bg-gradient-to-r from-primary/20 via-purple-500/20 to-primary/30 border-primary/40">
+                <CardContent className="md:flex items-center justify-between gap-6 p-6">
+                  <div className="space-y-2">
+                    <p className="text-sm uppercase tracking-widest text-primary-foreground/80">Build together</p>
+                    <h3 className="text-2xl font-bold text-primary-foreground">Launch a practice squad</h3>
+                    <p className="text-sm text-primary-foreground/90">
+                      Spin up a lightweight team to test ideas, prep for hackathons, or ship micro-projects. Invite members
+                      instantly and log your weekly progress.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-3 min-w-[220px]">
+                    <Button
+                      size="lg"
+                      className="bg-white text-primary hover:bg-white/90"
+                      onClick={() => setShowCreatePracticeTeam(true)}
+                    >
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Create Practice Team
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-white/50 text-white hover:text-white"
+                      onClick={() => void loadTeamHubData()}
+                      disabled={teamHubLoading}
+                    >
+                      {teamHubLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Refreshing…
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCcw className="w-4 h-4 mr-2" />
+                          Refresh hub
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      My Teams
+                    </CardTitle>
+                    <CardDescription>Quick snapshot of every team you are part of.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {teams.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">You’re not part of a team yet.</p>
+                    ) : (
+                      teams.map((team) => (
+                        <div key={team.id} className="p-3 rounded-lg border bg-muted/50 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold">{team.team_name}</span>
+                            {team.is_practice && <Badge variant="secondary">Practice</Badge>}
+                            <Badge variant={team.status === "complete" ? "secondary" : "outline"}>{team.status}</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {(team.members?.length || 0)}/{team.max_members || 4} members
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Megaphone className="w-4 h-4" />
+                      Weekly Highlights
+                    </CardTitle>
+                    <CardDescription>Signals from teams shipping in the last 7 days.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {weeklyHighlights.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No updates yet. Share something to get featured.</p>
+                    ) : (
+                      weeklyHighlights.map((update) => (
+                        <div key={update.id} className="p-3 rounded-lg border bg-muted/40">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline" className="text-xs">
+                              {update.hackathon_teams?.team_name || "Team"}
+                            </Badge>
+                            <span className="text-[11px] text-muted-foreground">
+                              {new Date(update.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium">
+                            {update.author?.full_name || "Member"}{" "}
+                            <PremiumBadge verified={update.author?.verified_badge} star={update.author?.star_badge} size="xs" />
+                          </p>
+                          <p className="text-sm text-muted-foreground whitespace-pre-line mt-1">{update.message}</p>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Open Seats
+                  </CardTitle>
+                  <CardDescription>Teams looking for collaborators right now.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Optional intro note (shared with leaders when you request to join)
+                    </label>
+                    <Textarea
+                      placeholder="Tell team leads how you can help..."
+                      value={teamHubRequestMessage}
+                      onChange={(e) => setTeamHubRequestMessage(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+                  {openSeatTeams.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">All teams are currently full.</p>
+                  ) : (
+                    openSeatTeams.map((team) => {
+                      const filled = team.team_members?.length || 0;
+                      const seats = (team.max_members || 4) - filled;
+                      return (
+                        <div
+                          key={team.id}
+                          className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/50 flex-wrap"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold">{team.team_name}</p>
+                              {team.is_practice && <Badge variant="secondary">Practice</Badge>}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {seats} seat{seats === 1 ? "" : "s"} open • leader {team.team_leader_id?.slice(0, 6)}...
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => void requestJoinTeam(team.id, team.team_leader_id)}
+                            disabled={!member || requestingTeamId === team.id}
+                          >
+                            {requestingTeamId === team.id ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Sending…
+                              </>
+                            ) : (
+                              <>
+                                <Send className="w-4 h-4 mr-2" />
+                                Request to Join
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      );
+                    })
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    Share a Team Update
+                  </CardTitle>
+                  <CardDescription>Post quick progress logs so everyone sees momentum.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {teams.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Join or create a team to start posting updates.</p>
+                  ) : (
+                    <>
+                      <Select value={selectedUpdateTeam} onValueChange={(value) => setSelectedUpdateTeam(value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select team" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {teams.map((team) => (
+                            <SelectItem key={team.id} value={team.id}>
+                              {team.team_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Textarea
+                        rows={3}
+                        value={teamUpdateMessage}
+                        onChange={(e) => setTeamUpdateMessage(e.target.value)}
+                        placeholder="What did your team ship this week?"
+                      />
+                      <Button onClick={() => void submitTeamUpdate()} disabled={postingTeamUpdate}>
+                        {postingTeamUpdate ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Sharing…
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4 mr-2" />
+                            Share Update
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
@@ -3947,6 +4397,56 @@ export default function MemberPortal() {
           </DialogContent>
         </Dialog>
 
+        {/* Create Practice Team Dialog */}
+        <Dialog open={showCreatePracticeTeam} onOpenChange={(open) => {
+          setShowCreatePracticeTeam(open);
+          if (!open) setPracticeTeamForm({ team_name: "", max_members: 4 });
+        }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Create Practice Team</DialogTitle>
+              <DialogDescription>Spin up a lightweight squad to experiment, learn, or prep for bigger hackathons.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Team Name</label>
+                <Input
+                  value={practiceTeamForm.team_name}
+                  onChange={(e) => setPracticeTeamForm((prev) => ({ ...prev, team_name: e.target.value }))}
+                  placeholder="Shadow Defenders"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Max Members (2-4)</label>
+                <Select
+                  value={String(practiceTeamForm.max_members)}
+                  onValueChange={(value) => setPracticeTeamForm((prev) => ({ ...prev, max_members: Number(value) }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[2, 3, 4].map((size) => (
+                      <SelectItem key={size} value={String(size)}>
+                        {size} members
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCreatePracticeTeam(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => void createPracticeTeam()} disabled={creatingPracticeTeam}>
+                {creatingPracticeTeam ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                {creatingPracticeTeam ? "Creating..." : "Create Team"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Special Welcome Animation Dialog */}
         <Dialog open={showSpecialWelcome} onOpenChange={setShowSpecialWelcome}>
           <DialogContent className="max-w-md">
@@ -3979,6 +4479,47 @@ export default function MemberPortal() {
                 setShowStarBadgeAnimation(false);
               }} className="w-full">
                 Get Started
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Notification Detail Dialog */}
+        <Dialog open={!!notificationDetail} onOpenChange={(open) => {
+          if (!open) setNotificationDetail(null);
+        }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{notificationDetail?.title || "Notification"}</DialogTitle>
+              <DialogDescription>
+                {notificationDetail?.created_at ? new Date(notificationDetail.created_at).toLocaleString() : null}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground capitalize">
+                Type: {notificationDetail?.notification_type?.replace("_", " ") || "general"}
+              </p>
+              <div className="bg-muted/50 rounded-lg p-4 border border-border/40 whitespace-pre-wrap text-sm">
+                {notificationDetail?.message || notificationDetail?.body || "No additional message."}
+              </div>
+              {notificationDetail?.action_url && (
+                <Button variant="outline" onClick={() => navigate(notificationDetail.action_url!)}>
+                  <ExternalLink className="w-4 h-4 mr-2" /> Open Link
+                </Button>
+              )}
+            </div>
+            <DialogFooter className="flex justify-between gap-2">
+              {!notificationDetail?.synthetic && notificationDetail?.id && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => void deleteNotificationEntry(notificationDetail)}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" /> Delete
+                </Button>
+              )}
+              <Button type="button" variant="outline" onClick={() => setNotificationDetail(null)}>
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>
