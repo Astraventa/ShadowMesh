@@ -34,6 +34,15 @@ export default function AnnouncementsManager() {
 	async function loadAnnouncements() {
 		setLoading(true);
 		try {
+			// Auto deactivate expired announcements
+			const nowIso = new Date().toISOString();
+			await supabase
+				.from("global_announcements")
+				.update({ is_active: false })
+				.eq("is_active", true)
+				.not("expires_at", "is", null)
+				.lte("expires_at", nowIso);
+
 			const { data, error } = await supabase
 				.from("global_announcements")
 				.select("*")

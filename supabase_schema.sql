@@ -1000,8 +1000,29 @@ drop policy if exists p_member_notifications_select on public.member_notificatio
 create policy p_member_notifications_select
   on public.member_notifications
   for select
-  to authenticated
-  using (member_id = auth.uid()::text::uuid);
+  to anon, authenticated
+  using (true);
+
+-- Refresh notification_type constraint to include admin messages
+alter table public.member_notifications
+  drop constraint if exists member_notifications_notification_type_check;
+alter table public.member_notifications
+  add constraint member_notifications_notification_type_check
+  check (
+    notification_type in (
+      'team_invite',
+      'team_joined',
+      'team_request',
+      'hackathon_approved',
+      'hackathon_started',
+      'submission_reminder',
+      'results_published',
+      'general',
+      'team_chat',
+      'team_deleted',
+      'admin_message'
+    )
+  );
 
 drop policy if exists p_member_notifications_update on public.member_notifications;
 create policy p_member_notifications_update

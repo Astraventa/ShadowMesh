@@ -1896,26 +1896,18 @@ const scannerLockRef = useRef(false);
 															<TableCell>
 																<Badge variant="secondary">{m.status || "active"}</Badge>
 															</TableCell>
-															<TableCell className="text-right space-x-2">
-																<Button size="sm" variant="outline" onClick={() => {
-																	setEditingMember(m);
-																	setMemberEditDialogOpen(true);
-																}}>
-																	<Edit className="w-3 h-3 mr-1" />
-																	Edit
-																</Button>
-																<Button size="sm" variant="outline" onClick={() => {
-																	setNotificationMember(m);
-																	setNotificationMemberEmail(m.email);
-																	setNotificationTitle("");
-																	setNotificationMessage("");
-																	setNotificationDialogOpen(true);
-																}}>
-																	<Bell className="w-3 h-3 mr-1" />
-																	Notify
-																</Button>
-																<Button size="sm" variant="outline" onClick={() => void loadMemberDetails(m.id)}>Details</Button>
-																<Button size="sm" variant="destructive" onClick={() => { setDeleteMemberId(m.id); setDeleteMemberOpen(true); }}>Delete</Button>
+															<TableCell className="text-right">
+																<div className="flex justify-end gap-2 flex-wrap">
+																	<Button size="sm" variant="outline" onClick={() => {
+																		setEditingMember(m);
+																		setMemberEditDialogOpen(true);
+																	}}>
+																		<Edit className="w-3 h-3 mr-1" />
+																		Edit
+																	</Button>
+																	<Button size="sm" variant="outline" onClick={() => void loadMemberDetails(m.id)}>Details</Button>
+																	<Button size="sm" variant="destructive" onClick={() => { setDeleteMemberId(m.id); setDeleteMemberOpen(true); }}>Delete</Button>
+																</div>
 															</TableCell>
 														</TableRow>
 													);

@@ -492,6 +492,18 @@ export default function MemberPortal() {
         setGlobalResources(filtered);
       }
 
+      // Auto deactivate expired announcements before loading
+      try {
+        const nowIso = new Date().toISOString();
+        await supabase
+          .from("global_announcements")
+          .update({ is_active: false })
+          .eq("is_active", true)
+          .lte("expires_at", nowIso);
+      } catch (e) {
+        console.warn("Failed to auto-deactivate expired announcements:", e);
+      }
+
       // Load announcements
       const { data: annData } = await supabase
         .from("global_announcements")
@@ -576,7 +588,7 @@ export default function MemberPortal() {
           allTeams.map(async (team: any) => {
             const { data: teamMembersData } = await supabase
               .from("team_members")
-              .select("member_id, role, members(full_name, email)")
+              .select("member_id, role, members(full_name, email, verified_badge, star_badge, custom_badge)")
               .eq("team_id", team.id);
 
             return {
@@ -586,6 +598,9 @@ export default function MemberPortal() {
                 full_name: tm.members?.full_name || "",
                 email: tm.members?.email || "",
                 role: tm.role,
+                verified_badge: tm.members?.verified_badge || false,
+                star_badge: tm.members?.star_badge || false,
+                custom_badge: tm.members?.custom_badge || null,
               })),
             };
           })
@@ -940,7 +955,7 @@ export default function MemberPortal() {
           team_members(
             member_id,
             role,
-            members(id, full_name, email, area_of_interest)
+            members(id, full_name, email, area_of_interest, verified_badge, star_badge, custom_badge)
           )
         `)
         .eq("hackathon_id", hackathonId)
@@ -959,6 +974,9 @@ export default function MemberPortal() {
             email: tm.members?.email || "",
             area_of_interest: tm.members?.area_of_interest || "",
             role: tm.role,
+            verified_badge: tm.members?.verified_badge || false,
+            star_badge: tm.members?.star_badge || false,
+            custom_badge: tm.members?.custom_badge || null,
           };
         });
         return {
@@ -2927,12 +2945,30 @@ export default function MemberPortal() {
                       <div className="space-y-2">
                         <p className="font-medium">Team Members ({team.members.length}/4):</p>
                         {team.members.map((m) => (
-                          <div key={m.member_id} className="flex items-center justify-between p-2 bg-muted rounded">
-                            <div>
-                              <p className="font-medium">{m.full_name}</p>
-                              <p className="text-xs text-muted-foreground">{m.email}</p>
+                          <div
+                            key={m.member_id}
+                            className="flex items-center justify-between gap-4 p-3 bg-muted/60 rounded-lg border border-border/40"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium truncate">{m.full_name}</p>
+                                <PremiumBadge
+                                  verified={m.verified_badge}
+                                  star={m.star_badge}
+                                  custom={m.custom_badge}
+                                  size="sm"
+                                />
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {m.role === "leader" ? "Team Lead" : "Member"}
+                              </p>
                             </div>
-                            <Badge variant={m.role === "leader" ? "default" : "outline"}>{m.role}</Badge>
+                            <Badge
+                              variant={m.role === "leader" ? "default" : "outline"}
+                              className={m.role === "leader" ? "bg-primary text-primary-foreground" : ""}
+                            >
+                              {m.role}
+                            </Badge>
                           </div>
                         ))}
                       </div>
