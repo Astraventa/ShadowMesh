@@ -2399,10 +2399,6 @@ useEffect(() => {
               <Sparkles className="w-4 h-4 mr-2" />
               Team Hub
             </TabsTrigger>
-            <TabsTrigger value="teams" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Users className="w-4 h-4 mr-2" />
-              Teams
-            </TabsTrigger>
             <TabsTrigger value="resources" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <BookOpen className="w-4 h-4 mr-2" />
               Resources
@@ -3408,64 +3404,6 @@ useEffect(() => {
                   )}
                 </CardContent>
               </Card>
-            </div>
-          </TabsContent>
-
-          {/* Teams Tab */}
-          <TabsContent value="teams">
-            <div className="space-y-6">
-              {teams.length === 0 ? (
-                <Card>
-                  <CardContent className="py-12 text-center">
-                    <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground">You're not part of any teams yet.</p>
-                    <p className="text-sm text-muted-foreground mt-2">Join a hackathon and create or join a team!</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                teams.map((team) => (
-                  <Card key={team.id}>
-                    <CardHeader>
-                      <CardTitle>{team.team_name}</CardTitle>
-                      <CardDescription>
-                        <Badge variant={team.status === "complete" ? "secondary" : "outline"}>{team.status}</Badge>
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        <p className="font-medium">Team Members ({team.members.length}/4):</p>
-                        {team.members.map((m) => (
-                          <div
-                            key={m.member_id}
-                            className="flex items-center justify-between gap-4 p-3 bg-muted/60 rounded-lg border border-border/40"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium truncate">{m.full_name}</p>
-                                <PremiumBadge
-                                  verified={m.verified_badge}
-                                  star={m.star_badge}
-                                  custom={m.custom_badge}
-                                  size="sm"
-                                />
-                              </div>
-                              <p className="text-xs text-muted-foreground">
-                                {m.role === "leader" ? "Team Lead" : "Member"}
-                              </p>
-                            </div>
-                            <Badge
-                              variant={m.role === "leader" ? "default" : "outline"}
-                              className={m.role === "leader" ? "bg-primary text-primary-foreground" : ""}
-                            >
-                              {m.role}
-                            </Badge>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
             </div>
           </TabsContent>
 
