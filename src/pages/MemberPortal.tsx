@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2 } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
@@ -281,6 +281,23 @@ const weeklyHighlights = useMemo(() => {
     .filter(update => new Date(update.created_at).getTime() >= sevenDaysAgo)
     .slice(0, 6);
 }, [teamUpdates]);
+
+const isSpecialMember = Boolean(member?.verified_badge || member?.star_badge);
+const specialPerkList = useMemo(() => {
+  if (!isSpecialMember) return [];
+  if (member?.verified_badge) {
+    return [
+      { title: "Priority bounties", desc: "Verified members get first dibs on high-value drops and admin shout-outs." },
+      { title: "Auto-approved practice squads", desc: "Teams you spin up unlock instantly without moderation delays." },
+      { title: "Highlight boost", desc: "Weekly highlights pin your updates to the top for 24 hours." }
+    ];
+  }
+  return [
+    { title: "Star aura", desc: "Practice teams you create inherit the Star badge flair by default." },
+    { title: "Direct admin channel", desc: "Star members can DM admins via notifications for fast responses." },
+    { title: "Invite multipliers", desc: "Extra invite links for special members so you can bring more hitters in." }
+  ];
+}, [isSpecialMember, member?.verified_badge]);
 
   useEffect(() => {
     // Load viewed hackathons from localStorage (if needed in future)
@@ -3151,20 +3168,21 @@ useEffect(() => {
           {/* Team Hub Tab */}
           <TabsContent value="teamhub">
             <div className="space-y-6">
-              <Card className="bg-gradient-to-r from-primary/20 via-purple-500/20 to-primary/30 border-primary/40">
-                <CardContent className="md:flex items-center justify-between gap-6 p-6">
-                  <div className="space-y-2">
-                    <p className="text-sm uppercase tracking-widest text-primary-foreground/80">Build together</p>
-                    <h3 className="text-2xl font-bold text-primary-foreground">Launch a practice squad</h3>
-                    <p className="text-sm text-primary-foreground/90">
-                      Spin up a lightweight team to test ideas, prep for hackathons, or ship micro-projects. Invite members
-                      instantly and log your weekly progress.
+              <Card className="relative overflow-hidden border-0 shadow-lg">
+                <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-purple-500 to-fuchsia-500 opacity-80" />
+                <CardContent className="relative md:flex items-center justify-between gap-6 p-6 text-white">
+                  <div className="space-y-3 max-w-2xl">
+                    <p className="text-xs uppercase tracking-[0.35em] text-white/80">Build together</p>
+                    <h3 className="text-3xl font-bold leading-tight">Launch a practice squad and train like it’s finals week.</h3>
+                    <p className="text-sm text-white/90">
+                      Create mini strike teams to rehearse flows, pressure-test ideas, or sprint on clients. Every practice
+                      squad can post weekly logs, recruit talent, and stay ready for the next drop.
                     </p>
                   </div>
-                  <div className="flex flex-col gap-3 min-w-[220px]">
+                  <div className="flex flex-col gap-3 min-w-[240px]">
                     <Button
                       size="lg"
-                      className="bg-white text-primary hover:bg-white/90"
+                      className="bg-white text-primary hover:bg-white/90 font-semibold"
                       onClick={() => setShowCreatePracticeTeam(true)}
                     >
                       <Sparkles className="w-4 h-4 mr-2" />
@@ -3192,6 +3210,28 @@ useEffect(() => {
                   </div>
                 </CardContent>
               </Card>
+
+              {isSpecialMember && (
+                <Card className="border-primary/40 bg-gradient-to-br from-primary/10 via-background to-background">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Star className="w-5 h-5 text-primary" />
+                      Special Member Perks
+                    </CardTitle>
+                    <CardDescription>
+                      Because you carry a {member?.verified_badge ? "Verified" : "Star"} badge, the platform bends a little in your favor.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-3">
+                    {specialPerkList.map((perk) => (
+                      <div key={perk.title} className="p-4 rounded-lg border border-primary/20 bg-background/70 shadow-sm">
+                        <p className="text-sm font-semibold">{perk.title}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{perk.desc}</p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="grid gap-4 md:grid-cols-2">
                 <Card>
@@ -3285,11 +3325,11 @@ useEffect(() => {
                       return (
                         <div
                           key={team.id}
-                          className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-muted/50 flex-wrap"
+                          className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-background/80 flex-wrap"
                         >
-                          <div>
+                          <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <p className="font-semibold">{team.team_name}</p>
+                              <p className="font-semibold text-foreground">{team.team_name}</p>
                               {team.is_practice && <Badge variant="secondary">Practice</Badge>}
                             </div>
                             <p className="text-xs text-muted-foreground">
