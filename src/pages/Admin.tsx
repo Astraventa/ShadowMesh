@@ -384,7 +384,7 @@ const [promptForm, setPromptForm] = useState({
 	expires_at: "",
 	status: "active",
 });
-const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
+	const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
 const [spotlightForm, setSpotlightForm] = useState({
 	team_id: "",
 	headline: "",
@@ -395,6 +395,19 @@ const [spotlightForm, setSpotlightForm] = useState({
 	is_active: true,
 });
 const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
+	const handleResetPromptForm = useCallback(() => {
+		setPromptForm({
+			title: "",
+			description: "",
+			focus_area: "",
+			difficulty: "starter",
+			reward: "",
+			start_at: "",
+			expires_at: "",
+			status: "active",
+		});
+		setEditingPrompt(null);
+	}, []);
 
 	// Initial loads
     useEffect(() => {
@@ -589,20 +602,6 @@ useEffect(() => {
 		}
 	}
 
-	function resetPromptForm() {
-		setPromptForm({
-			title: "",
-			description: "",
-			focus_area: "",
-			difficulty: "starter",
-			reward: "",
-			start_at: "",
-			expires_at: "",
-			status: "active",
-		});
-		setEditingPrompt(null);
-	}
-
 	async function saveTeamPrompt() {
 		if (!promptForm.title.trim()) {
 			toast({ title: "Title required", description: "Give the prompt a name.", variant: "destructive" });
@@ -627,7 +626,7 @@ useEffect(() => {
 			}
 			if (error) throw error;
 			toast({ title: editingPrompt ? "Prompt updated" : "Prompt published" });
-			resetPromptForm();
+			handleResetPromptForm();
 			await loadTeamHubAdmin();
 		} catch (err: any) {
 			toast({ title: "Failed to save prompt", description: err.message, variant: "destructive" });
@@ -643,7 +642,7 @@ useEffect(() => {
 			if (error) throw error;
 			toast({ title: status === "active" ? "Prompt reactivated" : "Prompt archived" });
 			if (editingPrompt?.id === promptId && status === "archived") {
-				resetPromptForm();
+				handleResetPromptForm();
 			}
 			await loadTeamHubAdmin();
 		} catch (err: any) {
@@ -2871,7 +2870,7 @@ useEffect(() => {
 										<Button onClick={() => void saveTeamPrompt()}>
 											{editingPrompt ? "Update Prompt" : "Publish Prompt"}
 										</Button>
-										<Button variant="outline" onClick={resetPromptForm}>Reset</Button>
+										<Button variant="outline" onClick={handleResetPromptForm}>Reset</Button>
 									</CardFooter>
 								</Card>
 
