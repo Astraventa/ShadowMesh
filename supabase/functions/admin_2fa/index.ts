@@ -5,6 +5,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const ADMIN_USERNAME = "zeeshanjay"; // Hardcoded admin username
+const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") ?? "zeeshanjay7@gmail.com";
 
 // TOTP functions (same as two_factor_auth)
 function base32Decode(base32: string): Uint8Array {
@@ -164,6 +165,7 @@ serve(async (req) => {
         .from("admin_settings")
         .insert({
           username: ADMIN_USERNAME,
+          email: ADMIN_EMAIL,
           two_factor_enabled: false,
           two_factor_secret: null,
         })
@@ -176,6 +178,17 @@ serve(async (req) => {
       adminSettings = newSettings;
     } else if (fetchError) {
       throw fetchError;
+    } else if (adminSettings && !adminSettings.email) {
+      // Backfill email if it's missing (older rows)
+      const { data: updated, error: updateError } = await supabase
+        .from("admin_settings")
+        .update({ email: ADMIN_EMAIL })
+        .eq("id", adminSettings.id)
+        .select()
+        .single();
+      if (!updateError && updated) {
+        adminSettings = updated;
+      }
     }
 
     switch (action) {
