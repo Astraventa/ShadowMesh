@@ -589,7 +589,7 @@ useEffect(() => {
 		}
 	}
 
-	const resetPromptForm = () => {
+	function resetPromptForm() {
 		setPromptForm({
 			title: "",
 			description: "",
@@ -601,7 +601,7 @@ useEffect(() => {
 			status: "active",
 		});
 		setEditingPrompt(null);
-	};
+	}
 
 	async function saveTeamPrompt() {
 		if (!promptForm.title.trim()) {
