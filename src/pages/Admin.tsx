@@ -540,7 +540,7 @@ useEffect(() => {
 			setMembersLoading(false);
 		}
 
-	async function loadTeamHubAdmin() {
+	const loadTeamHubAdmin = useCallback(async () => {
 		if (!authed) return;
 		setTeamHubLoading(true);
 		try {
@@ -600,7 +600,7 @@ useEffect(() => {
 		} finally {
 			setTeamHubLoading(false);
 		}
-	}
+	}, [authed, supabase]);
 
 	async function saveTeamPrompt() {
 		if (!promptForm.title.trim()) {
