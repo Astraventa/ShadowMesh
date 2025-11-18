@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { QrScanner } from "@yudiel/react-qr-scanner";
 import AdminFake404 from "@/components/AdminFake404";
-import { Shield, QrCode, Loader2, Search, Star, CheckCircle2, Eye, EyeOff, Crown, Heart, Users, Sparkles, Award, Edit, Save, X, Bell, Megaphone, BookOpen, Plus, Trash2, ExternalLink } from "lucide-react";
+import { Shield, QrCode, Loader2, Search, Star, CheckCircle2, Eye, EyeOff, Crown, Heart, Users, Sparkles, Award, Edit, Save, X, Bell, Megaphone, BookOpen, Plus, Trash2, ExternalLink, RefreshCcw } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import MemberEditForm from "./MemberEditForm";
@@ -40,6 +40,16 @@ function formatDate(iso?: string | null) {
 		return d.toLocaleString();
 	} catch {
 		return iso as string;
+	}
+}
+
+function toLocalInputValue(iso?: string | null) {
+	if (!iso) return "";
+	try {
+		const d = new Date(iso);
+		return d.toISOString().slice(0, 16);
+	} catch {
+		return "";
 	}
 }
 
@@ -361,6 +371,30 @@ const scannerLockRef = useRef(false);
 	const [newResUrl, setNewResUrl] = useState("");
 	const [submissionFields, setSubmissionFields] = useState<string[]>([]);
 	const [rulesMarkdown, setRulesMarkdown] = useState<string>("");
+const [teamHubLoading, setTeamHubLoading] = useState(false);
+const [teamPrompts, setTeamPrompts] = useState<any[]>([]);
+const [editingPrompt, setEditingPrompt] = useState<any | null>(null);
+const [promptForm, setPromptForm] = useState({
+	title: "",
+	description: "",
+	focus_area: "",
+	difficulty: "starter",
+	reward: "",
+	start_at: "",
+	expires_at: "",
+	status: "active",
+});
+const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
+const [spotlightForm, setSpotlightForm] = useState({
+	team_id: "",
+	headline: "",
+	summary: "",
+	cta_label: "Join Team",
+	cta_link: "",
+	image_url: "",
+	is_active: true,
+});
+const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
 
 	// Initial loads
     useEffect(() => {
@@ -383,6 +417,13 @@ const scannerLockRef = useRef(false);
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tab, authed]);
+
+useEffect(() => {
+	if (tab === "teamhub" && authed) {
+		void loadTeamHubAdmin();
+	}
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [tab, authed]);
 
     useEffect(() => {
         if (!authed || !token) return;
@@ -485,6 +526,193 @@ const scannerLockRef = useRef(false);
 		} finally {
 			setMembersLoading(false);
 		}
+
+	async function loadTeamHubAdmin() {
+		if (!authed) return;
+		setTeamHubLoading(true);
+		try {
+			const nowIso = new Date().toISOString();
+			const { data: prompts } = await supabase
+				.from("team_practice_prompts")
+				.select("*")
+				.eq("status", "active")
+				.or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+				.order("created_at", { ascending: false });
+			setTeamPrompts(prompts || []);
+
+			const { data: spotlight } = await supabase
+				.from("team_spotlights")
+				.select(`
+					*,
+					team: hackathon_teams (
+						id,
+						team_name,
+						is_practice,
+						status,
+						team_leader_id
+					)
+				`)
+				.eq("is_active", true)
+				.order("created_at", { ascending: false })
+				.limit(1)
+				.maybeSingle();
+			setTeamSpotlight(spotlight || null);
+			if (spotlight) {
+				setSpotlightForm({
+					team_id: spotlight.team_id || "",
+					headline: spotlight.headline || "",
+					summary: spotlight.summary || "",
+					cta_label: spotlight.cta_label || "Join Team",
+					cta_link: spotlight.cta_link || "",
+					image_url: spotlight.image_url || "",
+					is_active: Boolean(spotlight.is_active),
+				});
+			}
+
+			const { data: updates } = await supabase
+				.from("team_updates")
+				.select(`
+					id,
+					created_at,
+					message,
+					team_id,
+					hackathon_teams(team_name),
+					author:members!team_updates_member_id_fkey(full_name, email)
+				`)
+				.order("created_at", { ascending: false })
+				.limit(25);
+			setTeamUpdatesModeration(updates || []);
+		} catch (error) {
+			console.warn("Failed to load team hub admin data:", error);
+		} finally {
+			setTeamHubLoading(false);
+		}
+	}
+
+	const resetPromptForm = () => {
+		setPromptForm({
+			title: "",
+			description: "",
+			focus_area: "",
+			difficulty: "starter",
+			reward: "",
+			start_at: "",
+			expires_at: "",
+			status: "active",
+		});
+		setEditingPrompt(null);
+	};
+
+	async function saveTeamPrompt() {
+		if (!promptForm.title.trim()) {
+			toast({ title: "Title required", description: "Give the prompt a name.", variant: "destructive" });
+			return;
+		}
+		try {
+			const payload: any = {
+				title: promptForm.title.trim(),
+				description: promptForm.description?.trim() || null,
+				focus_area: promptForm.focus_area?.trim() || null,
+				difficulty: promptForm.difficulty,
+				reward: promptForm.reward?.trim() || null,
+				status: promptForm.status,
+				start_at: promptForm.start_at ? new Date(promptForm.start_at).toISOString() : null,
+				expires_at: promptForm.expires_at ? new Date(promptForm.expires_at).toISOString() : null,
+			};
+			let error;
+			if (editingPrompt) {
+				({ error } = await supabase.from("team_practice_prompts").update(payload).eq("id", editingPrompt.id));
+			} else {
+				({ error } = await supabase.from("team_practice_prompts").insert(payload));
+			}
+			if (error) throw error;
+			toast({ title: editingPrompt ? "Prompt updated" : "Prompt published" });
+			resetPromptForm();
+			await loadTeamHubAdmin();
+		} catch (err: any) {
+			toast({ title: "Failed to save prompt", description: err.message, variant: "destructive" });
+		}
+	}
+
+	async function setPromptStatus(promptId: string, status: "active" | "archived") {
+		try {
+			const { error } = await supabase
+				.from("team_practice_prompts")
+				.update({ status })
+				.eq("id", promptId);
+			if (error) throw error;
+			toast({ title: status === "active" ? "Prompt reactivated" : "Prompt archived" });
+			if (editingPrompt?.id === promptId && status === "archived") {
+				resetPromptForm();
+			}
+			await loadTeamHubAdmin();
+		} catch (err: any) {
+			toast({ title: "Failed to update prompt", description: err.message, variant: "destructive" });
+		}
+	}
+
+	async function saveSpotlight() {
+		if (!spotlightForm.team_id.trim()) {
+			toast({ title: "Team ID required", description: "Enter the team ID to spotlight.", variant: "destructive" });
+		 return;
+		}
+		if (!spotlightForm.headline.trim()) {
+			toast({ title: "Headline required", description: "Give the spotlight a short headline.", variant: "destructive" });
+			return;
+		}
+		try {
+			await supabase
+				.from("team_spotlights")
+				.update({ is_active: false })
+				.eq("is_active", true);
+			const payload = {
+				team_id: spotlightForm.team_id.trim(),
+				headline: spotlightForm.headline.trim(),
+				summary: spotlightForm.summary?.trim() || null,
+				cta_label: spotlightForm.cta_label?.trim() || "Join Team",
+				cta_link: spotlightForm.cta_link?.trim() || null,
+				image_url: spotlightForm.image_url?.trim() || null,
+				is_active: spotlightForm.is_active,
+			};
+			const { error } = await supabase.from("team_spotlights").insert(payload);
+			if (error) throw error;
+			toast({ title: "Spotlight updated" });
+			await loadTeamHubAdmin();
+		} catch (err: any) {
+			toast({ title: "Failed to save spotlight", description: err.message, variant: "destructive" });
+		}
+	}
+
+	async function clearSpotlight() {
+		try {
+			const { error } = await supabase.from("team_spotlights").update({ is_active: false }).eq("is_active", true);
+			if (error) throw error;
+			toast({ title: "Spotlight cleared" });
+			setTeamSpotlight(null);
+			setSpotlightForm({
+				team_id: "",
+				headline: "",
+				summary: "",
+				cta_label: "Join Team",
+				cta_link: "",
+				image_url: "",
+				is_active: true,
+			});
+		} catch (err: any) {
+			toast({ title: "Failed to clear spotlight", description: err.message, variant: "destructive" });
+		}
+	}
+
+	async function deleteTeamHubUpdate(updateId: string) {
+		try {
+			const { error } = await supabase.from("team_updates").delete().eq("id", updateId);
+			if (error) throw error;
+			toast({ title: "Update removed" });
+			setTeamUpdatesModeration((prev) => prev.filter((u) => u.id !== updateId));
+		} catch (err: any) {
+			toast({ title: "Failed to remove update", description: err.message, variant: "destructive" });
+		}
+	}
 	}
 	
 	async function searchMemberForBadge() {
@@ -1634,6 +1862,7 @@ const scannerLockRef = useRef(false);
                         <TabsTrigger value="members">Members</TabsTrigger>
                         <TabsTrigger value="events">Events</TabsTrigger>
                         <TabsTrigger value="hackathons">Hackathons</TabsTrigger>
+						<TabsTrigger value="teamhub">Team Hub</TabsTrigger>
                         <TabsTrigger value="feedback">Feedback</TabsTrigger>
                         <TabsTrigger value="announcements">Announcements</TabsTrigger>
                         <TabsTrigger value="resources">Resources</TabsTrigger>
@@ -2533,6 +2762,266 @@ const scannerLockRef = useRef(false);
 								</div>
 							</CardContent>
 						</Card>
+					</TabsContent>
+
+					<TabsContent value="teamhub">
+						<div className="space-y-6">
+							<Card>
+								<CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+									<div>
+										<CardTitle>Team Hub Operations</CardTitle>
+										<CardDescription>Craft practice prompts, spotlight squads, and moderate updates.</CardDescription>
+									</div>
+									<Button onClick={() => void loadTeamHubAdmin()} disabled={teamHubLoading} variant="outline">
+										{teamHubLoading ? (
+											<>
+												<Loader2 className="w-4 h-4 mr-2 animate-spin" />
+												Refreshing...
+											</>
+										) : (
+											<>
+												<RefreshCcw className="w-4 h-4 mr-2" />
+												Reload data
+											</>
+										)}
+									</Button>
+								</CardHeader>
+							</Card>
+
+							<div className="grid gap-6 lg:grid-cols-2">
+								<Card>
+									<CardHeader>
+										<CardTitle>{editingPrompt ? "Edit Practice Prompt" : "Publish Practice Prompt"}</CardTitle>
+										<CardDescription>Drop a fresh challenge for practice squads.</CardDescription>
+									</CardHeader>
+									<CardContent className="space-y-4">
+										<div className="grid gap-4">
+											<div>
+												<label className="text-sm font-medium">Title</label>
+												<Input
+													value={promptForm.title}
+													onChange={(e) => setPromptForm((prev) => ({ ...prev, title: e.target.value }))}
+													placeholder="Example: Breach Detection Run"
+												/>
+											</div>
+											<div>
+												<label className="text-sm font-medium">Description</label>
+												<Textarea
+													rows={3}
+													value={promptForm.description}
+													onChange={(e) => setPromptForm((prev) => ({ ...prev, description: e.target.value }))}
+													placeholder="Explain what the squad should tackle this week."
+												/>
+											</div>
+											<div className="grid md:grid-cols-2 gap-4">
+												<div>
+													<label className="text-sm font-medium">Focus Area</label>
+													<Input
+														value={promptForm.focus_area}
+														onChange={(e) => setPromptForm((prev) => ({ ...prev, focus_area: e.target.value }))}
+														placeholder="AI Red Teaming"
+													/>
+												</div>
+												<div>
+													<label className="text-sm font-medium">Reward</label>
+													<Input
+														value={promptForm.reward}
+														onChange={(e) => setPromptForm((prev) => ({ ...prev, reward: e.target.value }))}
+														placeholder="Shoutout, badge, small bounty…"
+													/>
+												</div>
+											</div>
+											<div className="grid md:grid-cols-3 gap-4">
+												<div>
+													<label className="text-sm font-medium">Difficulty</label>
+													<Select
+														value={promptForm.difficulty}
+														onValueChange={(value) => setPromptForm((prev) => ({ ...prev, difficulty: value }))}
+													>
+														<SelectTrigger>
+															<SelectValue />
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="starter">Starter</SelectItem>
+															<SelectItem value="intermediate">Intermediate</SelectItem>
+															<SelectItem value="elite">Elite</SelectItem>
+														</SelectContent>
+													</Select>
+												</div>
+												<div>
+													<label className="text-sm font-medium">Start At</label>
+													<Input
+														type="datetime-local"
+														value={promptForm.start_at}
+														onChange={(e) => setPromptForm((prev) => ({ ...prev, start_at: e.target.value }))}
+													/>
+												</div>
+												<div>
+													<label className="text-sm font-medium">Expires At</label>
+													<Input
+														type="datetime-local"
+														value={promptForm.expires_at}
+														onChange={(e) => setPromptForm((prev) => ({ ...prev, expires_at: e.target.value }))}
+													/>
+												</div>
+											</div>
+										</div>
+									</CardContent>
+									<CardFooter className="flex gap-2">
+										<Button onClick={() => void saveTeamPrompt()}>
+											{editingPrompt ? "Update Prompt" : "Publish Prompt"}
+										</Button>
+										<Button variant="outline" onClick={resetPromptForm}>Reset</Button>
+									</CardFooter>
+								</Card>
+
+								<Card>
+									<CardHeader>
+										<CardTitle>Active Prompts</CardTitle>
+										<CardDescription>Archive prompts to rotate fresh challenges.</CardDescription>
+									</CardHeader>
+									<CardContent className="space-y-4">
+										{teamPrompts.length === 0 ? (
+											<p className="text-sm text-muted-foreground">No active prompts.</p>
+										) : (
+											teamPrompts.map((prompt) => (
+												<div key={prompt.id} className="border rounded-lg p-3 space-y-2">
+													<div className="flex items-center justify-between">
+														<div>
+															<p className="font-semibold">{prompt.title}</p>
+															<p className="text-xs text-muted-foreground">{prompt.focus_area || "General"}</p>
+														</div>
+														<Badge variant={prompt.difficulty === "elite" ? "destructive" : prompt.difficulty === "intermediate" ? "default" : "secondary"}>
+															{prompt.difficulty}
+														</Badge>
+													</div>
+													<p className="text-sm text-muted-foreground line-clamp-2">{prompt.description}</p>
+													<div className="flex flex-wrap gap-2">
+														<Button size="sm" variant="outline" onClick={() => {
+															setEditingPrompt(prompt);
+															setPromptForm({
+																title: prompt.title || "",
+																description: prompt.description || "",
+																focus_area: prompt.focus_area || "",
+																difficulty: prompt.difficulty || "starter",
+																reward: prompt.reward || "",
+																start_at: toLocalInputValue(prompt.start_at),
+																expires_at: toLocalInputValue(prompt.expires_at),
+																status: prompt.status || "active",
+															});
+														}}>
+															Edit
+														</Button>
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={() => void setPromptStatus(prompt.id, prompt.status === "active" ? "archived" : "active")}
+														>
+															{prompt.status === "active" ? "Archive" : "Activate"}
+														</Button>
+													</div>
+												</div>
+											))
+										)}
+									</CardContent>
+								</Card>
+							</div>
+
+							<Card>
+								<CardHeader>
+									<CardTitle>Spotlight a Squad</CardTitle>
+									<CardDescription>Highlight a practice or hackathon team across the hub.</CardDescription>
+								</CardHeader>
+								<CardContent className="grid gap-4 md:grid-cols-2">
+									<div className="space-y-3">
+										<div>
+											<label className="text-sm font-medium">Team ID</label>
+											<Input
+												value={spotlightForm.team_id}
+												onChange={(e) => setSpotlightForm((prev) => ({ ...prev, team_id: e.target.value }))}
+												placeholder="uuid-of-team"
+											/>
+										</div>
+										<div>
+											<label className="text-sm font-medium">Headline</label>
+											<Input
+												value={spotlightForm.headline}
+												onChange={(e) => setSpotlightForm((prev) => ({ ...prev, headline: e.target.value }))}
+												placeholder="Why this squad matters"
+											/>
+										</div>
+										<div>
+											<label className="text-sm font-medium">Summary</label>
+											<Textarea
+												rows={3}
+												value={spotlightForm.summary}
+												onChange={(e) => setSpotlightForm((prev) => ({ ...prev, summary: e.target.value }))}
+											/>
+										</div>
+									</div>
+									<div className="space-y-3">
+										<div>
+											<label className="text-sm font-medium">CTA Label</label>
+											<Input
+												value={spotlightForm.cta_label}
+												onChange={(e) => setSpotlightForm((prev) => ({ ...prev, cta_label: e.target.value }))}
+											/>
+										</div>
+										<div>
+											<label className="text-sm font-medium">CTA Link</label>
+											<Input
+												value={spotlightForm.cta_link}
+												onChange={(e) => setSpotlightForm((prev) => ({ ...prev, cta_link: e.target.value }))}
+												placeholder="https://"
+											/>
+										</div>
+										<div>
+											<label className="text-sm font-medium">Image URL</label>
+											<Input
+												value={spotlightForm.image_url}
+												onChange={(e) => setSpotlightForm((prev) => ({ ...prev, image_url: e.target.value }))}
+											/>
+										</div>
+									</div>
+								</CardContent>
+								<CardFooter className="flex gap-2">
+									<Button onClick={() => void saveSpotlight()}>Save Spotlight</Button>
+									<Button variant="outline" onClick={() => void clearSpotlight()} disabled={!teamSpotlight}>
+										Clear Spotlight
+									</Button>
+								</CardFooter>
+							</Card>
+
+							<Card>
+								<CardHeader>
+									<CardTitle>Moderate Team Updates</CardTitle>
+									<CardDescription>Remove spam or low-signal posts from the highlights feed.</CardDescription>
+								</CardHeader>
+								<CardContent className="space-y-3">
+									{teamUpdatesModeration.length === 0 ? (
+										<p className="text-sm text-muted-foreground">No recent updates.</p>
+									) : (
+										teamUpdatesModeration.map((update) => (
+											<div key={update.id} className="p-3 rounded-lg border bg-muted/40 space-y-2">
+												<div className="flex items-center justify-between gap-2">
+													<div>
+														<p className="text-sm font-semibold">{update.hackathon_teams?.team_name || "Team"}</p>
+														<p className="text-xs text-muted-foreground">
+															{update.author?.full_name || "Member"} • {formatDate(update.created_at)}
+														</p>
+													</div>
+													<Button size="sm" variant="destructive" onClick={() => void deleteTeamHubUpdate(update.id)}>
+														<Trash2 className="w-3 h-3 mr-1" />
+														Delete
+													</Button>
+												</div>
+												<p className="text-sm text-muted-foreground whitespace-pre-wrap">{update.message}</p>
+											</div>
+										))
+									)}
+								</CardContent>
+							</Card>
+						</div>
 					</TabsContent>
 
 					<TabsContent value="messages">

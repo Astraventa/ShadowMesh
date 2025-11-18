@@ -268,6 +268,8 @@ const [selectedUpdateTeam, setSelectedUpdateTeam] = useState<string>("");
 const [postingTeamUpdate, setPostingTeamUpdate] = useState(false);
 const [requestingTeamId, setRequestingTeamId] = useState<string | null>(null);
 const [teamHubRequestMessage, setTeamHubRequestMessage] = useState("");
+const [teamPrompts, setTeamPrompts] = useState<any[]>([]);
+const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
 
 const openSeatTeams = useMemo(() => {
   return (teamHubTeams || [])
@@ -810,6 +812,7 @@ useEffect(() => {
   async function loadTeamHubData() {
     setTeamHubLoading(true);
     try {
+      const nowIso = new Date().toISOString();
       const { data: hubTeams } = await supabase
         .from("hackathon_teams")
         .select(`
@@ -820,7 +823,8 @@ useEffect(() => {
           max_members,
           is_practice,
           created_at,
-          team_members(member_id)
+          team_members(member_id),
+          leader:members!hackathon_teams_team_leader_id_fkey(full_name, star_badge, verified_badge)
         `)
         .order("created_at", { ascending: false })
         .limit(40);
@@ -839,6 +843,36 @@ useEffect(() => {
         .order("created_at", { ascending: false })
         .limit(20);
       setTeamUpdates(updates || []);
+
+      const { data: prompts } = await supabase
+        .from("team_practice_prompts")
+        .select("*")
+        .eq("status", "active")
+        .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+        .order("start_at", { ascending: false })
+        .limit(6);
+      setTeamPrompts(prompts || []);
+
+      const { data: spotlightData } = await supabase
+        .from("team_spotlights")
+        .select(`
+          *,
+          team: hackathon_teams (
+            id,
+            team_name,
+            is_practice,
+            status,
+            team_leader_id,
+            max_members,
+            team_members(member_id),
+            leader: members!hackathon_teams_team_leader_id_fkey(full_name, verified_badge, star_badge)
+          )
+        `)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setTeamSpotlight(spotlightData || null);
     } catch (error) {
       console.warn("Failed to load team hub data:", error);
     } finally {
@@ -3229,6 +3263,84 @@ useEffect(() => {
                 </Card>
               )}
 
+              {teamSpotlight?.team && (
+                <Card className="overflow-hidden border-0 shadow-lg">
+                  <div className="grid md:grid-cols-2">
+                    <div className="p-6 space-y-3">
+                      <Badge variant="secondary" className="w-fit">Featured squad</Badge>
+                      <h3 className="text-2xl font-bold">{teamSpotlight.headline}</h3>
+                      <p className="text-sm text-muted-foreground whitespace-pre-line">{teamSpotlight.summary}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge>{teamSpotlight.team.team_name}</Badge>
+                        {teamSpotlight.team.is_practice && <Badge variant="outline">Practice</Badge>}
+                        <span className="text-xs text-muted-foreground">
+                          {(teamSpotlight.team.team_members?.length || 0)}/{teamSpotlight.team.max_members || 4} members
+                        </span>
+                      </div>
+                      {teamSpotlight.cta_link && (
+                        <Button asChild size="sm">
+                          <a href={teamSpotlight.cta_link} target="_blank" rel="noreferrer">
+                            {teamSpotlight.cta_label || "Learn more"}
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                    {teamSpotlight.image_url ? (
+                      <img
+                        src={teamSpotlight.image_url}
+                        alt={teamSpotlight.team.team_name}
+                        className="w-full h-full object-cover hidden md:block"
+                      />
+                    ) : (
+                      <div className="bg-gradient-to-br from-primary/30 to-purple-500/40 hidden md:block" />
+                    )}
+                  </div>
+                </Card>
+              )}
+
+              {teamPrompts.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Megaphone className="w-4 h-4" />
+                      Weekly Practice Drops
+                    </CardTitle>
+                    <CardDescription>
+                      Pick a prompt, spin up a squad, and post your update by the end of the week.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-2">
+                    {teamPrompts.map((prompt) => (
+                      <div key={prompt.id} className="p-4 border rounded-lg space-y-2 bg-muted/40">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold">{prompt.title}</p>
+                          <Badge variant={prompt.difficulty === "elite" ? "destructive" : prompt.difficulty === "intermediate" ? "default" : "secondary"}>
+                            {prompt.difficulty}
+                          </Badge>
+                        </div>
+                        {prompt.focus_area && (
+                          <Badge variant="outline" className="w-fit text-xs">
+                            {prompt.focus_area}
+                          </Badge>
+                        )}
+                        <p className="text-sm text-muted-foreground whitespace-pre-line">{prompt.description}</p>
+                        <div className="text-xs text-muted-foreground flex items-center gap-2">
+                          {prompt.reward && (
+                            <>
+                              <Star className="w-3 h-3" />
+                              <span>{prompt.reward}</span>
+                            </>
+                          )}
+                          {prompt.expires_at && (
+                            <span>• Ends {new Date(prompt.expires_at).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <Card>
                   <CardHeader>
@@ -3329,7 +3441,19 @@ useEffect(() => {
                               {team.is_practice && <Badge variant="secondary">Practice</Badge>}
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              {seats} seat{seats === 1 ? "" : "s"} open • leader {team.team_leader_id?.slice(0, 6)}...
+                              {seats} seat{seats === 1 ? "" : "s"} open • leader{" "}
+                              {team.leader?.full_name ? (
+                                <span className="inline-flex items-center gap-1 text-foreground/90 font-semibold">
+                                  {team.leader.full_name}
+                                  <PremiumBadge
+                                    verified={team.leader.verified_badge}
+                                    star={team.leader.star_badge}
+                                    size="xs"
+                                  />
+                                </span>
+                              ) : (
+                                `ID ${team.team_leader_id?.slice(0, 6)}…`
+                              )}
                             </p>
                           </div>
                           <Button
