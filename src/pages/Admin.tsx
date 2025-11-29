@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { QrScanner } from "@yudiel/react-qr-scanner";
 import AdminFake404 from "@/components/AdminFake404";
-import { Shield, QrCode, Loader2, Search, Star, CheckCircle2, Eye, EyeOff, Crown, Heart, Users, Sparkles, Award, Edit, Save, X, Bell, Megaphone, BookOpen, Plus, Trash2, ExternalLink, RefreshCcw } from "lucide-react";
+import { Shield, QrCode, Loader2, Search, Star, CheckCircle2, Eye, EyeOff, Crown, Heart, Users, Sparkles, Award, Edit, Save, X, Bell, Megaphone, BookOpen, Plus, Trash2, ExternalLink, RefreshCcw, Settings } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import MemberEditForm from "./MemberEditForm";
@@ -225,6 +225,166 @@ type MessageRow = {
 };
 
 const PAGE_SIZE = 50;
+
+// Admin Teams Management Component
+function AdminTeamsManagement() {
+	const { toast } = useToast();
+	const [teams, setTeams] = useState<any[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [editingTeam, setEditingTeam] = useState<any | null>(null);
+	const [editForm, setEditForm] = useState({
+		priority_level: 0,
+		team_badge: "",
+	});
+
+	useEffect(() => {
+		void loadTeams();
+	}, []);
+
+	async function loadTeams() {
+		setLoading(true);
+		try {
+			const { data, error } = await supabase
+				.from("hackathon_teams")
+				.select(`
+					id,
+					team_name,
+					team_leader_id,
+					status,
+					max_members,
+					is_practice,
+					priority_level,
+					likes_count,
+					team_badge,
+					achievement_points,
+					created_at,
+					leader:members!hackathon_teams_team_leader_id_fkey(full_name, email)
+				`)
+				.or("is_practice.eq.true,hackathon_id.is.null")
+				.order("priority_level", { ascending: false, nullsFirst: false })
+				.order("achievement_points", { ascending: false, nullsFirst: false })
+				.order("created_at", { ascending: false });
+			if (error) throw error;
+			setTeams(data || []);
+		} catch (error: any) {
+			toast({ title: "Error", description: error.message, variant: "destructive" });
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	async function updateTeam(teamId: string) {
+		try {
+			const { error } = await supabase
+				.from("hackathon_teams")
+				.update({
+					priority_level: editForm.priority_level || 0,
+					team_badge: editForm.team_badge || null,
+				})
+				.eq("id", teamId);
+			if (error) throw error;
+			toast({ title: "Team updated" });
+			setEditingTeam(null);
+			await loadTeams();
+		} catch (error: any) {
+			toast({ title: "Error", description: error.message, variant: "destructive" });
+		}
+	}
+
+	if (loading) {
+		return <div className="text-center py-8 text-muted-foreground">Loading teams...</div>;
+	}
+
+	return (
+		<div className="space-y-4">
+			{teams.length === 0 ? (
+				<p className="text-center text-muted-foreground py-8">No practice teams yet.</p>
+			) : (
+				<div className="space-y-3">
+					{teams.map((team) => (
+						<div key={team.id} className="p-4 rounded-lg border bg-muted/30 space-y-3">
+							<div className="flex items-start justify-between gap-4">
+								<div className="flex-1">
+									<div className="flex items-center gap-2 flex-wrap mb-2">
+										<h4 className="font-semibold">{team.team_name}</h4>
+										<Badge variant="secondary">Practice</Badge>
+										{team.team_badge && (
+											<Badge variant="outline" className="bg-gradient-to-r from-purple-500/20 to-pink-500/20">
+												{team.team_badge}
+											</Badge>
+										)}
+										{team.priority_level > 0 && (
+											<Badge variant="outline" className="bg-yellow-500/20">
+												Priority {team.priority_level}
+											</Badge>
+										)}
+									</div>
+									<div className="grid md:grid-cols-2 gap-2 text-sm text-muted-foreground">
+										<p>Leader: {team.leader?.full_name || "Unknown"}</p>
+										<p>Status: {team.status}</p>
+										<p>Likes: {team.likes_count || 0}</p>
+										<p>Achievement Points: {team.achievement_points || 0}</p>
+									</div>
+								</div>
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() => {
+										setEditingTeam(team);
+										setEditForm({
+											priority_level: team.priority_level || 0,
+											team_badge: team.team_badge || "",
+										});
+									}}
+								>
+									<Settings className="w-4 h-4 mr-2" />
+									Edit
+								</Button>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+
+			{editingTeam && (
+				<Dialog open={!!editingTeam} onOpenChange={(open) => !open && setEditingTeam(null)}>
+					<DialogContent>
+						<DialogHeader>
+							<DialogTitle>Edit Team: {editingTeam.team_name}</DialogTitle>
+							<DialogDescription>Set priority level and team badge</DialogDescription>
+						</DialogHeader>
+						<div className="space-y-4">
+							<div>
+								<label className="text-sm font-medium">Priority Level (0-100)</label>
+								<Input
+									type="number"
+									min="0"
+									max="100"
+									value={editForm.priority_level}
+									onChange={(e) => setEditForm((prev) => ({ ...prev, priority_level: Number(e.target.value) }))}
+								/>
+								<p className="text-xs text-muted-foreground mt-1">Higher priority teams appear first</p>
+							</div>
+							<div>
+								<label className="text-sm font-medium">Team Badge (Premium/Unique)</label>
+								<Input
+									value={editForm.team_badge}
+									onChange={(e) => setEditForm((prev) => ({ ...prev, team_badge: e.target.value }))}
+									placeholder="e.g., Elite, Champion, Legend"
+								/>
+								<p className="text-xs text-muted-foreground mt-1">Leave empty to remove badge</p>
+							</div>
+						</div>
+						<DialogFooter>
+							<Button variant="outline" onClick={() => setEditingTeam(null)}>Cancel</Button>
+							<Button onClick={() => void updateTeam(editingTeam.id)}>Save Changes</Button>
+						</DialogFooter>
+					</DialogContent>
+				</Dialog>
+			)}
+		</div>
+	);
+}
 
 const Admin = () => {
 	const { toast } = useToast();
@@ -3019,6 +3179,17 @@ useEffect(() => {
 											</div>
 										))
 									)}
+								</CardContent>
+							</Card>
+
+							{/* Teams Management */}
+							<Card>
+								<CardHeader>
+									<CardTitle>Practice Teams Management</CardTitle>
+									<CardDescription>Set priority, badges, and manage teams</CardDescription>
+								</CardHeader>
+								<CardContent>
+									<AdminTeamsManagement />
 								</CardContent>
 							</Card>
 						</div>

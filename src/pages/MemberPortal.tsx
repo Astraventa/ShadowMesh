@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2, Settings, Edit, X } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2, Settings, Edit, X, Target, Zap, TrendingUp, Users2, MessageCircle } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
@@ -189,6 +189,181 @@ function LeaderboardSection() {
   );
 }
 
+// Achievement Tree Component
+function AchievementTreeComponent({ team, achievements, member }: { team: any; achievements: any[]; member: Member | null }) {
+  const achievementDefs = [
+    {
+      id: "first_update",
+      title: "First Update",
+      desc: "Post your first team update",
+      icon: MessageCircle,
+      points: 10,
+      color: "from-blue-500 to-cyan-500",
+      requirement: "Post 1 team update",
+    },
+    {
+      id: "full_team",
+      title: "Full Squad",
+      desc: "Recruit all team members",
+      icon: Users2,
+      points: 25,
+      color: "from-purple-500 to-pink-500",
+      requirement: "Fill all team slots",
+    },
+    {
+      id: "weekly_active",
+      title: "Weekly Active",
+      desc: "Post updates for 4 consecutive weeks",
+      icon: TrendingUp,
+      points: 50,
+      color: "from-green-500 to-emerald-500",
+      requirement: "4 weeks of updates",
+    },
+    {
+      id: "milestone_10",
+      title: "10 Updates",
+      desc: "Reach 10 team updates",
+      icon: Target,
+      points: 30,
+      color: "from-amber-500 to-orange-500",
+      requirement: "10 total updates",
+    },
+    {
+      id: "community_love",
+      title: "Community Love",
+      desc: "Get 10 likes on your team",
+      icon: Heart,
+      points: 40,
+      color: "from-red-500 to-rose-500",
+      requirement: "10 team likes",
+    },
+    {
+      id: "elite_status",
+      title: "Elite Team",
+      desc: "Reach 100 achievement points",
+      icon: Zap,
+      points: 100,
+      color: "from-yellow-500 via-amber-500 to-orange-500",
+      requirement: "100 total points",
+    },
+  ];
+
+  const unlockedAchievements = new Set(achievements.map((a: any) => a.achievement_type));
+  const totalPoints = achievements.reduce((sum: number, a: any) => sum + (a.points_awarded || 0), 0);
+  const memberCount = team.members?.length || 0;
+  const isFullTeam = memberCount >= (team.max_members || 4);
+
+  // Calculate progress for each achievement
+  const getAchievementProgress = (achievementId: string) => {
+    const unlocked = unlockedAchievements.has(achievementId);
+    switch (achievementId) {
+      case "first_update":
+        return { unlocked, progress: achievements.filter((a: any) => a.achievement_type === "first_update").length, max: 1 };
+      case "full_team":
+        return { unlocked: isFullTeam, progress: memberCount, max: team.max_members || 4 };
+      case "weekly_active":
+        return { unlocked, progress: achievements.filter((a: any) => a.achievement_type === "weekly_active").length, max: 4 };
+      case "milestone_10":
+        return { unlocked, progress: achievements.filter((a: any) => a.achievement_type?.startsWith("update")).length, max: 10 };
+      case "community_love":
+        return { unlocked, progress: team.likes_count || 0, max: 10 };
+      case "elite_status":
+        return { unlocked: totalPoints >= 100, progress: totalPoints, max: 100 };
+      default:
+        return { unlocked: false, progress: 0, max: 1 };
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="p-4 rounded-lg border bg-gradient-to-br from-primary/10 to-purple-500/10">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">Total Points</p>
+            <p className="text-3xl font-bold">{totalPoints}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-medium text-muted-foreground">Achievements</p>
+            <p className="text-3xl font-bold">{unlockedAchievements.size}/{achievementDefs.length}</p>
+          </div>
+        </div>
+        {team.team_badge && (
+          <div className="mt-3 pt-3 border-t">
+            <Badge variant="outline" className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/50 text-sm">
+              <Award className="w-3 h-3 mr-1" />
+              {team.team_badge}
+            </Badge>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {achievementDefs.map((achievement) => {
+          const { unlocked, progress, max } = getAchievementProgress(achievement.id);
+          const Icon = achievement.icon;
+          const progressPercent = Math.min((progress / max) * 100, 100);
+
+          return (
+            <div
+              key={achievement.id}
+              className={`p-4 rounded-lg border transition-all ${
+                unlocked
+                  ? `bg-gradient-to-br ${achievement.color} border-transparent text-white`
+                  : "bg-muted/50 border-border"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`p-2 rounded-lg ${
+                  unlocked ? "bg-white/20" : "bg-background"
+                }`}>
+                  <Icon className={`w-5 h-5 ${unlocked ? "text-white" : "text-muted-foreground"}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <h4 className={`font-semibold ${unlocked ? "text-white" : ""}`}>
+                      {achievement.title}
+                    </h4>
+                    {unlocked && <CheckCircle2 className="w-4 h-4 text-white" />}
+                  </div>
+                  <p className={`text-xs mb-2 ${unlocked ? "text-white/90" : "text-muted-foreground"}`}>
+                    {achievement.desc}
+                  </p>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className={unlocked ? "text-white/80" : "text-muted-foreground"}>
+                        {achievement.requirement}
+                      </span>
+                      <span className={`font-medium ${unlocked ? "text-white" : "text-foreground"}`}>
+                        {progress}/{max}
+                      </span>
+                    </div>
+                    <div className={`h-1.5 rounded-full overflow-hidden ${
+                      unlocked ? "bg-white/30" : "bg-background"
+                    }`}>
+                      <div
+                        className={`h-full transition-all ${
+                          unlocked ? "bg-white" : `bg-gradient-to-r ${achievement.color}`
+                        }`}
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Trophy className={`w-3 h-3 ${unlocked ? "text-white" : "text-amber-500"}`} />
+                    <span className={`text-xs font-medium ${unlocked ? "text-white" : "text-foreground"}`}>
+                      {achievement.points} points
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function MemberPortal() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -283,6 +458,9 @@ const [editingTeamName, setEditingTeamName] = useState("");
 const [deletingTeam, setDeletingTeam] = useState(false);
 const practiceChatChannelRef = useRef<RealtimeChannel | null>(null);
 const practiceChatScrollRef = useRef<HTMLDivElement | null>(null);
+const [teamAchievements, setTeamAchievements] = useState<any[]>([]);
+const [teamLikes, setTeamLikes] = useState<Set<string>>(new Set());
+const [likingTeamId, setLikingTeamId] = useState<string | null>(null);
 
 // Filter to only practice teams for Team Hub
 const practiceTeams = useMemo(() => {
@@ -925,10 +1103,16 @@ useEffect(() => {
           max_members,
           is_practice,
           created_at,
+          priority_level,
+          likes_count,
+          team_badge,
+          achievement_points,
           team_members(member_id),
           leader:members!hackathon_teams_team_leader_id_fkey(full_name, star_badge, verified_badge)
         `)
         .or("is_practice.eq.true,hackathon_id.is.null")
+        .order("priority_level", { ascending: false, nullsFirst: false })
+        .order("achievement_points", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
         .limit(40);
       setTeamHubTeams(hubTeams || []);
@@ -985,10 +1169,56 @@ useEffect(() => {
         .limit(1)
         .maybeSingle();
       setTeamSpotlight(spotlightData || null);
+
+      // Load achievements for user's practice team
+      if (member?.id && createdPracticeTeam) {
+        const { data: achievements } = await supabase
+          .from("team_achievements")
+          .select("*")
+          .eq("team_id", createdPracticeTeam.id)
+          .order("created_at", { ascending: false });
+        setTeamAchievements(achievements || []);
+
+        // Load which teams user has liked
+        const { data: userLikes } = await supabase
+          .from("team_likes")
+          .select("team_id")
+          .eq("member_id", member.id);
+        setTeamLikes(new Set((userLikes || []).map((l: any) => l.team_id)));
+      }
     } catch (error) {
       console.warn("Failed to load team hub data:", error);
     } finally {
       setTeamHubLoading(false);
+    }
+  }
+
+  async function toggleTeamLike(teamId: string) {
+    if (!member || likingTeamId === teamId) return;
+    setLikingTeamId(teamId);
+    try {
+      const hasLiked = teamLikes.has(teamId);
+      if (hasLiked) {
+        await supabase
+          .from("team_likes")
+          .delete()
+          .eq("team_id", teamId)
+          .eq("member_id", member.id);
+        setTeamLikes((prev) => {
+          const next = new Set(prev);
+          next.delete(teamId);
+          return next;
+        });
+      } else {
+        await supabase
+          .from("team_likes")
+          .insert({ team_id: teamId, member_id: member.id });
+        setTeamLikes((prev) => new Set(prev).add(teamId));
+      }
+    } catch (error: any) {
+      toast({ title: "Failed to update like", description: error.message, variant: "destructive" });
+    } finally {
+      setLikingTeamId(null);
     }
   }
 
