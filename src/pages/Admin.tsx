@@ -409,6 +409,68 @@ const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
 		setEditingPrompt(null);
 	}, []);
 
+	const loadTeamHubAdmin = useCallback(async () => {
+		if (!authed) return;
+		setTeamHubLoading(true);
+		try {
+			const nowIso = new Date().toISOString();
+			const { data: prompts } = await supabase
+				.from("team_practice_prompts")
+				.select("*")
+				.eq("status", "active")
+				.or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+				.order("created_at", { ascending: false });
+			setTeamPrompts(prompts || []);
+
+			const { data: spotlight } = await supabase
+				.from("team_spotlights")
+				.select(`
+					*,
+					team: hackathon_teams (
+						id,
+						team_name,
+						is_practice,
+						status,
+						team_leader_id
+					)
+				`)
+				.eq("is_active", true)
+				.order("created_at", { ascending: false })
+				.limit(1)
+				.maybeSingle();
+			setTeamSpotlight(spotlight || null);
+			if (spotlight) {
+				setSpotlightForm({
+					team_id: spotlight.team_id || "",
+					headline: spotlight.headline || "",
+					summary: spotlight.summary || "",
+					cta_label: spotlight.cta_label || "Join Team",
+					cta_link: spotlight.cta_link || "",
+					image_url: spotlight.image_url || "",
+					is_active: Boolean(spotlight.is_active),
+				});
+			}
+
+			const { data: updates } = await supabase
+				.from("team_updates")
+				.select(`
+					id,
+					created_at,
+					message,
+					team_id,
+					hackathon_teams(team_name),
+					author:members!team_updates_member_id_fkey(full_name, email)
+				`)
+				.order("created_at", { ascending: false })
+				.limit(25);
+			setTeamUpdatesModeration(updates || []);
+		} catch (error) {
+			console.warn("Failed to load team hub admin data:", error);
+		} finally {
+			setTeamHubLoading(false);
+		}
+	}, [authed]);
+
 	// Initial loads
     useEffect(() => {
         if (!authed || !token) return;
@@ -435,8 +497,7 @@ useEffect(() => {
 	if (tab === "teamhub" && authed) {
 		void loadTeamHubAdmin();
 	}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [tab, authed]);
+}, [tab, authed, loadTeamHubAdmin]);
 
     useEffect(() => {
         if (!authed || !token) return;
@@ -539,68 +600,6 @@ useEffect(() => {
 		} finally {
 			setMembersLoading(false);
 		}
-
-	const loadTeamHubAdmin = useCallback(async () => {
-		if (!authed) return;
-		setTeamHubLoading(true);
-		try {
-			const nowIso = new Date().toISOString();
-			const { data: prompts } = await supabase
-				.from("team_practice_prompts")
-				.select("*")
-				.eq("status", "active")
-				.or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-				.order("created_at", { ascending: false });
-			setTeamPrompts(prompts || []);
-
-			const { data: spotlight } = await supabase
-				.from("team_spotlights")
-				.select(`
-					*,
-					team: hackathon_teams (
-						id,
-						team_name,
-						is_practice,
-						status,
-						team_leader_id
-					)
-				`)
-				.eq("is_active", true)
-				.order("created_at", { ascending: false })
-				.limit(1)
-				.maybeSingle();
-			setTeamSpotlight(spotlight || null);
-			if (spotlight) {
-				setSpotlightForm({
-					team_id: spotlight.team_id || "",
-					headline: spotlight.headline || "",
-					summary: spotlight.summary || "",
-					cta_label: spotlight.cta_label || "Join Team",
-					cta_link: spotlight.cta_link || "",
-					image_url: spotlight.image_url || "",
-					is_active: Boolean(spotlight.is_active),
-				});
-			}
-
-			const { data: updates } = await supabase
-				.from("team_updates")
-				.select(`
-					id,
-					created_at,
-					message,
-					team_id,
-					hackathon_teams(team_name),
-					author:members!team_updates_member_id_fkey(full_name, email)
-				`)
-				.order("created_at", { ascending: false })
-				.limit(25);
-			setTeamUpdatesModeration(updates || []);
-		} catch (error) {
-			console.warn("Failed to load team hub admin data:", error);
-		} finally {
-			setTeamHubLoading(false);
-		}
-	}, [authed, supabase]);
 
 	async function saveTeamPrompt() {
 		if (!promptForm.title.trim()) {
