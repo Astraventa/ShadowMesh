@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient";
+import { RealtimeChannel } from "@supabase/supabase-js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2 } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2, Settings, Edit, X } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
@@ -270,6 +271,18 @@ const [requestingTeamId, setRequestingTeamId] = useState<string | null>(null);
 const [teamHubRequestMessage, setTeamHubRequestMessage] = useState("");
 const [teamPrompts, setTeamPrompts] = useState<any[]>([]);
 const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
+const [showMoreTeamsModal, setShowMoreTeamsModal] = useState(false);
+const [selectedPracticeTeam, setSelectedPracticeTeam] = useState<any | null>(null);
+const [practiceTeamChat, setPracticeTeamChat] = useState<any[]>([]);
+const [practiceChatInput, setPracticeChatInput] = useState("");
+const [sendingPracticeChat, setSendingPracticeChat] = useState(false);
+const [practiceChatLoading, setPracticeChatLoading] = useState(false);
+const [showTeamSettings, setShowTeamSettings] = useState(false);
+const [teamSettingsTeam, setTeamSettingsTeam] = useState<any | null>(null);
+const [editingTeamName, setEditingTeamName] = useState("");
+const [deletingTeam, setDeletingTeam] = useState(false);
+const practiceChatChannelRef = useRef<RealtimeChannel | null>(null);
+const practiceChatScrollRef = useRef<HTMLDivElement | null>(null);
 
 // Filter to only practice teams for Team Hub
 const practiceTeams = useMemo(() => {
@@ -278,9 +291,23 @@ const practiceTeams = useMemo(() => {
 
 const openSeatTeams = useMemo(() => {
   return (teamHubTeams || [])
-    .filter(team => (team.team_members?.length || 0) < (team.max_members || 4))
-    .slice(0, 6);
+    .filter(team => (team.team_members?.length || 0) < (team.max_members || 4));
 }, [teamHubTeams]);
+
+const displayedOpenSeatTeams = useMemo(() => {
+  return openSeatTeams.slice(0, 3);
+}, [openSeatTeams]);
+
+// Check if user is already in a practice team
+const isInPracticeTeam = useMemo(() => {
+  return practiceTeams.length > 0;
+}, [practiceTeams]);
+
+// Check if user created a practice team (is leader)
+const createdPracticeTeam = useMemo(() => {
+  if (!member) return null;
+  return practiceTeams.find(team => team.team_leader_id === member.id) || null;
+}, [practiceTeams, member]);
 
 const weeklyHighlights = useMemo(() => {
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -385,6 +412,74 @@ const specialPerkList = useMemo(() => {
       try { supabase.removeChannel(channel); } catch {}
     };
   }, [member?.id]);
+
+  // Practice team chat real-time subscription
+  useEffect(() => {
+    if (!selectedPracticeTeam || !member) {
+      practiceChatChannelRef.current?.unsubscribe();
+      practiceChatChannelRef.current = null;
+      setPracticeTeamChat([]);
+      return;
+    }
+
+    void loadPracticeTeamChat(selectedPracticeTeam.id);
+
+    const channel = supabase
+      .channel(`practice-team-chat-${selectedPracticeTeam.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "team_messages",
+          filter: `team_id=eq.${selectedPracticeTeam.id}`,
+        },
+        async (payload) => {
+          const newMessage = payload.new as any;
+          try {
+            const { data: senderData } = await supabase
+              .from("members")
+              .select("full_name, email, verified_badge, star_badge, custom_badge")
+              .eq("id", newMessage.sender_member_id)
+              .single();
+
+            const formattedMessage = {
+              id: newMessage.id,
+              created_at: newMessage.created_at,
+              team_id: newMessage.team_id,
+              sender_member_id: newMessage.sender_member_id,
+              message: newMessage.message,
+              sender_name: senderData?.full_name || "Unknown",
+              sender_email: senderData?.email || "",
+              sender_verified_badge: senderData?.verified_badge || false,
+              sender_star_badge: senderData?.star_badge || false,
+              sender_custom_badge: senderData?.custom_badge || null,
+            };
+
+            setPracticeTeamChat((prev) => {
+              if (prev.some((m) => m.id === formattedMessage.id)) return prev;
+              return [...prev, formattedMessage];
+            });
+
+            setTimeout(() => {
+              if (practiceChatScrollRef.current) {
+                practiceChatScrollRef.current.scrollTop = practiceChatScrollRef.current.scrollHeight;
+              }
+            }, 100);
+          } catch (error) {
+            console.error("Failed to load sender info:", error);
+          }
+        }
+      )
+      .subscribe();
+
+    practiceChatChannelRef.current = channel;
+
+    return () => {
+      channel.unsubscribe();
+      practiceChatChannelRef.current = null;
+    };
+  }, [selectedPracticeTeam?.id, member?.id]);
 
 useEffect(() => {
   if (member?.id) {
@@ -958,6 +1053,16 @@ useEffect(() => {
       toast({ title: "Login required", description: "Please sign in first.", variant: "destructive" });
       return;
     }
+    // Check if user already created a practice team
+    if (createdPracticeTeam) {
+      toast({ title: "Already created a team", description: "You can only create one practice team. Manage your existing team from the settings.", variant: "destructive" });
+      return;
+    }
+    // Check if user is already in a practice team
+    if (isInPracticeTeam) {
+      toast({ title: "Already in a team", description: "You're already part of a practice team. Leave it first to create a new one.", variant: "destructive" });
+      return;
+    }
     const name = practiceTeamForm.team_name.trim();
     if (!name) {
       toast({ title: "Team name required", description: "Give your practice team a name." });
@@ -977,6 +1082,7 @@ useEffect(() => {
           status: "forming",
           max_members: practiceTeamForm.max_members,
           is_practice: true,
+          hackathon_id: null,
         })
         .select("id")
         .single();
@@ -1067,6 +1173,138 @@ useEffect(() => {
       toast({ title: "Failed to share update", description: error.message || "Please try again.", variant: "destructive" });
     } finally {
       setPostingTeamUpdate(false);
+    }
+  }
+
+  // Practice team chat functions
+  async function loadPracticeTeamChat(teamId: string) {
+    if (!teamId) return;
+    setPracticeChatLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("team_messages")
+        .select(`
+          id,
+          created_at,
+          message,
+          sender_member_id,
+          sender:members!team_messages_sender_member_id_fkey(full_name, email, verified_badge, star_badge, custom_badge)
+        `)
+        .eq("team_id", teamId)
+        .order("created_at", { ascending: true })
+        .limit(150);
+      
+      if (error) throw error;
+      
+      const formattedMessages = (data || []).map((msg: any) => ({
+        id: msg.id,
+        created_at: msg.created_at,
+        team_id: teamId,
+        sender_member_id: msg.sender_member_id,
+        message: msg.message,
+        sender_name: msg.sender?.full_name || "Unknown",
+        sender_email: msg.sender?.email || "",
+        sender_verified_badge: msg.sender?.verified_badge || false,
+        sender_star_badge: msg.sender?.star_badge || false,
+        sender_custom_badge: msg.sender?.custom_badge || null,
+      }));
+      
+      setPracticeTeamChat(formattedMessages);
+      setTimeout(() => {
+        if (practiceChatScrollRef.current) {
+          practiceChatScrollRef.current.scrollTop = practiceChatScrollRef.current.scrollHeight;
+        }
+      }, 100);
+    } catch (error: any) {
+      console.error("Failed to load chat:", error);
+      toast({ title: "Failed to load chat", description: error.message, variant: "destructive" });
+    } finally {
+      setPracticeChatLoading(false);
+    }
+  }
+
+  async function sendPracticeChatMessage() {
+    if (!selectedPracticeTeam || !member || !practiceChatInput.trim()) return;
+    
+    setSendingPracticeChat(true);
+    try {
+      const { error } = await supabase.from("team_messages").insert({
+        team_id: selectedPracticeTeam.id,
+        sender_member_id: member.id,
+        message: practiceChatInput.trim(),
+        hackathon_id: null,
+      });
+      
+      if (error) throw error;
+      
+      setPracticeChatInput("");
+      setTimeout(() => {
+        if (practiceChatScrollRef.current) {
+          practiceChatScrollRef.current.scrollTop = practiceChatScrollRef.current.scrollHeight;
+        }
+      }, 100);
+    } catch (error: any) {
+      toast({ title: "Failed to send message", description: error.message, variant: "destructive" });
+    } finally {
+      setSendingPracticeChat(false);
+    }
+  }
+
+  // Team settings functions
+  async function updateTeamName() {
+    if (!teamSettingsTeam || !member || !editingTeamName.trim()) return;
+    if (teamSettingsTeam.team_leader_id !== member.id) {
+      toast({ title: "Access denied", description: "Only team leaders can change the team name.", variant: "destructive" });
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from("hackathon_teams")
+        .update({ team_name: editingTeamName.trim() })
+        .eq("id", teamSettingsTeam.id);
+      
+      if (error) throw error;
+      
+      toast({ title: "Team name updated" });
+      setShowTeamSettings(false);
+      setEditingTeamName("");
+      await loadMemberDataByEmail(member.email);
+      await loadTeamHubData();
+    } catch (error: any) {
+      toast({ title: "Failed to update name", description: error.message, variant: "destructive" });
+    }
+  }
+
+  async function deletePracticeTeam() {
+    if (!teamSettingsTeam || !member) return;
+    if (teamSettingsTeam.team_leader_id !== member.id) {
+      toast({ title: "Access denied", description: "Only team leaders can delete the team.", variant: "destructive" });
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete "${teamSettingsTeam.team_name}"? This action cannot be undone.`)) {
+      return;
+    }
+    
+    setDeletingTeam(true);
+    try {
+      const { error } = await supabase
+        .from("hackathon_teams")
+        .delete()
+        .eq("id", teamSettingsTeam.id);
+      
+      if (error) throw error;
+      
+      toast({ title: "Team deleted" });
+      setShowTeamSettings(false);
+      setTeamSettingsTeam(null);
+      await loadMemberDataByEmail(member.email);
+      await loadTeamHubData();
+    } catch (error: any) {
+      toast({ title: "Failed to delete team", description: error.message, variant: "destructive" });
+    } finally {
+      setDeletingTeam(false);
     }
   }
 
@@ -3240,14 +3478,16 @@ useEffect(() => {
                     </p>
                   </div>
                   <div className="flex flex-col gap-3 min-w-[240px]">
-                    <Button
-                      size="lg"
-                      className="bg-white text-primary hover:bg-white/90 font-semibold"
-                      onClick={() => setShowCreatePracticeTeam(true)}
-                    >
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Create Practice Team
-                    </Button>
+                    {!isInPracticeTeam && !createdPracticeTeam && (
+                      <Button
+                        size="lg"
+                        className="bg-white text-primary hover:bg-white/90 font-semibold"
+                        onClick={() => setShowCreatePracticeTeam(true)}
+                      >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Create Practice Team
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -3384,18 +3624,58 @@ useEffect(() => {
                     {practiceTeams.length === 0 ? (
                       <p className="text-sm text-muted-foreground">You're not part of a practice team yet.</p>
                     ) : (
-                      practiceTeams.map((team) => (
-                        <div key={team.id} className="p-3 rounded-lg border bg-muted/50 space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold">{team.team_name}</span>
-                            <Badge variant="secondary">Practice</Badge>
-                            <Badge variant={team.status === "complete" ? "secondary" : "outline"}>{team.status}</Badge>
+                      practiceTeams.map((team) => {
+                        const isLeader = member && team.team_leader_id === member.id;
+                        return (
+                          <div key={team.id} className="p-3 rounded-lg border bg-muted/50 space-y-1">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold">{team.team_name}</span>
+                                <Badge variant="secondary">Practice</Badge>
+                                <Badge variant={team.status === "complete" ? "secondary" : "outline"}>{team.status}</Badge>
+                              </div>
+                              {isLeader && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                      <Settings className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => {
+                                      setTeamSettingsTeam(team);
+                                      setEditingTeamName(team.team_name);
+                                      setShowTeamSettings(true);
+                                    }}>
+                                      <Edit className="w-4 h-4 mr-2" />
+                                      Team Settings
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                      setSelectedPracticeTeam(team);
+                                    }}>
+                                      <MessageSquare className="w-4 h-4 mr-2" />
+                                      Open Chat
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
+                              {!isLeader && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => setSelectedPracticeTeam(team)}
+                                >
+                                  <MessageSquare className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {(team.members?.length || 0)}/{team.max_members || 4} members
+                            </p>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            {(team.members?.length || 0)}/{team.max_members || 4} members
-                          </p>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </CardContent>
                 </Card>
@@ -3454,10 +3734,11 @@ useEffect(() => {
                       rows={2}
                     />
                   </div>
-                  {openSeatTeams.length === 0 ? (
+                  {displayedOpenSeatTeams.length === 0 ? (
                     <p className="text-sm text-muted-foreground">All teams are currently full.</p>
                   ) : (
-                    openSeatTeams.map((team) => {
+                    <>
+                      {displayedOpenSeatTeams.map((team) => {
                       const filled = team.team_members?.length || 0;
                       const seats = (team.max_members || 4) - filled;
                       return (
@@ -3558,6 +3839,112 @@ useEffect(() => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Practice Team Chat Section */}
+              {selectedPracticeTeam && (
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <MessageSquare className="w-4 h-4" />
+                          {selectedPracticeTeam.team_name} Chat
+                        </CardTitle>
+                        <CardDescription>Team communication hub</CardDescription>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedPracticeTeam(null)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="bg-muted/20 rounded-lg border flex flex-col h-80">
+                      <div className="flex-1 overflow-y-auto p-3 space-y-3" ref={practiceChatScrollRef}>
+                        {practiceChatLoading ? (
+                          <div className="space-y-2">
+                            <div className="h-4 bg-muted rounded animate-pulse" />
+                            <div className="h-4 bg-muted rounded animate-pulse w-2/3" />
+                            <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
+                          </div>
+                        ) : practiceTeamChat.length === 0 ? (
+                          <div className="text-center text-xs text-muted-foreground py-8">
+                            <p>No messages yet. Be the first to say hi!</p>
+                          </div>
+                        ) : (
+                          practiceTeamChat.map((msg) => {
+                            const isSelf = member && msg.sender_member_id === member.id;
+                            return (
+                              <div key={msg.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
+                                <div
+                                  className={`max-w-[80%] rounded-lg p-3 text-sm shadow-sm ${
+                                    isSelf ? "bg-primary text-primary-foreground" : "bg-background border"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-3 text-[11px] opacity-80 mb-1">
+                                    <div className="flex items-center gap-2 truncate">
+                                      <span>{isSelf ? "You" : msg.sender_name}</span>
+                                      {!isSelf && (
+                                        <PremiumBadge 
+                                          verified={msg.sender_verified_badge} 
+                                          star={msg.sender_star_badge} 
+                                          custom={msg.sender_custom_badge} 
+                                          size="xs" 
+                                        />
+                                      )}
+                                    </div>
+                                    <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                                  </div>
+                                  <p className="whitespace-pre-wrap break-words text-xs sm:text-sm">{msg.message}</p>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      <div className="border-t bg-background/50 p-3">
+                        <div className="flex gap-2 items-end">
+                          <Textarea
+                            value={practiceChatInput}
+                            onChange={(e) => setPracticeChatInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                void sendPracticeChatMessage();
+                              }
+                            }}
+                            placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                            className="resize-none flex-1 bg-background/80 border-primary/20 focus:border-primary/50"
+                            disabled={!selectedPracticeTeam || sendingPracticeChat}
+                            rows={2}
+                            maxLength={2000}
+                          />
+                          <Button
+                            onClick={() => void sendPracticeChatMessage()}
+                            disabled={!practiceChatInput.trim() || sendingPracticeChat}
+                            size="lg"
+                          >
+                            {sendingPracticeChat ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Sending...
+                              </>
+                            ) : (
+                              <>
+                                <Send className="w-4 h-4 mr-2" />
+                                Send
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </TabsContent>
 
@@ -4653,6 +5040,133 @@ useEffect(() => {
               <Button type="button" variant="outline" onClick={() => setNotificationDetail(null)}>
                 Close
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View More Teams Modal */}
+        <Dialog open={showMoreTeamsModal} onOpenChange={setShowMoreTeamsModal}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>All Open Seats</DialogTitle>
+              <DialogDescription>Teams looking for collaborators</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {openSeatTeams.map((team) => {
+                const filled = team.team_members?.length || 0;
+                const seats = (team.max_members || 4) - filled;
+                return (
+                  <div
+                    key={team.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-background/80 flex-wrap"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-foreground">{team.team_name}</p>
+                        {team.is_practice && <Badge variant="secondary">Practice</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {seats} seat{seats === 1 ? "" : "s"} open • leader{" "}
+                        {team.leader?.full_name ? (
+                          <span className="inline-flex items-center gap-1 text-foreground/90 font-semibold">
+                            {team.leader.full_name}
+                            <PremiumBadge
+                              verified={team.leader.verified_badge}
+                              star={team.leader.star_badge}
+                              size="xs"
+                            />
+                          </span>
+                        ) : (
+                          `ID ${team.team_leader_id?.slice(0, 6)}…`
+                        )}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        void requestJoinTeam(team.id, team.team_leader_id);
+                        setShowMoreTeamsModal(false);
+                      }}
+                      disabled={!member || requestingTeamId === team.id}
+                    >
+                      {requestingTeamId === team.id ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Sending…
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 mr-2" />
+                          Request to Join
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowMoreTeamsModal(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Team Settings Modal */}
+        <Dialog open={showTeamSettings} onOpenChange={(open) => {
+          setShowTeamSettings(open);
+          if (!open) {
+            setTeamSettingsTeam(null);
+            setEditingTeamName("");
+          }
+        }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Team Settings</DialogTitle>
+              <DialogDescription>Manage your practice team</DialogDescription>
+            </DialogHeader>
+            {teamSettingsTeam && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium">Team Name</label>
+                  <div className="flex gap-2 mt-1">
+                    <Input
+                      value={editingTeamName}
+                      onChange={(e) => setEditingTeamName(e.target.value)}
+                      placeholder="Team name"
+                    />
+                    <Button onClick={() => void updateTeamName()} disabled={!editingTeamName.trim() || editingTeamName === teamSettingsTeam.team_name}>
+                      <Edit className="w-4 h-4 mr-2" />
+                      Update
+                    </Button>
+                  </div>
+                </div>
+                <div className="pt-4 border-t">
+                  <label className="text-sm font-medium text-destructive">Danger Zone</label>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">
+                    Deleting your team will remove all members, messages, and updates. This action cannot be undone.
+                  </p>
+                  <Button
+                    variant="destructive"
+                    onClick={() => void deletePracticeTeam()}
+                    disabled={deletingTeam}
+                  >
+                    {deletingTeam ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete Team
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowTeamSettings(false)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
