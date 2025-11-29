@@ -3786,7 +3786,17 @@ useEffect(() => {
                           </Button>
                         </div>
                       );
-                    })
+                      })}
+                      {openSeatTeams.length > 3 && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setShowMoreTeamsModal(true)}
+                        >
+                          View More ({openSeatTeams.length - 3} more teams)
+                        </Button>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
