@@ -271,6 +271,11 @@ const [teamHubRequestMessage, setTeamHubRequestMessage] = useState("");
 const [teamPrompts, setTeamPrompts] = useState<any[]>([]);
 const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
 
+// Filter to only practice teams for Team Hub
+const practiceTeams = useMemo(() => {
+  return (teams || []).filter(team => team.is_practice === true || team.hackathon_id === null);
+}, [teams]);
+
 const openSeatTeams = useMemo(() => {
   return (teamHubTeams || [])
     .filter(team => (team.team_members?.length || 0) < (team.max_members || 4))
@@ -279,6 +284,7 @@ const openSeatTeams = useMemo(() => {
 
 const weeklyHighlights = useMemo(() => {
   const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  // teamUpdates is already filtered to only practice teams, so just filter by date
   return (teamUpdates || [])
     .filter(update => new Date(update.created_at).getTime() >= sevenDaysAgo)
     .slice(0, 6);
@@ -813,6 +819,7 @@ useEffect(() => {
     setTeamHubLoading(true);
     try {
       const nowIso = new Date().toISOString();
+      // Only fetch PRACTICE teams (is_practice = true OR hackathon_id IS NULL)
       const { data: hubTeams } = await supabase
         .from("hackathon_teams")
         .select(`
@@ -826,23 +833,33 @@ useEffect(() => {
           team_members(member_id),
           leader:members!hackathon_teams_team_leader_id_fkey(full_name, star_badge, verified_badge)
         `)
+        .or("is_practice.eq.true,hackathon_id.is.null")
         .order("created_at", { ascending: false })
         .limit(40);
       setTeamHubTeams(hubTeams || []);
 
-      const { data: updates } = await supabase
+      // Get all updates, then filter for practice teams client-side
+      const { data: allUpdates } = await supabase
         .from("team_updates")
         .select(`
           id,
           created_at,
           message,
           team_id,
-          hackathon_teams(team_name),
+          member_id,
+          hackathon_teams(team_name, is_practice, hackathon_id),
           author:members!team_updates_member_id_fkey(full_name, star_badge, verified_badge)
         `)
         .order("created_at", { ascending: false })
-        .limit(20);
-      setTeamUpdates(updates || []);
+        .limit(50);
+      
+      // Filter to only practice teams (is_practice = true OR hackathon_id IS NULL)
+      const practiceUpdates = (allUpdates || []).filter((update: any) => {
+        const team = update.hackathon_teams;
+        return team && (team.is_practice === true || team.hackathon_id === null);
+      }).slice(0, 20);
+      
+      setTeamUpdates(practiceUpdates);
 
       const { data: prompts } = await supabase
         .from("team_practice_prompts")
@@ -1014,7 +1031,7 @@ useEffect(() => {
       return;
     }
     if (!selectedUpdateTeam) {
-      toast({ title: "Select team", description: "Choose a team to post an update." });
+      toast({ title: "Select team", description: "Choose a practice team to post an update." });
       return;
     }
     const body = teamUpdateMessage.trim();
@@ -1022,6 +1039,18 @@ useEffect(() => {
       toast({ title: "Message required", description: "Write a quick update before posting." });
       return;
     }
+    
+    // Verify user is a member of this team (leader or member)
+    const isTeamMember = practiceTeams.some(team => 
+      team.id === selectedUpdateTeam && 
+      (team.team_leader_id === member.id || team.members?.some((m: any) => m.member_id === member.id))
+    );
+    
+    if (!isTeamMember) {
+      toast({ title: "Access denied", description: "You can only post updates for teams you're part of.", variant: "destructive" });
+      return;
+    }
+    
     setPostingTeamUpdate(true);
     try {
       const { error } = await supabase.from("team_updates").insert({
@@ -1031,6 +1060,7 @@ useEffect(() => {
       });
       if (error) throw error;
       setTeamUpdateMessage("");
+      setSelectedUpdateTeam("");
       toast({ title: "Update shared" });
       await loadTeamHubData();
     } catch (error: any) {
@@ -3351,14 +3381,14 @@ useEffect(() => {
                     <CardDescription>Quick snapshot of every team you are part of.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {teams.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">You’re not part of a team yet.</p>
+                    {practiceTeams.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">You're not part of a practice team yet.</p>
                     ) : (
-                      teams.map((team) => (
+                      practiceTeams.map((team) => (
                         <div key={team.id} className="p-3 rounded-lg border bg-muted/50 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-semibold">{team.team_name}</span>
-                            {team.is_practice && <Badge variant="secondary">Practice</Badge>}
+                            <Badge variant="secondary">Practice</Badge>
                             <Badge variant={team.status === "complete" ? "secondary" : "outline"}>{team.status}</Badge>
                           </div>
                           <p className="text-xs text-muted-foreground">
@@ -3489,16 +3519,16 @@ useEffect(() => {
                   <CardDescription>Post quick progress logs so everyone sees momentum.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {teams.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Join or create a team to start posting updates.</p>
+                  {practiceTeams.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Join or create a practice team to start posting updates.</p>
                   ) : (
                     <>
                       <Select value={selectedUpdateTeam} onValueChange={(value) => setSelectedUpdateTeam(value)}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select team" />
+                          <SelectValue placeholder="Select practice team" />
                         </SelectTrigger>
                         <SelectContent>
-                          {teams.map((team) => (
+                          {practiceTeams.map((team) => (
                             <SelectItem key={team.id} value={team.id}>
                               {team.team_name}
                             </SelectItem>

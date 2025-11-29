@@ -5,7 +5,7 @@ interface PremiumBadgeProps {
   verified?: boolean;
   star?: boolean;
   custom?: string;
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   className?: string;
 }
 
@@ -15,6 +15,7 @@ export default function PremiumBadge({ verified, star, custom, size = "md", clas
   // Priority 1: Verified Badge (Top Premium - Blue Checkmark)
   if (verified) {
     const sizeClasses = {
+      xs: "w-2.5 h-2.5",
       sm: "w-3.5 h-3.5",
       md: "w-4 h-4",
       lg: "w-5 h-5"
@@ -31,7 +32,7 @@ export default function PremiumBadge({ verified, star, custom, size = "md", clas
         )}
         title="Verified Member - Core Team"
       >
-        <CheckCircle2 className={cn("text-white", sizeClasses[size])} strokeWidth={2.5} />
+        <CheckCircle2 className={cn("text-white", size === "xs" ? "w-2.5 h-2.5" : sizeClasses[size])} strokeWidth={size === "xs" ? 2 : 2.5} />
       </div>
     );
   }
@@ -39,6 +40,7 @@ export default function PremiumBadge({ verified, star, custom, size = "md", clas
   // Priority 2: Star Badge (Second Premium - Gold Star)
   if (star) {
     const sizeClasses = {
+      xs: "w-2.5 h-2.5",
       sm: "w-3.5 h-3.5",
       md: "w-4 h-4",
       lg: "w-5 h-5"
@@ -55,7 +57,7 @@ export default function PremiumBadge({ verified, star, custom, size = "md", clas
         )}
         title="Star Member - Special Contributor"
       >
-        <Star className={cn("text-white fill-white", sizeClasses[size])} strokeWidth={2.5} />
+        <Star className={cn("text-white fill-white", size === "xs" ? "w-2.5 h-2.5" : sizeClasses[size])} strokeWidth={size === "xs" ? 2 : 2.5} />
       </div>
     );
   }

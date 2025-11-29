@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -384,7 +384,7 @@ const [promptForm, setPromptForm] = useState({
 	expires_at: "",
 	status: "active",
 });
-	const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
+const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
 const [spotlightForm, setSpotlightForm] = useState({
 	team_id: "",
 	headline: "",
@@ -395,81 +395,6 @@ const [spotlightForm, setSpotlightForm] = useState({
 	is_active: true,
 });
 const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
-	const handleResetPromptForm = useCallback(() => {
-		setPromptForm({
-			title: "",
-			description: "",
-			focus_area: "",
-			difficulty: "starter",
-			reward: "",
-			start_at: "",
-			expires_at: "",
-			status: "active",
-		});
-		setEditingPrompt(null);
-	}, []);
-
-	const loadTeamHubAdmin = useCallback(async () => {
-		if (!authed) return;
-		setTeamHubLoading(true);
-		try {
-			const nowIso = new Date().toISOString();
-			const { data: prompts } = await supabase
-				.from("team_practice_prompts")
-				.select("*")
-				.eq("status", "active")
-				.or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-				.order("created_at", { ascending: false });
-			setTeamPrompts(prompts || []);
-
-			const { data: spotlight } = await supabase
-				.from("team_spotlights")
-				.select(`
-					*,
-					team: hackathon_teams (
-						id,
-						team_name,
-						is_practice,
-						status,
-						team_leader_id
-					)
-				`)
-				.eq("is_active", true)
-				.order("created_at", { ascending: false })
-				.limit(1)
-				.maybeSingle();
-			setTeamSpotlight(spotlight || null);
-			if (spotlight) {
-				setSpotlightForm({
-					team_id: spotlight.team_id || "",
-					headline: spotlight.headline || "",
-					summary: spotlight.summary || "",
-					cta_label: spotlight.cta_label || "Join Team",
-					cta_link: spotlight.cta_link || "",
-					image_url: spotlight.image_url || "",
-					is_active: Boolean(spotlight.is_active),
-				});
-			}
-
-			const { data: updates } = await supabase
-				.from("team_updates")
-				.select(`
-					id,
-					created_at,
-					message,
-					team_id,
-					hackathon_teams(team_name),
-					author:members!team_updates_member_id_fkey(full_name, email)
-				`)
-				.order("created_at", { ascending: false })
-				.limit(25);
-			setTeamUpdatesModeration(updates || []);
-		} catch (error) {
-			console.warn("Failed to load team hub admin data:", error);
-		} finally {
-			setTeamHubLoading(false);
-		}
-	}, [authed]);
 
 	// Initial loads
     useEffect(() => {
@@ -497,7 +422,8 @@ useEffect(() => {
 	if (tab === "teamhub" && authed) {
 		void loadTeamHubAdmin();
 	}
-}, [tab, authed, loadTeamHubAdmin]);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [tab, authed]);
 
     useEffect(() => {
         if (!authed || !token) return;
@@ -601,6 +527,82 @@ useEffect(() => {
 			setMembersLoading(false);
 		}
 
+	async function loadTeamHubAdmin() {
+		if (!authed) return;
+		setTeamHubLoading(true);
+		try {
+			const nowIso = new Date().toISOString();
+			const { data: prompts } = await supabase
+				.from("team_practice_prompts")
+				.select("*")
+				.eq("status", "active")
+				.or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+				.order("created_at", { ascending: false });
+			setTeamPrompts(prompts || []);
+
+			const { data: spotlight } = await supabase
+				.from("team_spotlights")
+				.select(`
+					*,
+					team: hackathon_teams (
+						id,
+						team_name,
+						is_practice,
+						status,
+						team_leader_id
+					)
+				`)
+				.eq("is_active", true)
+				.order("created_at", { ascending: false })
+				.limit(1)
+				.maybeSingle();
+			setTeamSpotlight(spotlight || null);
+			if (spotlight) {
+				setSpotlightForm({
+					team_id: spotlight.team_id || "",
+					headline: spotlight.headline || "",
+					summary: spotlight.summary || "",
+					cta_label: spotlight.cta_label || "Join Team",
+					cta_link: spotlight.cta_link || "",
+					image_url: spotlight.image_url || "",
+					is_active: Boolean(spotlight.is_active),
+				});
+			}
+
+			const { data: updates } = await supabase
+				.from("team_updates")
+				.select(`
+					id,
+					created_at,
+					message,
+					team_id,
+					hackathon_teams(team_name),
+					author:members!team_updates_member_id_fkey(full_name, email)
+				`)
+				.order("created_at", { ascending: false })
+				.limit(25);
+			setTeamUpdatesModeration(updates || []);
+		} catch (error) {
+			console.warn("Failed to load team hub admin data:", error);
+		} finally {
+			setTeamHubLoading(false);
+		}
+	}
+
+	const resetPromptForm = () => {
+		setPromptForm({
+			title: "",
+			description: "",
+			focus_area: "",
+			difficulty: "starter",
+			reward: "",
+			start_at: "",
+			expires_at: "",
+			status: "active",
+		});
+		setEditingPrompt(null);
+	};
+
 	async function saveTeamPrompt() {
 		if (!promptForm.title.trim()) {
 			toast({ title: "Title required", description: "Give the prompt a name.", variant: "destructive" });
@@ -625,7 +627,7 @@ useEffect(() => {
 			}
 			if (error) throw error;
 			toast({ title: editingPrompt ? "Prompt updated" : "Prompt published" });
-			handleResetPromptForm();
+			resetPromptForm();
 			await loadTeamHubAdmin();
 		} catch (err: any) {
 			toast({ title: "Failed to save prompt", description: err.message, variant: "destructive" });
@@ -641,7 +643,7 @@ useEffect(() => {
 			if (error) throw error;
 			toast({ title: status === "active" ? "Prompt reactivated" : "Prompt archived" });
 			if (editingPrompt?.id === promptId && status === "archived") {
-				handleResetPromptForm();
+				resetPromptForm();
 			}
 			await loadTeamHubAdmin();
 		} catch (err: any) {
@@ -2869,7 +2871,7 @@ useEffect(() => {
 										<Button onClick={() => void saveTeamPrompt()}>
 											{editingPrompt ? "Update Prompt" : "Publish Prompt"}
 										</Button>
-										<Button variant="outline" onClick={handleResetPromptForm}>Reset</Button>
+										<Button variant="outline" onClick={resetPromptForm}>Reset</Button>
 									</CardFooter>
 								</Card>
 
