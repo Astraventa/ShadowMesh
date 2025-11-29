@@ -461,6 +461,10 @@ const practiceChatScrollRef = useRef<HTMLDivElement | null>(null);
 const [teamAchievements, setTeamAchievements] = useState<any[]>([]);
 const [teamLikes, setTeamLikes] = useState<Set<string>>(new Set());
 const [likingTeamId, setLikingTeamId] = useState<string | null>(null);
+const [practiceInviteLinks, setPracticeInviteLinks] = useState<any[]>([]);
+const [showPracticeInviteDialog, setShowPracticeInviteDialog] = useState(false);
+const [generatingPracticeInvite, setGeneratingPracticeInvite] = useState(false);
+const [copiedPracticeLink, setCopiedPracticeLink] = useState<string | null>(null);
 
 // Filter to only practice teams for Team Hub
 const practiceTeams = useMemo(() => {
