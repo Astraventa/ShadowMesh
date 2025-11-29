@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2, Settings, Edit, X, Target, Zap, TrendingUp, Users2, MessageCircle } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2, Settings, Edit, X, Target, Zap, TrendingUp, Users2, MessageCircle, Copy } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
@@ -1171,13 +1171,26 @@ useEffect(() => {
       setTeamSpotlight(spotlightData || null);
 
       // Load achievements for user's practice team
-      if (member?.id && createdPracticeTeam) {
-        const { data: achievements } = await supabase
-          .from("team_achievements")
+      // Check if user created a practice team
+      if (member?.id) {
+        const { data: userPracticeTeam } = await supabase
+          .from("hackathon_teams")
           .select("*")
-          .eq("team_id", createdPracticeTeam.id)
-          .order("created_at", { ascending: false });
-        setTeamAchievements(achievements || []);
+          .eq("team_leader_id", member.id)
+          .or("is_practice.eq.true,hackathon_id.is.null")
+          .maybeSingle();
+        
+        if (userPracticeTeam) {
+          const { data: achievements } = await supabase
+            .from("team_achievements")
+            .select("*")
+            .eq("team_id", userPracticeTeam.id)
+            .order("created_at", { ascending: false });
+          setTeamAchievements(achievements || []);
+
+          // Load invite links for this team
+          await loadPracticeInviteLinks(userPracticeTeam.id);
+        }
 
         // Load which teams user has liked
         const { data: userLikes } = await supabase
@@ -3944,31 +3957,49 @@ useEffect(() => {
                 </Card>
               </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    Open Seats
-                  </CardTitle>
-                  <CardDescription>Teams looking for collaborators right now.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">
-                      Optional intro note (shared with leaders when you request to join)
-                    </label>
-                    <Textarea
-                      placeholder="Tell team leads how you can help..."
-                      value={teamHubRequestMessage}
-                      onChange={(e) => setTeamHubRequestMessage(e.target.value)}
-                      rows={2}
+              {createdPracticeTeam ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Trophy className="w-4 h-4" />
+                      Achievement Tree
+                    </CardTitle>
+                    <CardDescription>Track your team's progress and unlock rewards</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <AchievementTreeComponent 
+                      team={createdPracticeTeam} 
+                      achievements={teamAchievements}
+                      member={member}
                     />
-                  </div>
-                  {displayedOpenSeatTeams.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">All teams are currently full.</p>
-                  ) : (
-                    <>
-                      {displayedOpenSeatTeams.map((team) => {
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      Open Seats
+                    </CardTitle>
+                    <CardDescription>Teams looking for collaborators right now.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Optional intro note (shared with leaders when you request to join)
+                      </label>
+                      <Textarea
+                        placeholder="Tell team leads how you can help..."
+                        value={teamHubRequestMessage}
+                        onChange={(e) => setTeamHubRequestMessage(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                    {displayedOpenSeatTeams.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">All teams are currently full.</p>
+                    ) : (
+                      <>
+                        {displayedOpenSeatTeams.map((team) => {
                       const filled = team.team_members?.length || 0;
                       const seats = (team.max_members || 4) - filled;
                       return (
@@ -5407,6 +5438,91 @@ useEffect(() => {
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowTeamSettings(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Practice Team Invite Links Dialog */}
+        <Dialog open={showPracticeInviteDialog} onOpenChange={setShowPracticeInviteDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Invite Members to {createdPracticeTeam?.team_name || "Your Team"}</DialogTitle>
+              <DialogDescription>Generate and share invite links to add members to your practice team</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Button
+                onClick={() => void generatePracticeInviteLink()}
+                disabled={generatingPracticeInvite || !createdPracticeTeam}
+                className="w-full"
+              >
+                {generatingPracticeInvite ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Users className="w-4 h-4 mr-2" />
+                    Generate New Invite Link
+                  </>
+                )}
+              </Button>
+
+              {practiceInviteLinks.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No active invite links. Generate one to get started.</p>
+              ) : (
+                <div className="space-y-2">
+                  {practiceInviteLinks.map((invite) => {
+                    const inviteUrl = `${window.location.origin}/team-invite/${invite.invite_token}`;
+                    const isExpired = new Date(invite.expires_at) < new Date();
+                    const isUsed = invite.uses_count >= invite.max_uses;
+                    return (
+                      <div key={invite.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-mono truncate">{inviteUrl}</p>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                              <span>Uses: {invite.uses_count}/{invite.max_uses}</span>
+                              <span>Expires: {new Date(invite.expires_at).toLocaleDateString()}</span>
+                              {isExpired && <Badge variant="destructive" className="text-xs">Expired</Badge>}
+                              {isUsed && <Badge variant="secondary" className="text-xs">Used</Badge>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void copyPracticeInviteLink(invite.invite_token)}
+                            >
+                              {copiedPracticeLink === invite.invite_token ? (
+                                <>
+                                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                                  Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-4 h-4 mr-1" />
+                                  Copy
+                                </>
+                              )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => void deletePracticeInviteLink(invite.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowPracticeInviteDialog(false)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
