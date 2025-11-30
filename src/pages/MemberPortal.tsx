@@ -465,6 +465,7 @@ const [practiceInviteLinks, setPracticeInviteLinks] = useState<any[]>([]);
 const [showPracticeInviteDialog, setShowPracticeInviteDialog] = useState(false);
 const [generatingPracticeInvite, setGeneratingPracticeInvite] = useState(false);
 const [copiedPracticeLink, setCopiedPracticeLink] = useState<string | null>(null);
+const [inviteDialogTeam, setInviteDialogTeam] = useState<any | null>(null);
 
 // Filter to only practice teams for Team Hub
 const practiceTeams = useMemo(() => {
@@ -1212,16 +1213,123 @@ useEffect(() => {
 
   async function loadPracticeInviteLinks(teamId: string) {
     try {
-      const { data, error } = await supabase
+      const { data: invites, error } = await supabase
         .from("hackathon_invites")
         .select("*")
         .eq("team_id", teamId)
         .eq("is_active", true)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      setPracticeInviteLinks(data || []);
+
+      // Load team members and match them with invite tokens if available
+      const { data: teamMembers } = await supabase
+        .from("team_members")
+        .select(`
+          member_id,
+          invite_token,
+          members:members!team_members_member_id_fkey(
+            id,
+            full_name,
+            email,
+            verified_badge,
+            star_badge,
+            custom_badge
+          )
+        `)
+        .eq("team_id", teamId);
+
+      // Map invites with their joined members
+      const invitesWithMembers = (invites || []).map((invite) => {
+        const members = (teamMembers || [])
+          .filter((tm: any) => tm.invite_token === invite.invite_token)
+          .map((tm: any) => ({
+            member_id: tm.member_id,
+            members: tm.members,
+          }));
+        return { ...invite, team_members: members };
+      });
+
+      setPracticeInviteLinks(invitesWithMembers);
     } catch (error: any) {
       console.error("Failed to load invite links:", error);
+      toast({ title: "Error", description: "Failed to load invite links.", variant: "destructive" });
+    }
+  }
+
+  async function generatePracticeInviteLink() {
+    const team = inviteDialogTeam || createdPracticeTeam || teamSettingsTeam;
+    if (!team || !member) {
+      toast({ title: "Error", description: "Team not found.", variant: "destructive" });
+      return;
+    }
+    if (team.team_leader_id !== member.id) {
+      toast({ title: "Access denied", description: "Only team leaders can generate invite links.", variant: "destructive" });
+      return;
+    }
+
+    setGeneratingPracticeInvite(true);
+    try {
+      // Generate a unique token
+      const token = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30); // Expires in 30 days
+
+      const { data, error } = await supabase
+        .from("hackathon_invites")
+        .insert({
+          team_id: team.id,
+          invite_token: token,
+          created_by: member.id,
+          max_uses: 10,
+          expires_at: expiresAt.toISOString(),
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({ title: "Invite link generated", description: "Share this link to invite members to your team." });
+      await loadPracticeInviteLinks(team.id);
+    } catch (error: any) {
+      toast({ title: "Failed to generate link", description: error.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setGeneratingPracticeInvite(false);
+    }
+  }
+
+  async function copyPracticeInviteLink(token: string) {
+    const inviteUrl = `${window.location.origin}/team-invite/${token}`;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedPracticeLink(token);
+      toast({ title: "Link copied", description: "Invite link copied to clipboard." });
+      setTimeout(() => setCopiedPracticeLink(null), 2000);
+    } catch (error) {
+      toast({ title: "Failed to copy", description: "Please copy the link manually.", variant: "destructive" });
+    }
+  }
+
+  async function deletePracticeInviteLink(inviteId: string) {
+    const team = inviteDialogTeam || createdPracticeTeam || teamSettingsTeam;
+    if (!team || !member) return;
+    if (team.team_leader_id !== member.id) {
+      toast({ title: "Access denied", description: "Only team leaders can delete invite links.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("hackathon_invites")
+        .update({ is_active: false })
+        .eq("id", inviteId);
+
+      if (error) throw error;
+
+      toast({ title: "Invite link deleted" });
+      await loadPracticeInviteLinks(team.id);
+    } catch (error: any) {
+      toast({ title: "Failed to delete link", description: error.message || "Please try again.", variant: "destructive" });
     }
   }
 
@@ -3918,6 +4026,16 @@ useEffect(() => {
                                       <MessageSquare className="w-4 h-4 mr-2" />
                                       Open Chat
                                     </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                      if (team.id) {
+                                        setInviteDialogTeam(team);
+                                        void loadPracticeInviteLinks(team.id);
+                                        setShowPracticeInviteDialog(true);
+                                      }
+                                    }}>
+                                      <LinkIcon className="w-4 h-4 mr-2" />
+                                      Invite Members
+                                    </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               )}
@@ -5463,16 +5581,26 @@ useEffect(() => {
         </Dialog>
 
         {/* Practice Team Invite Links Dialog */}
-        <Dialog open={showPracticeInviteDialog} onOpenChange={setShowPracticeInviteDialog}>
-          <DialogContent className="max-w-2xl">
+        <Dialog open={showPracticeInviteDialog} onOpenChange={(open) => {
+          setShowPracticeInviteDialog(open);
+          if (!open) {
+            setInviteDialogTeam(null);
+          } else {
+            const team = inviteDialogTeam || createdPracticeTeam || teamSettingsTeam;
+            if (team?.id) {
+              void loadPracticeInviteLinks(team.id);
+            }
+          }
+        }}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Invite Members to {createdPracticeTeam?.team_name || "Your Team"}</DialogTitle>
+              <DialogTitle>Invite Members to {inviteDialogTeam?.team_name || createdPracticeTeam?.team_name || teamSettingsTeam?.team_name || "Your Team"}</DialogTitle>
               <DialogDescription>Generate and share invite links to add members to your practice team</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <Button
                 onClick={() => void generatePracticeInviteLink()}
-                disabled={generatingPracticeInvite || !createdPracticeTeam}
+                disabled={generatingPracticeInvite || (!createdPracticeTeam && !teamSettingsTeam)}
                 className="w-full"
               >
                 {generatingPracticeInvite ? (
@@ -5496,13 +5624,14 @@ useEffect(() => {
                     const inviteUrl = `${window.location.origin}/team-invite/${invite.invite_token}`;
                     const isExpired = new Date(invite.expires_at) < new Date();
                     const isUsed = invite.uses_count >= invite.max_uses;
+                    const joinedMembers = invite.team_members || [];
                     return (
-                      <div key={invite.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                      <div key={invite.id} className="p-4 rounded-lg border bg-muted/30 space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-mono truncate">{inviteUrl}</p>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                              <span>Uses: {invite.uses_count}/{invite.max_uses}</span>
+                            <p className="text-sm font-mono truncate break-all">{inviteUrl}</p>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1 flex-wrap">
+                              <span>Uses: {invite.uses_count || 0}/{invite.max_uses}</span>
                               <span>Expires: {new Date(invite.expires_at).toLocaleDateString()}</span>
                               {isExpired && <Badge variant="destructive" className="text-xs">Expired</Badge>}
                               {isUsed && <Badge variant="secondary" className="text-xs">Used</Badge>}
@@ -5535,6 +5664,34 @@ useEffect(() => {
                             </Button>
                           </div>
                         </div>
+                        {joinedMembers.length > 0 && (
+                          <div className="pt-2 border-t space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground">Members who joined via this link:</p>
+                            <div className="space-y-1">
+                              {joinedMembers.map((tm: any) => {
+                                const member = tm.members;
+                                if (!member) return null;
+                                return (
+                                  <div key={tm.member_id} className="flex items-center gap-2 text-sm p-2 rounded bg-background/50">
+                                    <span className="font-medium">{member.full_name}</span>
+                                    <PremiumBadge
+                                      verified={member.verified_badge}
+                                      star={member.star_badge}
+                                      custom={member.custom_badge}
+                                      size="xs"
+                                    />
+                                    <span className="text-xs text-muted-foreground ml-auto">{member.email}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {joinedMembers.length === 0 && invite.uses_count > 0 && (
+                          <div className="pt-2 border-t">
+                            <p className="text-xs text-muted-foreground">No members have joined via this link yet.</p>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
