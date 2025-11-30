@@ -19,6 +19,8 @@ export default function TeamInvite() {
   const [memberId, setMemberId] = useState<string | null>(null);
   const [registrationStatus, setRegistrationStatus] = useState<"none" | "pending" | "approved" | "rejected" | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
+  const [hasExistingTeam, setHasExistingTeam] = useState(false);
+  const [existingTeamName, setExistingTeamName] = useState<string | null>(null);
 
   const checkRegistrationStatus = useCallback(async () => {
     if (!memberId || !inviteData?.hackathon_id) return;
@@ -100,6 +102,51 @@ export default function TeamInvite() {
 
         // User is a member - check hackathon registration status
         setMemberId(memberData.id);
+        
+        // Check if member already has a team (for practice teams or hackathon teams)
+        const isPracticeTeam = data.invite?.is_practice || !data.invite?.hackathon_id;
+        
+        if (isPracticeTeam) {
+          // Check if user created a practice team
+          const { data: createdTeam } = await supabase
+            .from("hackathon_teams")
+            .select("id, team_name")
+            .eq("team_leader_id", memberData.id)
+            .eq("is_practice", true)
+            .maybeSingle();
+          
+          if (createdTeam) {
+            setHasExistingTeam(true);
+            setExistingTeamName(createdTeam.team_name);
+          } else {
+            // Check if user is in a practice team
+            const { data: memberTeams } = await supabase
+              .from("team_members")
+              .select("team_id, hackathon_teams(id, team_name, is_practice)")
+              .eq("member_id", memberData.id);
+            
+            const practiceTeam = memberTeams?.find((mt: any) => mt.hackathon_teams?.is_practice);
+            if (practiceTeam?.hackathon_teams) {
+              setHasExistingTeam(true);
+              setExistingTeamName((practiceTeam.hackathon_teams as any).team_name);
+            }
+          }
+        } else if (data.invite?.hackathon_id) {
+          // Check if member is already in a team for this hackathon
+          const { data: memberTeams } = await supabase
+            .from("team_members")
+            .select("team_id, hackathon_teams(id, team_name, hackathon_id)")
+            .eq("member_id", memberData.id);
+          
+          const existingTeam = memberTeams?.find((mt: any) => 
+            mt.hackathon_teams?.hackathon_id === data.invite.hackathon_id
+          );
+          
+          if (existingTeam?.hackathon_teams) {
+            setHasExistingTeam(true);
+            setExistingTeamName((existingTeam.hackathon_teams as any).team_name);
+          }
+        }
         
         // Check if member is registered for this hackathon
         if (data.invite?.hackathon_id) {
@@ -492,13 +539,23 @@ export default function TeamInvite() {
             )}
           </div>
 
-          <Alert>
-            <CheckCircle2 className="h-4 w-4" />
-            <AlertTitle>Ready to join?</AlertTitle>
-            <AlertDescription>
-              Click the button below to join this team. You'll be redirected to the hackathon dashboard.
-            </AlertDescription>
-          </Alert>
+          {hasExistingTeam ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Already in a Team</AlertTitle>
+              <AlertDescription>
+                You are already part of {existingTeamName ? `"${existingTeamName}"` : "a team"}. You can only be in one team at a time. Leave your current team first if you want to join this one.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertTitle>Ready to join?</AlertTitle>
+              <AlertDescription>
+                Click the button below to join this team. You'll be redirected to the hackathon dashboard.
+              </AlertDescription>
+            </Alert>
+          )}
 
           <div className="flex gap-3">
             <Button
@@ -512,7 +569,7 @@ export default function TeamInvite() {
             <Button
               className="flex-1"
               onClick={handleJoinTeam}
-              disabled={joining || registrationStatus !== "approved"}
+              disabled={joining || registrationStatus !== "approved" || hasExistingTeam}
             >
               {joining ? (
                 <>

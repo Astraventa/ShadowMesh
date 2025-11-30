@@ -2206,6 +2206,51 @@ useEffect(() => {
     if (!member) return;
 
     try {
+      // Get request details including requester info
+      const { data: request } = await supabase
+        .from("team_requests")
+        .select(`
+          *,
+          from_member:members!team_requests_from_member_id_fkey(id, full_name),
+          team:hackathon_teams(id, team_name, is_practice)
+        `)
+        .eq("id", requestId)
+        .single();
+
+      if (!request) {
+        toast({ title: "Request not found", description: "This request may have been cancelled.", variant: "destructive" });
+        return;
+      }
+
+      // Check if requester has created their own team (for practice teams)
+      if (accept && request.team?.is_practice) {
+        const { data: requesterTeam } = await supabase
+          .from("hackathon_teams")
+          .select("id, team_name, team_leader_id")
+          .eq("team_leader_id", request.from_member_id)
+          .eq("is_practice", true)
+          .maybeSingle();
+
+        if (requesterTeam) {
+          // Requester has created their own team, update request status and show message
+          await supabase
+            .from("team_requests")
+            .update({
+              status: "cancelled",
+              responded_at: new Date().toISOString(),
+            })
+            .eq("id", requestId);
+
+          toast({ 
+            title: "Request cancelled", 
+            description: `${request.from_member?.full_name || "The member"} has created their own team "${requesterTeam.team_name}" and is no longer available to join.`, 
+            variant: "default" 
+          });
+          void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from("team_requests")
         .update({
@@ -2217,35 +2262,85 @@ useEffect(() => {
       if (error) throw error;
 
       if (accept) {
-        // Get team info
-        const { data: request } = await supabase
-          .from("team_requests")
-          .select("team_id")
-          .eq("id", requestId)
-          .single();
+        // Check if requester is still available (not in another team)
+        const { data: requesterMemberships } = await supabase
+          .from("team_members")
+          .select("team_id, hackathon_teams(id, team_name, team_leader_id, is_practice)")
+          .eq("member_id", request.from_member_id);
 
-        if (request) {
-          // Add member to team
-          await supabase.from("team_members").insert({
-            team_id: request.team_id,
-            member_id: member.id,
-            role: "member",
+        // Check if requester is now a team leader
+        const { data: requesterAsLeader } = await supabase
+          .from("hackathon_teams")
+          .select("id, team_name")
+          .eq("team_leader_id", request.from_member_id)
+          .eq("is_practice", request.team?.is_practice || false)
+          .maybeSingle();
+
+        if (requesterAsLeader) {
+          toast({ 
+            title: "Request cancelled", 
+            description: `${request.from_member?.full_name || "The member"} has created their own team "${requesterAsLeader.team_name}" and is no longer available to join.`, 
+            variant: "default" 
           });
+          void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
+          return;
+        }
 
+        // Check if requester is already in another team
+        const isInOtherTeam = requesterMemberships?.some((tm: any) => 
+          tm.team_id !== request.team_id && 
+          (tm.hackathon_teams?.is_practice === request.team?.is_practice)
+        );
+
+        if (isInOtherTeam) {
+          toast({ 
+            title: "Request cancelled", 
+            description: `${request.from_member?.full_name || "The member"} has joined another team and is no longer available.`, 
+            variant: "default" 
+          });
+          void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
+          return;
+        }
+
+        // Add member to team
+        const { error: insertError } = await supabase.from("team_members").insert({
+          team_id: request.team_id,
+          member_id: request.from_member_id,
+          role: "member",
+        });
+
+        if (insertError) {
+          // Check if it's a duplicate key error (already in team)
+          if (insertError.code === "23505" || insertError.message?.includes("duplicate")) {
+            toast({ 
+              title: "Already in team", 
+              description: `${request.from_member?.full_name || "The member"} is already part of this team.`, 
+              variant: "default" 
+            });
+          } else {
+            throw insertError;
+          }
+        } else {
           // Log activity
           await supabase.from("member_activity").insert({
-            member_id: member.id,
+            member_id: request.from_member_id,
             activity_type: "team_joined",
             activity_data: { team_id: request.team_id },
             related_id: request.team_id,
           });
+
+          toast({ 
+            title: "Request accepted!", 
+            description: `${request.from_member?.full_name || "The member"} has been added to "${request.team?.team_name || "your team"}".` 
+          });
         }
+      } else {
+        toast({ title: "Request rejected", description: "The join request has been declined." });
       }
 
-      toast({ title: accept ? "Request accepted!" : "Request rejected" });
       void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
     } catch (e: any) {
-      toast({ title: "Failed to respond", description: e.message });
+      toast({ title: "Failed to respond", description: e.message, variant: "destructive" });
     }
   }
 
