@@ -578,12 +578,6 @@ const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tab, authed]);
 
-useEffect(() => {
-	if (tab === "teamhub" && authed) {
-		void loadTeamHubAdmin();
-	}
-}, [tab, authed, loadTeamHubAdmin]);
-
     useEffect(() => {
         if (!authed || !token) return;
         if (!attendanceEventId) {
@@ -762,6 +756,12 @@ useEffect(() => {
 			setTeamHubLoading(false);
 		}
 	}, [authed]);
+
+	useEffect(() => {
+		if (tab === "teamhub" && authed) {
+			void loadTeamHubAdmin();
+		}
+	}, [tab, authed, loadTeamHubAdmin]);
 
 	async function saveTeamPrompt() {
 		if (!promptForm.title.trim()) {
