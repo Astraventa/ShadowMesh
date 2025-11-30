@@ -582,8 +582,7 @@ useEffect(() => {
 	if (tab === "teamhub" && authed) {
 		void loadTeamHubAdmin();
 	}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [tab, authed]);
+}, [tab, authed, loadTeamHubAdmin]);
 
     useEffect(() => {
         if (!authed || !token) return;
@@ -686,8 +685,23 @@ useEffect(() => {
 		} finally {
 			setMembersLoading(false);
 		}
+	}
 
-	async function loadTeamHubAdmin() {
+	const resetPromptForm = useCallback(() => {
+		setPromptForm({
+			title: "",
+			description: "",
+			focus_area: "",
+			difficulty: "starter",
+			reward: "",
+			start_at: "",
+			expires_at: "",
+			status: "active",
+		});
+		setEditingPrompt(null);
+	}, []);
+
+	const loadTeamHubAdmin = useCallback(async () => {
 		if (!authed) return;
 		setTeamHubLoading(true);
 		try {
@@ -747,21 +761,7 @@ useEffect(() => {
 		} finally {
 			setTeamHubLoading(false);
 		}
-	}
-
-	const resetPromptForm = useCallback(() => {
-		setPromptForm({
-			title: "",
-			description: "",
-			focus_area: "",
-			difficulty: "starter",
-			reward: "",
-			start_at: "",
-			expires_at: "",
-			status: "active",
-		});
-		setEditingPrompt(null);
-	}, []);
+	}, [authed]);
 
 	async function saveTeamPrompt() {
 		if (!promptForm.title.trim()) {
