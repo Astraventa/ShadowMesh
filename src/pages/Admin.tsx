@@ -874,7 +874,6 @@ const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
 			toast({ title: "Failed to remove update", description: err.message, variant: "destructive" });
 		}
 	}
-	}
 	
 	async function searchMemberForBadge() {
 		if (!badgeSearchEmail.trim()) return;
