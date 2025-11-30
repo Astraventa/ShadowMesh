@@ -382,6 +382,8 @@ export default function MemberPortal() {
   const [hackathonRegistrations, setHackathonRegistrations] = useState<HackathonRegistration[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamRequests, setTeamRequests] = useState<TeamRequest[]>([]);
+  const [practiceTeamRequests, setPracticeTeamRequests] = useState<TeamRequest[]>([]);
+  const [hackathonTeamRequests, setHackathonTeamRequests] = useState<TeamRequest[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [showHackathonReg, setShowHackathonReg] = useState<string | null>(null);
   const [showEventReg, setShowEventReg] = useState<string | null>(null);
@@ -963,7 +965,7 @@ useEffect(() => {
         .from("team_requests")
         .select(`
           *,
-          hackathon_teams(team_name),
+          hackathon_teams(team_name, is_practice, hackathon_id),
           members!team_requests_from_member_id_fkey(full_name)
         `)
         .eq("to_member_id", memberData.id)
@@ -974,8 +976,14 @@ useEffect(() => {
           ...r,
           team_name: r.hackathon_teams?.team_name,
           from_member_name: r.members?.full_name,
+          is_practice: r.hackathon_teams?.is_practice || r.hackathon_teams?.hackathon_id === null,
         }));
         setTeamRequests(formatted);
+        // Separate practice team requests from hackathon team requests
+        const practiceReqs = formatted.filter((r: any) => r.is_practice);
+        const hackathonReqs = formatted.filter((r: any) => !r.is_practice);
+        setPracticeTeamRequests(practiceReqs);
+        setHackathonTeamRequests(hackathonReqs);
       }
 
       // Load activity history
@@ -999,7 +1007,15 @@ useEffect(() => {
     try {
       const { data: teamReqs } = await supabase
         .from("team_requests")
-        .select("id, created_at, team_id, status, message")
+        .select(`
+          id, 
+          created_at, 
+          team_id, 
+          status, 
+          message,
+          from_member_id,
+          members!team_requests_from_member_id_fkey(full_name)
+        `)
         .eq("to_member_id", memberId)
         .eq("status", "pending");
 
@@ -1011,7 +1027,7 @@ useEffect(() => {
       const { data: teams } = teamIds.length
         ? await supabase
             .from("hackathon_teams")
-            .select("id, team_name, hackathon_id, team_leader_id, max_members")
+            .select("id, team_name, hackathon_id, team_leader_id, max_members, is_practice")
             .in("id", teamIds)
         : { data: [] as any[] };
 
@@ -1019,7 +1035,10 @@ useEffect(() => {
       const leaderIds = new Set<string>();
       const hackathonIds = new Set<string>();
       (teams || []).forEach((teamRow: any) => {
-        teamMap.set(teamRow.id, teamRow);
+        teamMap.set(teamRow.id, {
+          ...teamRow,
+          is_practice: teamRow.is_practice || teamRow.hackathon_id === null,
+        });
         if (teamRow.team_leader_id) leaderIds.add(teamRow.team_leader_id);
         if (teamRow.hackathon_id) hackathonIds.add(teamRow.hackathon_id);
       });
@@ -1046,6 +1065,8 @@ useEffect(() => {
         const teamRow = teamMap.get(request.team_id);
         const leaderRow = teamRow ? leaderMap.get(teamRow.team_leader_id) : null;
         const hackathonRow = teamRow ? hackathonMap.get(teamRow.hackathon_id) : null;
+        const isPractice = teamRow?.is_practice || teamRow?.hackathon_id === null;
+        const fromMemberName = request.members?.full_name || leaderRow?.full_name || "Someone";
         return {
           id: request.id,
           created_at: request.created_at,
@@ -1059,6 +1080,9 @@ useEffect(() => {
           leader_email: leaderRow?.email || "",
           leader_interest: leaderRow?.area_of_interest || "",
           max_members: teamRow?.max_members || 4,
+          is_practice: isPractice,
+          from_member_id: request.from_member_id,
+          from_member_name: fromMemberName,
         };
       });
     } catch (error) {
@@ -1076,17 +1100,22 @@ useEffect(() => {
         .order("created_at", { ascending: false })
         .limit(20);
       const pendingInvites = await loadPendingTeamRequests(memberId);
-      const synthetic = pendingInvites.map((invite: any) => ({
-        id: `teamreq_${invite.id}`,
-        notification_type: "team_invite",
-        title: "Team Invitation",
-        body: `You have been invited to join ${invite.team_name}.`,
-        created_at: invite.created_at,
-        is_read: false,
-        source: "team_request",
-        invite,
-        synthetic: true,
-      }));
+      const synthetic = pendingInvites.map((invite: any) => {
+        const isPractice = invite.is_practice || invite.hackathon_id === null;
+        return {
+          id: `teamreq_${invite.id}`,
+          notification_type: "team_invite",
+          title: isPractice ? "Team Request" : "Team Invitation",
+          body: isPractice 
+            ? `${invite.from_member_name || "Someone"} requested to join ${invite.team_name}.`
+            : `You have been invited to join ${invite.team_name}.`,
+          created_at: invite.created_at,
+          is_read: false,
+          source: "team_request",
+          invite,
+          synthetic: true,
+        };
+      });
       const all = [...(notifRows || []), ...synthetic].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setNotifications(all);
       setUnreadCount(all.filter(n => !n.is_read).length);
@@ -1485,17 +1514,101 @@ useEffect(() => {
     if (requestingTeamId === teamId) return;
     setRequestingTeamId(teamId);
     try {
+      // Check if request already exists (pending or recently sent)
+      const { data: existingRequest } = await supabase
+        .from("team_requests")
+        .select("id, status, created_at")
+        .eq("team_id", teamId)
+        .eq("from_member_id", member.id)
+        .or("status.eq.pending,status.eq.accepted")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingRequest) {
+        if (existingRequest.status === "pending") {
+          toast({ 
+            title: "Request already sent", 
+            description: "You've already sent a request to join this team. Please wait for the leader to respond.", 
+            variant: "default" 
+          });
+          return;
+        }
+        
+        // Check if request was sent today (rate limiting: one request per day per team)
+        const requestDate = new Date(existingRequest.created_at);
+        const today = new Date();
+        const isSameDay = requestDate.toDateString() === today.toDateString();
+        
+        if (isSameDay && existingRequest.status === "accepted") {
+          toast({ 
+            title: "Request already sent today", 
+            description: "You can only send one request per day to the same team. Please try again tomorrow.", 
+            variant: "default" 
+          });
+          return;
+        }
+      }
+
+      // Check for any request in the last 24 hours (rate limiting)
+      const oneDayAgo = new Date();
+      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+      
+      const { data: recentRequest } = await supabase
+        .from("team_requests")
+        .select("id, created_at")
+        .eq("team_id", teamId)
+        .eq("from_member_id", member.id)
+        .gte("created_at", oneDayAgo.toISOString())
+        .maybeSingle();
+
+      if (recentRequest) {
+        const hoursSince = (Date.now() - new Date(recentRequest.created_at).getTime()) / (1000 * 60 * 60);
+        const hoursRemaining = Math.ceil(24 - hoursSince);
+        toast({ 
+          title: "Rate limit reached", 
+          description: `You can only send one request per day. Please try again in ${hoursRemaining} hour${hoursRemaining !== 1 ? 's' : ''}.`, 
+          variant: "default" 
+        });
+        return;
+      }
+
       const { error } = await supabase.from("team_requests").insert({
         team_id: teamId,
         from_member_id: member.id,
         to_member_id: leaderId,
         message: teamHubRequestMessage.trim() || null,
+        status: "pending",
       });
-      if (error) throw error;
+      
+      if (error) {
+        // Handle duplicate key error gracefully
+        if (error.code === "23505" || error.message?.includes("duplicate key")) {
+          toast({ 
+            title: "Request already exists", 
+            description: "You've already sent a request to join this team. Please wait for the leader to respond.", 
+            variant: "default" 
+          });
+          return;
+        }
+        throw error;
+      }
+      
       toast({ title: "Request sent", description: "Team leader has been notified." });
       setTeamHubRequestMessage("");
+      // Reload team requests to update UI
+      await loadMemberDataByEmail(member.email);
     } catch (error: any) {
-      toast({ title: "Failed to send request", description: error.message || "Please try again.", variant: "destructive" });
+      // Handle duplicate key error
+      if (error.code === "23505" || error.message?.includes("duplicate key")) {
+        toast({ 
+          title: "Request already exists", 
+          description: "You've already sent a request to join this team. Please wait for the leader to respond.", 
+          variant: "default" 
+        });
+      } else {
+        toast({ title: "Failed to send request", description: error.message || "Please try again.", variant: "destructive" });
+      }
     } finally {
       setRequestingTeamId(null);
     }
@@ -1527,6 +1640,28 @@ useEffect(() => {
       return;
     }
     
+    // Rate limiting: Check if user has posted an update today for this team
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayIso = today.toISOString();
+    
+    const { data: todayUpdate } = await supabase
+      .from("team_updates")
+      .select("id, created_at")
+      .eq("team_id", selectedUpdateTeam)
+      .eq("member_id", member.id)
+      .gte("created_at", todayIso)
+      .maybeSingle();
+    
+    if (todayUpdate) {
+      toast({ 
+        title: "Rate limit reached", 
+        description: "You can only post one update per day per team. Please try again tomorrow.", 
+        variant: "default" 
+      });
+      return;
+    }
+    
     setPostingTeamUpdate(true);
     try {
       const { error } = await supabase.from("team_updates").insert({
@@ -1537,7 +1672,7 @@ useEffect(() => {
       if (error) throw error;
       setTeamUpdateMessage("");
       setSelectedUpdateTeam("");
-      toast({ title: "Update shared" });
+      toast({ title: "Update shared", description: "Your update has been posted to the team hub." });
       await loadTeamHubData();
     } catch (error: any) {
       toast({ title: "Failed to share update", description: error.message || "Please try again.", variant: "destructive" });
@@ -3442,16 +3577,16 @@ useEffect(() => {
           {/* Hackathons Tab */}
           <TabsContent value="hackathons">
             <div className="space-y-6">
-              {teamRequests.length > 0 && (
+              {hackathonTeamRequests.length > 0 && (
                 <Card className="border-primary/50">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Users className="w-5 h-5" />
-                      Team Requests ({teamRequests.length})
+                      Team Requests ({hackathonTeamRequests.length})
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {teamRequests.map((req) => (
+                    {hackathonTeamRequests.map((req) => (
                       <div key={req.id} className="flex items-center justify-between p-3 bg-muted rounded">
                         <div>
                           <p className="font-medium">{req.from_member_name} invited you to join "{req.team_name}"</p>
@@ -3836,6 +3971,31 @@ useEffect(() => {
           {/* Team Hub Tab */}
           <TabsContent value="teamhub">
             <div className="space-y-6">
+              {practiceTeamRequests.length > 0 && (
+                <Card className="border-primary/50">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="w-5 h-5" />
+                      Team Requests ({practiceTeamRequests.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {practiceTeamRequests.map((req) => (
+                      <div key={req.id} className="flex items-center justify-between p-3 bg-muted rounded">
+                        <div>
+                          <p className="font-medium">{req.from_member_name} requested to join "{req.team_name}"</p>
+                          {req.message && <p className="text-sm text-muted-foreground mt-1">{req.message}</p>}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => respondToRequest(req.id, true)}>Accept</Button>
+                          <Button size="sm" variant="outline" onClick={() => respondToRequest(req.id, false)}>Decline</Button>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
               <Card className="relative overflow-hidden border-0 shadow-lg">
                 <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-purple-500 to-fuchsia-500 opacity-80" />
                 <CardContent className="relative md:flex items-center justify-between gap-6 p-6 text-white">
