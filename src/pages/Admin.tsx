@@ -761,7 +761,8 @@ const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
 		if (tab === "teamhub" && authed) {
 			void loadTeamHubAdmin();
 		}
-	}, [tab, authed, loadTeamHubAdmin]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [tab, authed]);
 
 	async function saveTeamPrompt() {
 		if (!promptForm.title.trim()) {
