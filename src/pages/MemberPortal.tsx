@@ -1210,6 +1210,21 @@ useEffect(() => {
     }
   }
 
+  async function loadPracticeInviteLinks(teamId: string) {
+    try {
+      const { data, error } = await supabase
+        .from("hackathon_invites")
+        .select("*")
+        .eq("team_id", teamId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setPracticeInviteLinks(data || []);
+    } catch (error: any) {
+      console.error("Failed to load invite links:", error);
+    }
+  }
+
   async function toggleTeamLike(teamId: string) {
     if (!member || likingTeamId === teamId) return;
     setLikingTeamId(teamId);
