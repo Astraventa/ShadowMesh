@@ -5,21 +5,21 @@ const About = () => {
     {
       icon: Shield,
       title: "Cyber Defense",
-      description: "Master the art of digital protection, ethical hacking, and security research.",
+      description: "Master ethical hacking, digital forensics, and next-gen security.",
       gradient: "from-cyan-400 to-blue-600",
       orb: "bg-cyan-400/80",
     },
     {
       icon: Brain,
       title: "AI Innovation",
-      description: "Explore machine learning, neural networks, and intelligent systems.",
+      description: "Explore machine learning, LLMs, automation, and intelligent systems.",
       gradient: "from-fuchsia-500 to-indigo-500",
       orb: "bg-fuchsia-500/80",
     },
     {
       icon: Users,
       title: "Collaboration",
-      description: "Unite with dreamers and doers to shape tomorrow's digital frontier.",
+      description: "Connect with high-performers across universities, build teams, solve problems, and shape the future.",
       gradient: "from-pink-500 to-purple-500",
       orb: "bg-pink-500/80",
     },
@@ -39,10 +39,10 @@ const About = () => {
             </h2>
             <div className="space-y-5 text-lg text-muted-foreground leading-relaxed font-medium">
               <p>
-                A <span className="text-cyan-400 font-bold">Cyber & AI innovation community</span> built by students of <span className="text-fuchsia-400 font-semibold">Riphah International University Faisalabad</span>.
+                ShadowMesh is a <span className="text-cyan-400 font-bold">Cyber & AI innovation collective</span> built by <span className="text-fuchsia-400 font-semibold">emerging engineers, researchers, and creators</span>.
               </p>
               <p>
-                We unite <span className="text-pink-400 font-semibold">hackers</span>, <span className="text-cyan-400 font-semibold">researchers</span>, and <span className="text-fuchsia-400 font-semibold">dreamers</span> passionate about the digital future—pushing boundaries, driving breakthroughs.
+                We unite <span className="text-pink-400 font-semibold">hackers</span>, <span className="text-cyan-400 font-semibold">builders</span>, and <span className="text-fuchsia-400 font-semibold">visionaries</span> shaping the future of intelligent security.
               </p>
             </div>
             <div className="mt-8 p-6 rounded-xl bg-gradient-to-r from-blue-900 via-indigo-900 to-fuchsia-900 border-l-4 border-fuchsia-400">

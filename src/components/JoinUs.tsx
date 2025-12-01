@@ -831,7 +831,7 @@ const JoinUs = () => {
                   <div className="grid md:grid-cols-3 gap-6">
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium mb-2">University Name</label>
-                      <Input value={universityName} onChange={(e)=>setUniversityName(e.target.value)} placeholder="Riphah International University Faisalabad" className="bg-background/50 border-border focus:border-primary transition-colors" />
+                      <Input value={universityName} onChange={(e)=>setUniversityName(e.target.value)} placeholder="Enter your university name" className="bg-background/50 border-border focus:border-primary transition-colors" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-2">Department</label>

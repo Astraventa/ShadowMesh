@@ -8,10 +8,10 @@ const Footer = () => {
           {/* Logo/Brand */}
           <div className="text-center">
             <h3 className="text-2xl font-bold">
-              <span className="text-gradient">ShadowMesh</span> RIUF
+              <span className="text-gradient">ShadowMesh</span>
             </h3>
             <p className="text-sm text-muted-foreground mt-2">
-              A Cyber & AI Innovation Community
+              A Cyber & AI Innovation Collective
             </p>
           </div>
 
@@ -39,10 +39,7 @@ const Footer = () => {
           <div className="text-center text-sm text-muted-foreground">
             <p className="flex items-center justify-center gap-2">
               <Code2 className="w-4 h-4 text-primary" />
-              © 2025 ShadowMesh RIUF — All rights reserved
-            </p>
-            <p className="mt-2 text-xs">
-              Riphah International University Faisalabad
+              © 2025 ShadowMesh — All rights reserved
             </p>
           </div>
         </div>
