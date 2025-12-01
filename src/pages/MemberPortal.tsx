@@ -436,7 +436,8 @@ const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 const [selectedInvite, setSelectedInvite] = useState<any | null>(null);
 const [respondingInvite, setRespondingInvite] = useState(false);
 const [teamHubLoading, setTeamHubLoading] = useState(false);
-const [teamHubTeams, setTeamHubTeams] = useState<any[]>([]);
+  const [teamHubTeams, setTeamHubTeams] = useState<any[]>([]);
+  const [topPracticeTeams, setTopPracticeTeams] = useState<any[]>([]);
 const [teamUpdates, setTeamUpdates] = useState<any[]>([]);
 const [showCreatePracticeTeam, setShowCreatePracticeTeam] = useState(false);
 const [practiceTeamForm, setPracticeTeamForm] = useState({ team_name: "", max_members: 4 });
@@ -483,12 +484,27 @@ const displayedOpenSeatTeams = useMemo(() => {
   return openSeatTeams.slice(0, 3);
 }, [openSeatTeams]);
 
-// Check if user is already in a practice team
+// Check if user is already in a practice team (as leader or member)
 const isInPracticeTeam = useMemo(() => {
-  return practiceTeams.length > 0;
-}, [practiceTeams]);
+  if (!member) return false;
+  return practiceTeams.some(team =>
+    team.team_leader_id === member.id ||
+    (team.members || []).some((m: any) => m.member_id === member.id)
+  );
+}, [practiceTeams, member]);
 
-// Check if user created a practice team (is leader)
+// Practice team the user belongs to (leader or member)
+const myPracticeTeam = useMemo(() => {
+  if (!member) return null;
+  return (
+    practiceTeams.find(team =>
+      team.team_leader_id === member.id ||
+      (team.members || []).some((m: any) => m.member_id === member.id)
+    ) || null
+  );
+}, [practiceTeams, member]);
+
+// Practice team created by the user (leader only)
 const createdPracticeTeam = useMemo(() => {
   if (!member) return null;
   return practiceTeams.find(team => team.team_leader_id === member.id) || null;
@@ -1141,7 +1157,15 @@ useEffect(() => {
           likes_count,
           team_badge,
           achievement_points,
-          team_members(member_id),
+          team_members(
+            member_id,
+            members:members!team_members_member_id_fkey(
+              full_name,
+              verified_badge,
+              star_badge,
+              custom_badge
+            )
+          ),
           leader:members!hackathon_teams_team_leader_id_fkey(full_name, star_badge, verified_badge)
         `)
         .or("is_practice.eq.true,hackathon_id.is.null")
@@ -1149,7 +1173,22 @@ useEffect(() => {
         .order("achievement_points", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
         .limit(40);
-      setTeamHubTeams(hubTeams || []);
+      const practiceHubTeams = hubTeams || [];
+      setTeamHubTeams(practiceHubTeams);
+
+      // Compute a simple score for top practice teams for leaderboard:
+      // achievement_points (weighted) + likes_count + member count.
+      const rankedTeams = practiceHubTeams
+        .map((team: any) => {
+          const achievementPoints = team.achievement_points || 0;
+          const likes = team.likes_count || 0;
+          const memberCount = Array.isArray(team.team_members) ? team.team_members.length : 0;
+          const score = achievementPoints * 3 + likes + memberCount;
+          return { ...team, score, memberCount };
+        })
+        .sort((a: any, b: any) => b.score - a.score)
+        .slice(0, 5);
+      setTopPracticeTeams(rankedTeams);
 
       // Get all updates, then filter for practice teams client-side
       const { data: allUpdates } = await supabase
@@ -1205,15 +1244,37 @@ useEffect(() => {
       setTeamSpotlight(spotlightData || null);
 
       // Load achievements for user's practice team
-      // Check if user created a practice team
       if (member?.id) {
-        const { data: userPracticeTeam } = await supabase
+        let userPracticeTeam: any = null;
+
+        // 1) Prefer a practice team the user leads
+        const { data: leaderPracticeTeam } = await supabase
           .from("hackathon_teams")
           .select("*")
           .eq("team_leader_id", member.id)
           .or("is_practice.eq.true,hackathon_id.is.null")
           .maybeSingle();
-        
+
+        if (leaderPracticeTeam) {
+          userPracticeTeam = leaderPracticeTeam;
+        } else {
+          // 2) Otherwise, use a practice team where the user is a member
+          const { data: memberPracticeTeams } = await supabase
+            .from("team_members")
+            .select("team_id, hackathon_teams(*)")
+            .eq("member_id", member.id);
+
+          const practiceMembership = (memberPracticeTeams || []).find(
+            (tm: any) =>
+              tm.hackathon_teams?.is_practice === true ||
+              tm.hackathon_teams?.hackathon_id === null
+          );
+
+          if (practiceMembership?.hackathon_teams) {
+            userPracticeTeam = practiceMembership.hackathon_teams;
+          }
+        }
+
         if (userPracticeTeam) {
           const { data: achievements } = await supabase
             .from("team_achievements")
@@ -1222,8 +1283,10 @@ useEffect(() => {
             .order("created_at", { ascending: false });
           setTeamAchievements(achievements || []);
 
-          // Load invite links for this team
-          await loadPracticeInviteLinks(userPracticeTeam.id);
+          // Load invite links only for leaders (admins)
+          if (userPracticeTeam.team_leader_id === member.id) {
+            await loadPracticeInviteLinks(userPracticeTeam.id);
+          }
         }
 
         // Load which teams user has liked
@@ -3515,47 +3578,78 @@ useEffect(() => {
           {/* Leaderboard Tab */}
           <TabsContent value="leaderboard" className="space-y-6">
             <div className="grid gap-6 md:grid-cols-2">
-              {/* Badge Values Section */}
+              {/* Team Hub – Top Practice Squads */}
               <Card className="shadow-xl border-2">
                 <CardHeader>
                   <CardTitle className="text-2xl flex items-center gap-2">
                     <Sparkles className="w-6 h-6 text-primary" />
-                    Badge Values
+                    Top Practice Squads
                   </CardTitle>
-                  <CardDescription>Understanding our premium badge system</CardDescription>
+                  <CardDescription>
+                    Live ranking of Team Hub squads based on achievements, likes, and momentum.
+                  </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Verified Badge */}
-                  <div className="p-4 bg-gradient-to-br from-blue-500/10 to-blue-600/5 rounded-lg border border-blue-500/20">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 shadow-lg shadow-blue-500/50 border-2 border-blue-400/80 flex items-center justify-center">
-                        <CheckCircle2 className="w-5 h-5 text-white" strokeWidth={2.5} />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-lg">Verified Badge</h3>
-                        <p className="text-xs text-muted-foreground">Top Priority - Premium Elite</p>
-                      </div>
-                    </div>
+                <CardContent className="space-y-3">
+                  {topPracticeTeams.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      Awarded to core team members, admins, and verified contributors. Represents the highest level of trust and recognition in the ShadowMesh community.
+                      No practice squads have shipped enough yet. Spin one up in Team Hub and start unlocking achievements.
                     </p>
-                  </div>
-
-                  {/* Star Badge */}
-                  <div className="p-4 bg-gradient-to-br from-amber-500/10 to-yellow-600/5 rounded-lg border border-amber-500/20">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-600 shadow-lg shadow-amber-500/50 border-2 border-amber-300/80 flex items-center justify-center">
-                        <Star className="w-5 h-5 text-white fill-white" strokeWidth={2.5} />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-lg">Star Badge</h3>
-                        <p className="text-xs text-muted-foreground">Second Priority - Special Contributor</p>
-                      </div>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Awarded to special friends, active contributors, and members who go above and beyond. Recognizes exceptional dedication and value to the community.
-                    </p>
-                  </div>
+                  ) : (
+                    topPracticeTeams.map((team, index) => {
+                      const rank = index + 1;
+                      const memberNames = (team.team_members || [])
+                        .map((tm: any) => tm.members?.full_name || "Member")
+                        .filter(Boolean)
+                        .join(", ");
+                      return (
+                        <div
+                          key={team.id}
+                          className="p-3 rounded-lg border bg-muted/40 flex items-start gap-3"
+                        >
+                          <div className="flex flex-col items-center mr-2">
+                            <span className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-purple-500 text-white flex items-center justify-center font-semibold text-sm">
+                              {rank}
+                            </span>
+                          </div>
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-sm md:text-base">
+                                  {team.team_name}
+                                </p>
+                                <Badge variant="secondary" className="text-xs">
+                                  Practice
+                                </Badge>
+                                {team.team_badge && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {team.team_badge}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {team.memberCount || (team.team_members?.length || 0)} members •{" "}
+                                {(team.achievement_points || 0)} pts •{" "}
+                                {(team.likes_count || 0)} likes
+                              </p>
+                            </div>
+                            {memberNames && (
+                              <p className="text-[11px] text-muted-foreground">
+                                Members: {memberNames}
+                              </p>
+                            )}
+                            {team.leader?.full_name && (
+                              <p className="text-[11px] text-muted-foreground">
+                                Leader:{" "}
+                                <span className="font-semibold">
+                                  {team.leader.full_name}
+                                </span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </CardContent>
               </Card>
 
@@ -4308,6 +4402,11 @@ useEffect(() => {
                             <p className="text-xs text-muted-foreground">
                               {(team.members?.length || 0)}/{team.max_members || 4} members
                             </p>
+                          {team.members && team.members.length > 0 && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Members: {team.members.map((m: any) => m.full_name || "Member").join(", ")}
+                            </p>
+                          )}
                           </div>
                         );
                       })
@@ -4349,7 +4448,7 @@ useEffect(() => {
                 </Card>
               </div>
 
-              {createdPracticeTeam ? (
+              {myPracticeTeam ? (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
@@ -4360,7 +4459,7 @@ useEffect(() => {
                   </CardHeader>
                   <CardContent>
                     <AchievementTreeComponent 
-                      team={createdPracticeTeam} 
+                      team={myPracticeTeam} 
                       achievements={teamAchievements}
                       member={member}
                     />
@@ -4419,6 +4518,15 @@ useEffect(() => {
                                 `ID ${team.team_leader_id?.slice(0, 6)}…`
                               )}
                             </p>
+                            {Array.isArray(team.team_members) && team.team_members.length > 0 && (
+                              <p className="text-[11px] text-muted-foreground">
+                                Members:{" "}
+                                {team.team_members
+                                  .map((tm: any) => tm.members?.full_name || null)
+                                  .filter(Boolean)
+                                  .join(", ")}
+                              </p>
+                            )}
                           </div>
                           <Button
                             size="sm"
@@ -4455,54 +4563,56 @@ useEffect(() => {
               </Card>
               )}
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4" />
-                    Share a Team Update
-                  </CardTitle>
-                  <CardDescription>Post quick progress logs so everyone sees momentum.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {practiceTeams.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Join or create a practice team to start posting updates.</p>
-                  ) : (
-                    <>
-                      <Select value={selectedUpdateTeam} onValueChange={(value) => setSelectedUpdateTeam(value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select practice team" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {practiceTeams.map((team) => (
-                            <SelectItem key={team.id} value={team.id}>
-                              {team.team_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Textarea
-                        rows={3}
-                        value={teamUpdateMessage}
-                        onChange={(e) => setTeamUpdateMessage(e.target.value)}
-                        placeholder="What did your team ship this week?"
-                      />
-                      <Button onClick={() => void submitTeamUpdate()} disabled={postingTeamUpdate}>
-                        {postingTeamUpdate ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Sharing…
-                          </>
-                        ) : (
-                          <>
-                            <Send className="w-4 h-4 mr-2" />
-                            Share Update
-                          </>
-                        )}
-                      </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
+              {createdPracticeTeam && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4" />
+                      Share a Team Update
+                    </CardTitle>
+                    <CardDescription>Post quick progress logs so everyone sees momentum.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {practiceTeams.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Join or create a practice team to start posting updates.</p>
+                    ) : (
+                      <>
+                        <Select value={selectedUpdateTeam} onValueChange={(value) => setSelectedUpdateTeam(value)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select practice team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {practiceTeams.map((team) => (
+                              <SelectItem key={team.id} value={team.id}>
+                                {team.team_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Textarea
+                          rows={3}
+                          value={teamUpdateMessage}
+                          onChange={(e) => setTeamUpdateMessage(e.target.value)}
+                          placeholder="What did your team ship this week?"
+                        />
+                        <Button onClick={() => void submitTeamUpdate()} disabled={postingTeamUpdate}>
+                          {postingTeamUpdate ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Sharing…
+                            </>
+                          ) : (
+                            <>
+                              <Send className="w-4 h-4 mr-2" />
+                              Share Update
+                            </>
+                          )}
+                        </Button>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Practice Team Chat Section */}
               {selectedPracticeTeam && (

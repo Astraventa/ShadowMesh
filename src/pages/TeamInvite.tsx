@@ -217,8 +217,14 @@ export default function TeamInvite() {
         description: `You've joined "${data.team_name}"`,
       });
 
-      // Redirect to hackathon dashboard
-      navigate(`/hackathons/${inviteData.hackathon_id}?tab=teams`);
+      // Redirect based on invite type
+      if (inviteData.hackathon_id && !isPracticeInvite) {
+        // Classic hackathon team – send to hackathon teams tab
+        navigate(`/hackathons/${inviteData.hackathon_id}?tab=teams`);
+      } else {
+        // Practice / Team Hub squad – send to member portal (Team Hub tab)
+        navigate("/member-portal");
+      }
     } catch (err: any) {
       console.error("Error joining team:", err);
       toast({
