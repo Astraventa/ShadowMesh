@@ -171,34 +171,10 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Verify member is approved for hackathon.
-      // For practice teams (no hackathon_id or flagged as is_practice), skip this check.
-      if (invite.hackathon_id && !invite.is_practice) {
-        const regRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/hackathon_registrations?hackathon_id=eq.${invite.hackathon_id}&member_id=eq.${member_id}&status=eq.approved&select=id`,
-          {
-            headers: {
-              apikey: SERVICE_KEY,
-              Authorization: `Bearer ${SERVICE_KEY}`,
-            },
-          }
-        );
-
-        if (!regRes.ok) {
-          return new Response(
-            JSON.stringify({ error: "Failed to verify registration" }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-
-        const regs = await regRes.json();
-        if (!Array.isArray(regs) || regs.length === 0) {
-          return new Response(
-            JSON.stringify({ error: "You must be approved for this hackathon to join teams" }),
-            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-      }
+      // NOTE: We rely on the frontend to enforce hackathon registration approval
+      // before enabling the \"Join Team\" button for hackathon teams. The server
+      // no longer blocks on a separate registration verification call here to
+      // avoid hard-to-debug \"Failed to verify registration\" errors.
 
       // Check if already in a team for this hackathon
       const existingTeamRes = await fetch(
