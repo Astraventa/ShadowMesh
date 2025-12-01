@@ -21,6 +21,7 @@ export default function TeamInvite() {
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [hasExistingTeam, setHasExistingTeam] = useState(false);
   const [existingTeamName, setExistingTeamName] = useState<string | null>(null);
+  const [isPracticeInvite, setIsPracticeInvite] = useState(false);
 
   const checkRegistrationStatus = useCallback(async () => {
     if (!memberId || !inviteData?.hackathon_id) return;
@@ -75,6 +76,9 @@ export default function TeamInvite() {
         // Invite is valid - show details
         setInviteData(data.invite);
 
+        const practiceFlag = data.invite?.is_practice || !data.invite?.hackathon_id;
+        setIsPracticeInvite(!!practiceFlag);
+
         // Check if user is authenticated and is a member
         const authenticated = localStorage.getItem("shadowmesh_authenticated");
         const memberEmail = localStorage.getItem("shadowmesh_member_email");
@@ -104,9 +108,7 @@ export default function TeamInvite() {
         setMemberId(memberData.id);
         
         // Check if member already has a team (for practice teams or hackathon teams)
-        const isPracticeTeam = data.invite?.is_practice || !data.invite?.hackathon_id;
-        
-        if (isPracticeTeam) {
+        if (practiceFlag) {
           // Check if user created a practice team
           const { data: createdTeam } = await supabase
             .from("hackathon_teams")
@@ -552,7 +554,7 @@ export default function TeamInvite() {
               <CheckCircle2 className="h-4 w-4" />
               <AlertTitle>Ready to join?</AlertTitle>
               <AlertDescription>
-                Click the button below to join this team. You'll be redirected to the hackathon dashboard.
+                Click the button below to join this team. You'll be redirected to the {isPracticeInvite ? "team hub" : "hackathon dashboard"}.
               </AlertDescription>
             </Alert>
           )}
@@ -569,7 +571,12 @@ export default function TeamInvite() {
             <Button
               className="flex-1"
               onClick={handleJoinTeam}
-              disabled={joining || registrationStatus !== "approved" || hasExistingTeam}
+              disabled={
+                joining ||
+                hasExistingTeam ||
+                // For hackathon teams, require approved registration.
+                (!isPracticeInvite && registrationStatus !== "approved")
+              }
             >
               {joining ? (
                 <>
