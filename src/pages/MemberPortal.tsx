@@ -1443,35 +1443,8 @@ useEffect(() => {
         .order("created_at", { ascending: false });
       if (error) throw error;
 
-      // Load team members and match them with invite tokens if available
-      const { data: teamMembers } = await supabase
-        .from("team_members")
-        .select(`
-          member_id,
-          invite_token,
-          members:members!team_members_member_id_fkey(
-            id,
-            full_name,
-            email,
-            verified_badge,
-            star_badge,
-            custom_badge
-          )
-        `)
-        .eq("team_id", teamId);
-
-      // Map invites with their joined members
-      const invitesWithMembers = (invites || []).map((invite) => {
-        const members = (teamMembers || [])
-          .filter((tm: any) => tm.invite_token === invite.invite_token)
-          .map((tm: any) => ({
-            member_id: tm.member_id,
-            members: tm.members,
-          }));
-        return { ...invite, team_members: members };
-      });
-
-      setPracticeInviteLinks(invitesWithMembers);
+      // For now we just surface the raw invite links; membership usage is tracked via team membership.
+      setPracticeInviteLinks(invites || []);
     } catch (error: any) {
       console.error("Failed to load invite links:", error);
       toast({ title: "Error", description: "Failed to load invite links.", variant: "destructive" });
