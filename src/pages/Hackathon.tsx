@@ -1845,6 +1845,20 @@ export default function Hackathon() {
 
             {/* Overview Tab */}
             <TabsContent value="overview" className="space-y-4 mt-4">
+              {hackathon.description && (
+                <Card className="shadow-lg border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Trophy className="w-5 h-5 text-primary" />
+                      About This Hackathon
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-muted-foreground leading-relaxed">{hackathon.description}</p>
+                  </CardContent>
+                </Card>
+              )}
+
               {hackathon.details_markdown && (
                 <Card className="shadow-lg border">
                   <CardHeader className="pb-2">
@@ -1863,6 +1877,45 @@ export default function Hackathon() {
                   </CardHeader>
                   <CardContent>
                     <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: hackathon.schedule_markdown }} />
+                  </CardContent>
+                </Card>
+              )}
+
+              {!hackathon.description && !hackathon.details_markdown && !hackathon.schedule_markdown && (
+                <Card className="shadow-lg border">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg">Overview</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <p className="text-muted-foreground">
+                        Welcome to <span className="font-semibold">{hackathon.title}</span>! This hackathon is designed to challenge participants and showcase innovative solutions.
+                      </p>
+                      {hackathon.start_date && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <Calendar className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-muted-foreground">
+                            Starts: {formatDate(hackathon.start_date)}
+                            {hackathon.end_date && ` • Ends: ${formatDate(hackathon.end_date)}`}
+                          </span>
+                        </div>
+                      )}
+                      {hackathon.location && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <MapPin className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-muted-foreground">{hackathon.location}</span>
+                        </div>
+                      )}
+                      <div className="pt-4 border-t">
+                        <p className="text-sm font-medium mb-2">What to expect:</p>
+                        <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                          <li>Form teams or compete individually</li>
+                          <li>Access resources and guidelines</li>
+                          <li>Submit your project before the deadline</li>
+                          <li>Compete for prizes and recognition</li>
+                        </ul>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               )}

@@ -429,6 +429,7 @@ create table if not exists public.team_projects (
   summary text,
   status text not null default 'draft' check (status in ('draft','published','archived')),
   tags text[],
+  deadline timestamptz, -- Project deadline for submissions
   created_by uuid references public.members(id) on delete set null
 );
 

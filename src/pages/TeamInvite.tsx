@@ -22,6 +22,7 @@ export default function TeamInvite() {
   const [hasExistingTeam, setHasExistingTeam] = useState(false);
   const [existingTeamName, setExistingTeamName] = useState<string | null>(null);
   const [isPracticeInvite, setIsPracticeInvite] = useState(false);
+  const [hackathonInfo, setHackathonInfo] = useState<any | null>(null);
 
   const checkRegistrationStatus = useCallback(async () => {
     if (!memberId || !inviteData?.hackathon_id) return;
@@ -78,6 +79,18 @@ export default function TeamInvite() {
 
         const practiceFlag = data.invite?.is_practice || !data.invite?.hackathon_id;
         setIsPracticeInvite(!!practiceFlag);
+
+        // Load hackathon info if this is a hackathon team invite
+        if (!practiceFlag && data.invite?.hackathon_id) {
+          const { data: hackData } = await supabase
+            .from("events")
+            .select("id, title, description, start_date, end_date, location")
+            .eq("id", data.invite.hackathon_id)
+            .single();
+          if (hackData) {
+            setHackathonInfo(hackData);
+          }
+        }
 
         // Check if user is authenticated and is a member
         const authenticated = localStorage.getItem("shadowmesh_authenticated");
@@ -294,6 +307,23 @@ export default function TeamInvite() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-3">
+              {!isPracticeInvite && hackathonInfo && (
+                <div className="p-4 bg-primary/10 rounded-lg border border-primary/30">
+                  <p className="text-xs text-muted-foreground mb-1 uppercase tracking-wide">Hackathon</p>
+                  <p className="font-semibold text-lg text-primary">{hackathonInfo.title}</p>
+                  {hackathonInfo.description && (
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{hackathonInfo.description}</p>
+                  )}
+                  {hackathonInfo.start_date && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      <Calendar className="w-3 h-3 inline mr-1" />
+                      {new Date(hackathonInfo.start_date).toLocaleDateString()}
+                      {hackathonInfo.end_date && ` - ${new Date(hackathonInfo.end_date).toLocaleDateString()}`}
+                    </p>
+                  )}
+                </div>
+              )}
+              
               <div className="p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">Team Name</p>
                 <p className="font-semibold text-lg">{inviteData?.team_name}</p>
@@ -367,6 +397,15 @@ export default function TeamInvite() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-3">
+              {!isPracticeInvite && hackathonInfo && (
+                <div className="p-4 bg-primary/10 rounded-lg border border-primary/30">
+                  <p className="text-xs text-muted-foreground mb-1 uppercase tracking-wide">Hackathon</p>
+                  <p className="font-semibold text-lg text-primary">{hackathonInfo.title}</p>
+                  {hackathonInfo.description && (
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{hackathonInfo.description}</p>
+                  )}
+                </div>
+              )}
               <div className="p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">Team Name</p>
                 <p className="font-semibold text-lg">{inviteData?.team_name}</p>
@@ -415,6 +454,15 @@ export default function TeamInvite() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-3">
+              {!isPracticeInvite && hackathonInfo && (
+                <div className="p-4 bg-primary/10 rounded-lg border border-primary/30">
+                  <p className="text-xs text-muted-foreground mb-1 uppercase tracking-wide">Hackathon</p>
+                  <p className="font-semibold text-lg text-primary">{hackathonInfo.title}</p>
+                  {hackathonInfo.description && (
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{hackathonInfo.description}</p>
+                  )}
+                </div>
+              )}
               <div className="p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">Team Name</p>
                 <p className="font-semibold text-lg">{inviteData?.team_name}</p>
@@ -483,6 +531,15 @@ export default function TeamInvite() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-3">
+              {!isPracticeInvite && hackathonInfo && (
+                <div className="p-4 bg-primary/10 rounded-lg border border-primary/30">
+                  <p className="text-xs text-muted-foreground mb-1 uppercase tracking-wide">Hackathon</p>
+                  <p className="font-semibold text-lg text-primary">{hackathonInfo.title}</p>
+                  {hackathonInfo.description && (
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{hackathonInfo.description}</p>
+                  )}
+                </div>
+              )}
               <div className="p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">Team Name</p>
                 <p className="font-semibold text-lg">{inviteData?.team_name}</p>

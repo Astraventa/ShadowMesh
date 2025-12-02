@@ -566,6 +566,7 @@ const [projectForm, setProjectForm] = useState({
 	summary: "",
 	status: "draft",
 	tags: "" as string,
+	deadline: "",
 });
 const [projectRuns, setProjectRuns] = useState<any[]>([]);
 const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
@@ -3247,13 +3248,21 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 													/>
 												</div>
 												<div>
-													<label className="text-sm font-medium">Tags (comma-separated)</label>
+													<label className="text-sm font-medium">Project Deadline</label>
 													<Input
-														value={projectForm.tags}
-														onChange={(e) => setProjectForm((prev) => ({ ...prev, tags: e.target.value }))}
-														placeholder="red-team, llm, detection"
+														type="datetime-local"
+														value={projectForm.deadline}
+														onChange={(e) => setProjectForm((prev) => ({ ...prev, deadline: e.target.value }))}
 													/>
 												</div>
+											</div>
+											<div>
+												<label className="text-sm font-medium">Tags (comma-separated)</label>
+												<Input
+													value={projectForm.tags}
+													onChange={(e) => setProjectForm((prev) => ({ ...prev, tags: e.target.value }))}
+													placeholder="red-team, llm, detection"
+												/>
 											</div>
 										</div>
 									</CardContent>
@@ -3276,6 +3285,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 														tags: projectForm.tags
 															? projectForm.tags.split(",").map((t) => t.trim()).filter(Boolean)
 															: null,
+														deadline: projectForm.deadline ? new Date(projectForm.deadline).toISOString() : null,
 													};
 													let error;
 													if (editingProject) {
@@ -3295,6 +3305,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 														summary: "",
 														status: "draft",
 														tags: "",
+														deadline: "",
 													});
 													await loadTeamHubAdmin();
 												} catch (err: any) {
@@ -3317,6 +3328,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 													summary: "",
 													status: "draft",
 													tags: "",
+													deadline: "",
 												});
 											}}
 										>
@@ -3381,6 +3393,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 																			summary: project.summary || "",
 																			status: project.status || "draft",
 																			tags: Array.isArray(project.tags) ? project.tags.join(", ") : "",
+																			deadline: project.deadline ? toLocalInputValue(project.deadline) : "",
 																		});
 																	}}
 																>
