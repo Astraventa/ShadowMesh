@@ -436,8 +436,8 @@ const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 const [selectedInvite, setSelectedInvite] = useState<any | null>(null);
 const [respondingInvite, setRespondingInvite] = useState(false);
 const [teamHubLoading, setTeamHubLoading] = useState(false);
-  const [teamHubTeams, setTeamHubTeams] = useState<any[]>([]);
-  const [topPracticeTeams, setTopPracticeTeams] = useState<any[]>([]);
+const [teamHubTeams, setTeamHubTeams] = useState<any[]>([]);
+const [topPracticeTeams, setTopPracticeTeams] = useState<any[]>([]);
 const [teamUpdates, setTeamUpdates] = useState<any[]>([]);
 const [showCreatePracticeTeam, setShowCreatePracticeTeam] = useState(false);
 const [practiceTeamForm, setPracticeTeamForm] = useState({ team_name: "", max_members: 4 });
@@ -449,6 +449,14 @@ const [requestingTeamId, setRequestingTeamId] = useState<string | null>(null);
 const [teamHubRequestMessage, setTeamHubRequestMessage] = useState("");
 const [teamPrompts, setTeamPrompts] = useState<any[]>([]);
 const [teamSpotlight, setTeamSpotlight] = useState<any | null>(null);
+const [teamProjects, setTeamProjects] = useState<any[]>([]);
+const [projectRuns, setProjectRuns] = useState<any[]>([]);
+const [primaryPracticeTeam, setPrimaryPracticeTeam] = useState<any | null>(null);
+const [projectStartId, setProjectStartId] = useState<string | null>(null);
+const [projectSubmittingId, setProjectSubmittingId] = useState<string | null>(null);
+const [projectSubmissionRepo, setProjectSubmissionRepo] = useState("");
+const [projectSubmissionSummary, setProjectSubmissionSummary] = useState("");
+const [activeProjectRunForSubmit, setActiveProjectRunForSubmit] = useState<any | null>(null);
 const [showMoreTeamsModal, setShowMoreTeamsModal] = useState(false);
 const [selectedPracticeTeam, setSelectedPracticeTeam] = useState<any | null>(null);
 const [practiceTeamChat, setPracticeTeamChat] = useState<any[]>([]);
@@ -492,6 +500,21 @@ const isInPracticeTeam = useMemo(() => {
     (team.members || []).some((m: any) => m.member_id === member.id)
   );
 }, [practiceTeams, member]);
+
+const isPrimaryPracticeLeader = useMemo(() => {
+  if (!member || !primaryPracticeTeam) return false;
+  return primaryPracticeTeam.team_leader_id === member.id;
+}, [member, primaryPracticeTeam]);
+
+const projectRunsByProjectId = useMemo(() => {
+  const map = new Map<string, any>();
+  (projectRuns || []).forEach((run: any) => {
+    if (run.project_id) {
+      map.set(run.project_id, run);
+    }
+  });
+  return map;
+}, [projectRuns]);
 
 // Practice team the user belongs to (leader or member)
 const myPracticeTeam = useMemo(() => {
@@ -1222,6 +1245,14 @@ useEffect(() => {
         .limit(6);
       setTeamPrompts(prompts || []);
 
+      // Load published practice projects
+      const { data: projects } = await supabase
+        .from("team_projects")
+        .select("*")
+        .eq("status", "published")
+        .order("created_at", { ascending: false });
+      setTeamProjects(projects || []);
+
       const { data: spotlightData } = await supabase
         .from("team_spotlights")
         .select(`
@@ -1276,6 +1307,42 @@ useEffect(() => {
         }
 
         if (userPracticeTeam) {
+          setPrimaryPracticeTeam(userPracticeTeam);
+
+          // Load project runs for this squad (including latest submissions)
+          const { data: runs } = await supabase
+            .from("team_project_runs")
+            .select(`
+              id,
+              project_id,
+              team_id,
+              started_by_member_id,
+              started_at,
+              last_activity_at,
+              status,
+              notes,
+              project:team_projects(
+                id,
+                title,
+                difficulty,
+                repo_url,
+                summary
+              ),
+              submissions:team_project_submissions(
+                id,
+                created_at,
+                submitted_at,
+                status,
+                repo_link,
+                summary,
+                score,
+                awarded_points
+              )
+            `)
+            .eq("team_id", userPracticeTeam.id)
+            .order("started_at", { ascending: false });
+          setProjectRuns(runs || []);
+
           const { data: achievements } = await supabase
             .from("team_achievements")
             .select("*")
@@ -1287,6 +1354,9 @@ useEffect(() => {
           if (userPracticeTeam.team_leader_id === member.id) {
             await loadPracticeInviteLinks(userPracticeTeam.id);
           }
+        } else {
+          setPrimaryPracticeTeam(null);
+          setProjectRuns([]);
         }
 
         // Load which teams user has liked
@@ -1300,6 +1370,66 @@ useEffect(() => {
       console.warn("Failed to load team hub data:", error);
     } finally {
       setTeamHubLoading(false);
+    }
+  }
+
+  async function startTeamProject(projectId: string) {
+    try {
+      if (!member || !primaryPracticeTeam) {
+        toast({ title: "Join a squad first", description: "Create or join a practice team to start this project.", variant: "destructive" });
+        return;
+      }
+      if (!isPrimaryPracticeLeader) {
+        toast({ title: "Leader only", description: "Only your squad leader can start a project for the team.", variant: "destructive" });
+        return;
+      }
+      setProjectStartId(projectId);
+      const { error } = await supabase
+        .from("team_project_runs")
+        .insert({
+          project_id: projectId,
+          team_id: primaryPracticeTeam.id,
+          started_by_member_id: member.id,
+        });
+      if (error) throw error;
+      toast({ title: "Project started", description: "Your squad is now officially on this project." });
+      await loadTeamHubData();
+    } catch (err: any) {
+      toast({ title: "Failed to start project", description: err.message || String(err), variant: "destructive" });
+    } finally {
+      setProjectStartId(null);
+    }
+  }
+
+  async function submitProjectResult(runId: string, repoLink: string, summary: string) {
+    try {
+      if (!member) {
+        toast({ title: "Sign in required", description: "You need to be logged in to submit.", variant: "destructive" });
+        return;
+      }
+      if (!repoLink.trim()) {
+        toast({ title: "Repo link required", description: "Drop the GitHub repo or PR link before submitting.", variant: "destructive" });
+        return;
+      }
+      setProjectSubmittingId(runId);
+      const { error } = await supabase
+        .from("team_project_submissions")
+        .insert({
+          project_run_id: runId,
+          submitted_by_member_id: member.id,
+          repo_link: repoLink.trim(),
+          summary: summary?.trim() || null,
+        });
+      if (error) throw error;
+      toast({ title: "Submission sent", description: "Admins can now review your squad’s work." });
+      setProjectSubmissionRepo("");
+      setProjectSubmissionSummary("");
+      setActiveProjectRunForSubmit(null);
+      await loadTeamHubData();
+    } catch (err: any) {
+      toast({ title: "Failed to submit", description: err.message || String(err), variant: "destructive" });
+    } finally {
+      setProjectSubmittingId(null);
     }
   }
 
@@ -3597,10 +3727,14 @@ useEffect(() => {
                   ) : (
                     topPracticeTeams.map((team, index) => {
                       const rank = index + 1;
-                      const memberNames = (team.team_members || [])
-                        .map((tm: any) => tm.members?.full_name || "Member")
-                        .filter(Boolean)
-                        .join(", ");
+                      const memberEntries = (team.team_members || [])
+                        .map((tm: any) => ({
+                          name: tm.members?.full_name || "Member",
+                          verified: tm.members?.verified_badge,
+                          star: tm.members?.star_badge,
+                          custom: tm.members?.custom_badge,
+                        }))
+                        .filter((m: any) => !!m.name);
                       return (
                         <div
                           key={team.id}
@@ -3632,10 +3766,19 @@ useEffect(() => {
                                 {(team.likes_count || 0)} likes
                               </p>
                             </div>
-                            {memberNames && (
-                              <p className="text-[11px] text-muted-foreground">
-                                Members: {memberNames}
-                              </p>
+                            {memberEntries.length > 0 && (
+                              <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                                <span className="mr-1">Members:</span>
+                                {memberEntries.map((m: any, idx: number) => (
+                                  <span key={`${team.id}-member-${idx}`} className="inline-flex items-center gap-1">
+                                    <span>{m.name}</span>
+                                    {(m.verified || m.star || m.custom) && (
+                                      <PremiumBadge verified={m.verified} star={m.star} custom={m.custom} size="xs" />
+                                    )}
+                                    {idx < memberEntries.length - 1 && <span>,</span>}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                             {team.leader?.full_name && (
                               <p className="text-[11px] text-muted-foreground">
@@ -4326,6 +4469,119 @@ useEffect(() => {
                         </div>
                       </div>
                     ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Practice Projects – admin curated */}
+              {teamProjects.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4" />
+                      Practice Projects
+                    </CardTitle>
+                    <CardDescription>
+                      Longer-form builds designed by admins. Your squad can officially start and submit these.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {!primaryPracticeTeam && (
+                      <p className="text-sm text-muted-foreground">
+                        Create or join a practice squad to start projects together.
+                      </p>
+                    )}
+                    {teamProjects.map((project) => {
+                      const run = projectRunsByProjectId.get(project.id);
+                      const latestSubmission = Array.isArray(run?.submissions) && run.submissions.length > 0
+                        ? run.submissions[0]
+                        : null;
+                      return (
+                        <div key={project.id} className="p-4 rounded-lg border bg-muted/40 space-y-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold">{project.title}</p>
+                                {project.difficulty && (
+                                  <Badge variant={project.difficulty === "elite" ? "destructive" : project.difficulty === "intermediate" ? "default" : "secondary"}>
+                                    {project.difficulty}
+                                  </Badge>
+                                )}
+                                {project.focus_area && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {project.focus_area}
+                                  </Badge>
+                                )}
+                              </div>
+                              {project.summary && (
+                                <p className="text-sm text-muted-foreground line-clamp-3">
+                                  {project.summary}
+                                </p>
+                              )}
+                              {project.repo_url && (
+                                <Button asChild variant="outline" size="sm" className="mt-1">
+                                  <a href={project.repo_url} target="_blank" rel="noreferrer">
+                                    <ExternalLink className="w-3 h-3 mr-1" />
+                                    Base Repo / Brief
+                                  </a>
+                                </Button>
+                              )}
+                            </div>
+                            <div className="text-right space-y-1 text-xs text-muted-foreground min-w-[140px]">
+                              {run ? (
+                                <>
+                                  <p>Status: <span className="font-medium capitalize">{run.status || "in_progress"}</span></p>
+                                  {run.started_at && (
+                                    <p>Started {formatDate(run.started_at)}</p>
+                                  )}
+                                  {latestSubmission && (
+                                    <p>Last submit {formatDate(latestSubmission.submitted_at || latestSubmission.created_at)}</p>
+                                  )}
+                                </>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  No squad has started this yet for your team.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {primaryPracticeTeam && isPrimaryPracticeLeader && !run && (
+                              <Button
+                                size="sm"
+                                onClick={() => void startTeamProject(project.id)}
+                                disabled={projectStartId === project.id || teamHubLoading}
+                              >
+                                {projectStartId === project.id ? "Starting..." : "Start Project for Squad"}
+                              </Button>
+                            )}
+                            {primaryPracticeTeam && !isPrimaryPracticeLeader && !run && (
+                              <p className="text-xs text-muted-foreground">
+                                Ask your squad leader to start this project.
+                              </p>
+                            )}
+                            {run && isPrimaryPracticeLeader && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setActiveProjectRunForSubmit(run);
+                                  if (latestSubmission) {
+                                    setProjectSubmissionRepo(latestSubmission.repo_link || "");
+                                    setProjectSubmissionSummary(latestSubmission.summary || "");
+                                  } else {
+                                    setProjectSubmissionRepo("");
+                                    setProjectSubmissionSummary("");
+                                  }
+                                }}
+                              >
+                                {latestSubmission ? "Update Submission" : "Submit Result"}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </CardContent>
                 </Card>
               )}
@@ -5048,6 +5304,67 @@ useEffect(() => {
                   }}
                 >
                   Copy Member ID
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Team Project Submission Dialog */}
+        {activeProjectRunForSubmit && (
+          <Dialog open onOpenChange={(open) => {
+            if (!open) {
+              setActiveProjectRunForSubmit(null);
+            }
+          }}>
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5" />
+                  Submit Practice Project
+                </DialogTitle>
+                <DialogDescription>
+                  Share your squad&apos;s work for{" "}
+                  <span className="font-medium">
+                    {activeProjectRunForSubmit.project?.title || "this project"}
+                  </span>
+                  . Admins will review and can award points or badges.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Repo / PR Link</label>
+                  <Input
+                    value={projectSubmissionRepo}
+                    onChange={(e) => setProjectSubmissionRepo(e.target.value)}
+                    placeholder="https://github.com/your-org/your-repo or PR link"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Summary (optional)</label>
+                  <Textarea
+                    value={projectSubmissionSummary}
+                    onChange={(e) => setProjectSubmissionSummary(e.target.value)}
+                    rows={4}
+                    placeholder="What did your squad ship? Any key decisions, tradeoffs, or demos?"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setActiveProjectRunForSubmit(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() =>
+                    void submitProjectResult(
+                      activeProjectRunForSubmit.id,
+                      projectSubmissionRepo,
+                      projectSubmissionSummary
+                    )
+                  }
+                  disabled={projectSubmittingId === activeProjectRunForSubmit.id}
+                >
+                  {projectSubmittingId === activeProjectRunForSubmit.id ? "Submitting..." : "Submit for Review"}
                 </Button>
               </DialogFooter>
             </DialogContent>

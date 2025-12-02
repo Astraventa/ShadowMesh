@@ -555,6 +555,20 @@ const [spotlightForm, setSpotlightForm] = useState({
 	is_active: true,
 });
 const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
+const [teamProjects, setTeamProjects] = useState<any[]>([]);
+const [editingProject, setEditingProject] = useState<any | null>(null);
+const [projectForm, setProjectForm] = useState({
+	title: "",
+	description: "",
+	focus_area: "",
+	difficulty: "starter",
+	repo_url: "",
+	summary: "",
+	status: "draft",
+	tags: "" as string,
+});
+const [projectRuns, setProjectRuns] = useState<any[]>([]);
+const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 
 	// Initial loads
     useEffect(() => {
@@ -750,6 +764,65 @@ const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
 				.order("created_at", { ascending: false })
 				.limit(25);
 			setTeamUpdatesModeration(updates || []);
+
+			// Load admin practice projects
+			const { data: projects } = await supabase
+				.from("team_projects")
+				.select("*")
+				.order("created_at", { ascending: false });
+			setTeamProjects(projects || []);
+
+			// Load project runs with joined project and team
+			const { data: runs } = await supabase
+				.from("team_project_runs")
+				.select(`
+					id,
+					project_id,
+					team_id,
+					started_by_member_id,
+					started_at,
+					last_activity_at,
+					status,
+					notes,
+					project:team_projects(
+						id,
+						title,
+						difficulty
+					),
+					team:hackathon_teams(
+						id,
+						team_name,
+						is_practice
+					)
+				`)
+				.order("started_at", { ascending: false })
+				.limit(50);
+			setProjectRuns(runs || []);
+
+			// Load submissions with joined run, project, and team
+			const { data: submissions } = await supabase
+				.from("team_project_submissions")
+				.select(`
+					id,
+					project_run_id,
+					submitted_by_member_id,
+					submitted_at,
+					repo_link,
+					summary,
+					status,
+					score,
+					awarded_points,
+					run:team_project_runs(
+						id,
+						team_id,
+						project_id,
+						project:team_projects(title),
+						team:hackathon_teams(team_name)
+					)
+				`)
+				.order("submitted_at", { ascending: false })
+				.limit(50);
+			setProjectSubmissions(submissions || []);
 		} catch (error) {
 			console.warn("Failed to load team hub admin data:", error);
 		} finally {
@@ -3086,6 +3159,385 @@ const [teamUpdatesModeration, setTeamUpdatesModeration] = useState<any[]>([]);
 									</CardContent>
 								</Card>
 							</div>
+
+							<div className="grid gap-6 lg:grid-cols-2">
+								{/* Projects management */}
+								<Card>
+									<CardHeader>
+										<CardTitle>{editingProject ? "Edit Practice Project" : "Create Practice Project"}</CardTitle>
+										<CardDescription>Define longer-form builds for Team Hub squads.</CardDescription>
+									</CardHeader>
+									<CardContent className="space-y-4">
+										<div className="space-y-3">
+											<div>
+												<label className="text-sm font-medium">Title</label>
+												<Input
+													value={projectForm.title}
+													onChange={(e) => setProjectForm((prev) => ({ ...prev, title: e.target.value }))}
+													placeholder="Example: AI Red Team Lab"
+												/>
+											</div>
+											<div>
+												<label className="text-sm font-medium">Summary</label>
+												<Textarea
+													rows={3}
+													value={projectForm.summary}
+													onChange={(e) => setProjectForm((prev) => ({ ...prev, summary: e.target.value }))}
+													placeholder="Short description shown in Team Hub (what squads will build)."
+												/>
+											</div>
+											<div>
+												<label className="text-sm font-medium">Full Description (optional)</label>
+												<Textarea
+													rows={4}
+													value={projectForm.description}
+													onChange={(e) => setProjectForm((prev) => ({ ...prev, description: e.target.value }))}
+													placeholder="Detailed notes, constraints, or grading rubric (for internal/admin use)."
+												/>
+											</div>
+											<div className="grid md:grid-cols-3 gap-4">
+												<div>
+													<label className="text-sm font-medium">Difficulty</label>
+													<Select
+														value={projectForm.difficulty}
+														onValueChange={(value) => setProjectForm((prev) => ({ ...prev, difficulty: value }))}
+													>
+														<SelectTrigger>
+															<SelectValue />
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="starter">Starter</SelectItem>
+															<SelectItem value="intermediate">Intermediate</SelectItem>
+															<SelectItem value="elite">Elite</SelectItem>
+														</SelectContent>
+													</Select>
+												</div>
+												<div>
+													<label className="text-sm font-medium">Focus Area</label>
+													<Input
+														value={projectForm.focus_area}
+														onChange={(e) => setProjectForm((prev) => ({ ...prev, focus_area: e.target.value }))}
+														placeholder="e.g. offense, defense, ai-security"
+													/>
+												</div>
+												<div>
+													<label className="text-sm font-medium">Status</label>
+													<Select
+														value={projectForm.status}
+														onValueChange={(value) => setProjectForm((prev) => ({ ...prev, status: value }))}
+													>
+														<SelectTrigger>
+															<SelectValue />
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="draft">Draft</SelectItem>
+															<SelectItem value="published">Published</SelectItem>
+															<SelectItem value="archived">Archived</SelectItem>
+														</SelectContent>
+													</Select>
+												</div>
+											</div>
+											<div className="grid md:grid-cols-2 gap-4">
+												<div>
+													<label className="text-sm font-medium">Repo / Template URL</label>
+													<Input
+														value={projectForm.repo_url}
+														onChange={(e) => setProjectForm((prev) => ({ ...prev, repo_url: e.target.value }))}
+														placeholder="https://github.com/..."
+													/>
+												</div>
+												<div>
+													<label className="text-sm font-medium">Tags (comma-separated)</label>
+													<Input
+														value={projectForm.tags}
+														onChange={(e) => setProjectForm((prev) => ({ ...prev, tags: e.target.value }))}
+														placeholder="red-team, llm, detection"
+													/>
+												</div>
+											</div>
+										</div>
+									</CardContent>
+									<CardFooter className="flex gap-2">
+										<Button
+											onClick={async () => {
+												if (!projectForm.title.trim()) {
+													toast({ title: "Title required", description: "Give the project a name.", variant: "destructive" });
+													return;
+												}
+												try {
+													const payload: any = {
+														title: projectForm.title.trim(),
+														description: projectForm.description?.trim() || null,
+														focus_area: projectForm.focus_area?.trim() || null,
+														difficulty: projectForm.difficulty,
+														repo_url: projectForm.repo_url?.trim() || null,
+														summary: projectForm.summary?.trim() || null,
+														status: projectForm.status,
+														tags: projectForm.tags
+															? projectForm.tags.split(",").map((t) => t.trim()).filter(Boolean)
+															: null,
+													};
+													let error;
+													if (editingProject) {
+														({ error } = await supabase.from("team_projects").update(payload).eq("id", editingProject.id));
+													} else {
+														({ error } = await supabase.from("team_projects").insert(payload));
+													}
+													if (error) throw error;
+													toast({ title: editingProject ? "Project updated" : "Project created" });
+													setEditingProject(null);
+													setProjectForm({
+														title: "",
+														description: "",
+														focus_area: "",
+														difficulty: "starter",
+														repo_url: "",
+														summary: "",
+														status: "draft",
+														tags: "",
+													});
+													await loadTeamHubAdmin();
+												} catch (err: any) {
+													toast({ title: "Failed to save project", description: err.message, variant: "destructive" });
+												}
+											}}
+										>
+											{editingProject ? "Update Project" : "Create Project"}
+										</Button>
+										<Button
+											variant="outline"
+											onClick={() => {
+												setEditingProject(null);
+												setProjectForm({
+													title: "",
+													description: "",
+													focus_area: "",
+													difficulty: "starter",
+													repo_url: "",
+													summary: "",
+													status: "draft",
+													tags: "",
+												});
+											}}
+										>
+											Reset
+										</Button>
+									</CardFooter>
+								</Card>
+
+								{/* Project list and runs overview */}
+								<Card>
+									<CardHeader>
+										<CardTitle>Projects & Runs</CardTitle>
+										<CardDescription>See which squads have started which projects.</CardDescription>
+									</CardHeader>
+									<CardContent className="space-y-4">
+										{teamProjects.length === 0 ? (
+											<p className="text-sm text-muted-foreground">No projects yet. Create one on the left.</p>
+										) : (
+											<div className="space-y-3">
+												{teamProjects.map((project) => {
+													const runsForProject = projectRuns.filter((run) => run.project_id === project.id);
+													return (
+														<div key={project.id} className="border rounded-lg p-3 space-y-2">
+															<div className="flex items-center justify-between gap-2">
+																<div className="space-y-1">
+																	<div className="flex items-center gap-2 flex-wrap">
+																		<p className="font-semibold">{project.title}</p>
+																		<Badge
+																			variant={
+																				project.status === "published"
+																					? "default"
+																					: project.status === "archived"
+																					? "destructive"
+																					: "secondary"
+																			}
+																		>
+																			{project.status}
+																		</Badge>
+																		{project.difficulty && (
+																			<Badge variant="outline" className="text-xs">
+																				{project.difficulty}
+																			</Badge>
+																		)}
+																	</div>
+																	{project.summary && (
+																		<p className="text-xs text-muted-foreground line-clamp-2">
+																			{project.summary}
+																		</p>
+																	)}
+																</div>
+																<Button
+																	size="sm"
+																	variant="outline"
+																	onClick={() => {
+																		setEditingProject(project);
+																		setProjectForm({
+																			title: project.title || "",
+																			description: project.description || "",
+																			focus_area: project.focus_area || "",
+																			difficulty: project.difficulty || "starter",
+																			repo_url: project.repo_url || "",
+																			summary: project.summary || "",
+																			status: project.status || "draft",
+																			tags: Array.isArray(project.tags) ? project.tags.join(", ") : "",
+																		});
+																	}}
+																>
+																	Edit
+																</Button>
+															</div>
+															{runsForProject.length > 0 ? (
+																<div className="text-xs text-muted-foreground space-y-1">
+																	{runsForProject.slice(0, 3).map((run) => (
+																		<div key={run.id} className="flex items-center justify-between gap-2">
+																			<span>
+																				{run.team?.team_name || "Unknown team"} —{" "}
+																				<span className="capitalize">{run.status}</span>
+																			</span>
+																			<span>{formatDate(run.started_at)}</span>
+																		</div>
+																	))}
+																	{runsForProject.length > 3 && (
+																		<p className="text-[11px] text-muted-foreground">
+																			+{runsForProject.length - 3} more runs
+																		</p>
+																	)}
+																</div>
+															) : (
+																<p className="text-xs text-muted-foreground">No squads have started this yet.</p>
+															)}
+														</div>
+													);
+												})}
+											</div>
+										)}
+									</CardContent>
+								</Card>
+							</div>
+
+							<Card>
+								<CardHeader>
+									<CardTitle>Project Submissions</CardTitle>
+									<CardDescription>Review what squads have shipped and optionally award points.</CardDescription>
+								</CardHeader>
+								<CardContent className="space-y-3">
+									{projectSubmissions.length === 0 ? (
+										<p className="text-sm text-muted-foreground">No submissions yet.</p>
+									) : (
+										<div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+											{projectSubmissions.map((sub) => (
+												<div key={sub.id} className="border rounded-lg p-3 space-y-2">
+													<div className="flex items-center justify-between gap-2">
+														<div className="space-y-1">
+															<p className="text-sm font-semibold">
+																{sub.run?.project?.title || "Project"} —{" "}
+																<span className="text-xs text-muted-foreground">
+																	{sub.run?.team?.team_name || "Unknown team"}
+																</span>
+															</p>
+															<p className="text-xs text-muted-foreground">
+																Submitted {formatDate(sub.submitted_at || sub.created_at)}
+															</p>
+														</div>
+														<div className="text-right text-xs text-muted-foreground space-y-1 min-w-[140px]">
+															<p>
+																Status:{" "}
+																<span className="font-medium capitalize">{sub.status || "pending_review"}</span>
+															</p>
+															{typeof sub.score === "number" && (
+																<p>Score: {sub.score}</p>
+															)}
+															{typeof sub.awarded_points === "number" && (
+																<p>Points: {sub.awarded_points}</p>
+															)}
+														</div>
+													</div>
+													{sub.repo_link && (
+														<Button asChild variant="outline" size="sm">
+															<a href={sub.repo_link} target="_blank" rel="noreferrer">
+																<ExternalLink className="w-3 h-3 mr-1" />
+																Repo / PR
+															</a>
+														</Button>
+													)}
+													{sub.summary && (
+														<p className="text-sm text-muted-foreground whitespace-pre-line">
+															{sub.summary}
+														</p>
+													)}
+													<div className="flex flex-wrap gap-2 pt-1">
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={async () => {
+																const scoreStr = window.prompt("Score for this submission (optional, integer):", sub.score ?? "");
+																const pointsStr = window.prompt(
+																	"Awarded points for team (optional, integer):",
+																	sub.awarded_points ?? ""
+																);
+																if (scoreStr === null && pointsStr === null) return;
+																const score = scoreStr !== null && scoreStr !== "" ? Number(scoreStr) : sub.score;
+																const points =
+																	pointsStr !== null && pointsStr !== "" ? Number(pointsStr) : sub.awarded_points;
+																try {
+																	const { error } = await supabase
+																		.from("team_project_submissions")
+																		.update({
+																			score: typeof score === "number" && !Number.isNaN(score) ? score : null,
+																			awarded_points:
+																				typeof points === "number" && !Number.isNaN(points) ? points : null,
+																		})
+																		.eq("id", sub.id);
+																	if (error) throw error;
+																	toast({ title: "Scores updated" });
+																	await loadTeamHubAdmin();
+																} catch (err: any) {
+																	toast({ title: "Failed to update scores", description: err.message, variant: "destructive" });
+																}
+															}}
+														>
+															Edit Score / Points
+														</Button>
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={async () => {
+																const status = window.prompt(
+																	'Set status: "pending_review", "approved", or "rejected"',
+																	sub.status || "pending_review"
+																);
+																if (!status) return;
+																if (!["pending_review", "approved", "rejected"].includes(status)) {
+																	toast({
+																		title: "Invalid status",
+																		description: "Use pending_review, approved, or rejected.",
+																		variant: "destructive",
+																	});
+																	return;
+																}
+																try {
+																	const { error } = await supabase
+																		.from("team_project_submissions")
+																		.update({ status })
+																		.eq("id", sub.id);
+																	if (error) throw error;
+																	toast({ title: "Status updated" });
+																	await loadTeamHubAdmin();
+																} catch (err: any) {
+																	toast({ title: "Failed to update status", description: err.message, variant: "destructive" });
+																}
+															}}
+														>
+															Update Status
+														</Button>
+													</div>
+												</div>
+											))}
+										</div>
+									)}
+								</CardContent>
+							</Card>
 
 							<Card>
 								<CardHeader>

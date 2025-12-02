@@ -416,6 +416,94 @@ create policy p_team_spotlights_all
   using (true)
   with check (true);
 
+-- Team Hub practice projects (admin-designed projects for squads)
+create table if not exists public.team_projects (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  title text not null,
+  description text,
+  focus_area text, -- e.g. 'offense', 'defense', 'ai-security'
+  difficulty text default 'starter' check (difficulty in ('starter','intermediate','elite')),
+  repo_url text, -- Base GitHub repo or template link
+  summary text,
+  status text not null default 'draft' check (status in ('draft','published','archived')),
+  tags text[],
+  created_by uuid references public.members(id) on delete set null
+);
+
+create index if not exists idx_team_projects_status on public.team_projects (status);
+create index if not exists idx_team_projects_created_at on public.team_projects (created_at desc);
+
+alter table public.team_projects enable row level security;
+
+-- Admin panel and portal both use anon/authenticated keys with token gating
+drop policy if exists p_team_projects_all on public.team_projects;
+create policy p_team_projects_all
+  on public.team_projects
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+-- Per-team project runs (who started which project, when, and current status)
+create table if not exists public.team_project_runs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  project_id uuid references public.team_projects(id) on delete cascade,
+  team_id uuid references public.hackathon_teams(id) on delete cascade,
+  started_by_member_id uuid references public.members(id) on delete set null,
+  started_at timestamptz not null default now(),
+  last_activity_at timestamptz,
+  status text not null default 'in_progress' check (status in ('in_progress','submitted','reviewed','completed','cancelled')),
+  notes text
+);
+
+create index if not exists idx_team_project_runs_project_id on public.team_project_runs (project_id);
+create index if not exists idx_team_project_runs_team_id on public.team_project_runs (team_id);
+create index if not exists idx_team_project_runs_status on public.team_project_runs (status);
+create index if not exists idx_team_project_runs_started_at on public.team_project_runs (started_at desc);
+
+alter table public.team_project_runs enable row level security;
+
+drop policy if exists p_team_project_runs_all on public.team_project_runs;
+create policy p_team_project_runs_all
+  on public.team_project_runs
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+-- Project submissions (what teams actually submit for review)
+create table if not exists public.team_project_submissions (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  project_run_id uuid references public.team_project_runs(id) on delete cascade,
+  submitted_by_member_id uuid references public.members(id) on delete set null,
+  submitted_at timestamptz not null default now(),
+  repo_link text,        -- Final repo / branch / PR link
+  summary text,          -- Short write-up
+  artifact_url text,     -- Supabase storage path or external artifact link
+  admin_feedback text,
+  score integer,
+  awarded_points integer,
+  status text default 'pending_review' check (status in ('pending_review','approved','rejected'))
+);
+
+create index if not exists idx_team_project_submissions_run_id on public.team_project_submissions (project_run_id);
+create index if not exists idx_team_project_submissions_status on public.team_project_submissions (status);
+create index if not exists idx_team_project_submissions_created_at on public.team_project_submissions (created_at desc);
+
+alter table public.team_project_submissions enable row level security;
+
+drop policy if exists p_team_project_submissions_all on public.team_project_submissions;
+create policy p_team_project_submissions_all
+  on public.team_project_submissions
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
 -- Team requests (invitations to join teams)
 create table if not exists public.team_requests (
   id                uuid primary key default gen_random_uuid(),
