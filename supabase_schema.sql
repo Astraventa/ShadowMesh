@@ -31,6 +31,8 @@ create table if not exists public.join_applications (
 
   full_name         text        not null,
   email             citext      not null,
+  -- Optional desired username; actual member.username is enforced unique on approval
+  username          text,
   affiliation       affiliation_type not null default 'student',
 
   area_of_interest  text,                 -- e.g. "Cybersecurity", "AI/ML", "Both"
@@ -89,6 +91,8 @@ create table if not exists public.members (
   created_at         timestamptz not null default now(),
   full_name          text not null,
   email              citext not null,
+  -- Public handle used across the app (shown instead of email)
+  username           text,
   source_application uuid references public.join_applications(id) on delete set null,
   cohort             text,
   status             text not null default 'active',
@@ -108,6 +112,32 @@ create table if not exists public.members (
 
 create index if not exists idx_members_created_at on public.members (created_at desc);
 create index if not exists idx_members_email on public.members (email);
+
+-- Add username column / constraints to members table if missing
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns 
+    where table_schema = 'public' and table_name = 'members' and column_name = 'username'
+  ) then
+    alter table public.members add column username text;
+  end if;
+
+  -- Simple format constraint: 3-20 chars, letters/numbers/underscore, nullable for legacy members
+  if not exists (
+    select 1 from pg_constraint 
+    where conname = 'chk_members_username_format'
+  ) then
+    alter table public.members
+      add constraint chk_members_username_format
+      check (username is null or username ~ '^[A-Za-z0-9_]{3,20}$');
+  end if;
+end$$;
+
+-- Unique index on normalized username (case-insensitive), allowing NULL
+create unique index if not exists idx_members_username_unique
+  on public.members (lower(username))
+  where username is not null;
 
 -- Add security columns to members table if they don't exist
 do $$

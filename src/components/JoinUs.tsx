@@ -27,6 +27,10 @@ const JoinUs = () => {
   const [checkingEmail, setCheckingEmail] = useState(false);
   const [emailMessage, setEmailMessage] = useState("");
   const [emailMessageType, setEmailMessageType] = useState<"error" | "warning" | "success" | null>(null);
+  const [username, setUsername] = useState("");
+  const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameMessage, setUsernameMessage] = useState("");
+  const [usernameMessageType, setUsernameMessageType] = useState<"error" | "success" | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [applicationId, setApplicationId] = useState<string | null>(null);
@@ -137,6 +141,10 @@ const JoinUs = () => {
     return /.+@.+\..+/.test(v);
   }
 
+  function basicUsernameValid(v: string) {
+    return /^[A-Za-z0-9_]{3,20}$/.test(v);
+  }
+
   function handlePhoneInput(input: string) {
     setPhone(input);
     setPhoneMessage("");
@@ -161,6 +169,26 @@ const JoinUs = () => {
     api_invalid: { message: "We couldn't verify this phone number. Please double-check or try a different one.", type: "warning" },
     api_unverified: { message: "We couldn't verify this phone number right now. We'll trust it, but please confirm it's correct.", type: "warning" },
   };
+
+  async function checkUsernameExists(handle: string): Promise<boolean> {
+    const normalized = handle.trim().toLowerCase();
+    if (!normalized) return false;
+    try {
+      const { data, error } = await supabase
+        .from("members")
+        .select("id")
+        .eq("username", normalized)
+        .maybeSingle();
+      if (error) {
+        console.error("Error checking username existence:", error);
+        return false;
+      }
+      return !!data;
+    } catch (err) {
+      console.error("Error checking username existence:", err);
+      return false;
+    }
+  }
 
   async function checkEmailExists(email: string): Promise<boolean> {
     try {
@@ -291,6 +319,53 @@ const JoinUs = () => {
       }
       setCheckingEmail(false);
       return basicEmailValid(normalized);
+    }
+  }
+
+  async function validateUsernameRemote(value: string, options: { silent?: boolean } = {}) {
+    const { silent = false } = options;
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      setUsernameMessage("");
+      setUsernameMessageType(null);
+      setCheckingUsername(false);
+      return false;
+    }
+    if (!basicUsernameValid(normalized)) {
+      const msg = "Username must be 3–20 characters and use only letters, numbers, or underscore.";
+      setUsernameMessage(msg);
+      setUsernameMessageType("error");
+      setCheckingUsername(false);
+      if (!silent) {
+        toast({ title: "Invalid username", description: msg, variant: "destructive" });
+      }
+      return false;
+    }
+
+    setCheckingUsername(true);
+    setUsernameMessage("");
+    setUsernameMessageType(null);
+    try {
+      const taken = await checkUsernameExists(normalized);
+      if (taken) {
+        const msg = "This username is already taken. Please choose another.";
+        setUsernameMessage(msg);
+        setUsernameMessageType("error");
+        if (!silent) {
+          toast({ title: "Username taken", description: msg, variant: "destructive" });
+        }
+        return false;
+      }
+      setUsernameMessage("Looks good");
+      setUsernameMessageType("success");
+      return true;
+    } catch (err) {
+      console.error("Username validation error", err);
+      setUsernameMessage("");
+      setUsernameMessageType(null);
+      return false;
+    } finally {
+      setCheckingUsername(false);
     }
   }
 
@@ -459,8 +534,16 @@ const JoinUs = () => {
       toast({ title: "Name required", description: "Please enter your full name." });
       return;
     }
+    if (!username.trim()) {
+      toast({ title: "Username required", description: "Please choose a public username." });
+      return;
+    }
     const emailOk = await validateEmailRemote(email, { silent: false });
     if (!emailOk) {
+      return;
+    }
+    const usernameOk = await validateUsernameRemote(username, { silent: false });
+    if (!usernameOk) {
       return;
     }
     if (affiliation === 'student') {
@@ -539,10 +622,27 @@ const JoinUs = () => {
         return;
       }
 
+      // Basic check for username against existing members (defensive, in addition to live check)
+      const { data: existingUsername } = await supabase
+        .from("members")
+        .select("id")
+        .eq("username", username.trim().toLowerCase())
+        .maybeSingle();
+      if (existingUsername) {
+        toast({
+          title: "Username taken",
+          description: "This username is already in use. Please choose another.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
       const { error, data } = await supabase.from('join_applications')
         .insert([{
           full_name: fullName.trim(),
           email: normalizedEmail,
+          username: username.trim().toLowerCase(),
           affiliation,
           area_of_interest: areaOfInterest || null,
           motivation: motivation || null,
@@ -697,7 +797,7 @@ const JoinUs = () => {
               <form className="space-y-6" onSubmit={onSubmit}>
                 <input type="text" value={honeypot} onChange={(e)=>setHoneypot(e.target.value)} className="hidden" aria-hidden="true" tabIndex={-1} />
 
-              <div className="grid md:grid-cols-2 gap-6">
+              <div className="grid md:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm font-medium mb-2">Full Name</label>
                     <Input value={fullName} onChange={(e)=>setFullName(e.target.value)} placeholder="John Doe" className="bg-background/50 border-border focus:border-primary transition-colors" />
@@ -747,6 +847,44 @@ const JoinUs = () => {
                         {emailMessage}
                       </p>
                     )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Username</label>
+                  <div className="relative">
+                    <Input
+                      value={username}
+                      onChange={(e) => {
+                        setUsername(e.target.value);
+                        setUsernameMessage("");
+                        setUsernameMessageType(null);
+                      }}
+                      onBlur={() => void validateUsernameRemote(username, { silent: true })}
+                      placeholder="shadowhacker"
+                      className={`bg-background/50 border-border focus:border-primary transition-colors ${
+                        usernameMessageType === "error"
+                          ? "border-destructive"
+                          : usernameMessageType === "success"
+                            ? "border-emerald-500/70"
+                            : ""
+                      }`}
+                    />
+                    {checkingUsername && (
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                        <span className="block h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/40 border-t-primary animate-spin" />
+                      </span>
+                    )}
+                  </div>
+                  {usernameMessage && !checkingUsername && (
+                    <p
+                      className={`text-xs mt-1 ${
+                        usernameMessageType === "success"
+                          ? "text-emerald-500"
+                          : "text-destructive"
+                      }`}
+                    >
+                      {usernameMessage}
+                    </p>
+                  )}
                 </div>
               </div>
 

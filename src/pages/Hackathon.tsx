@@ -836,7 +836,7 @@ export default function Hackathon() {
         team_members(
           member_id,
           role,
-          members(id, full_name, email, verified_badge, star_badge, custom_badge)
+          members(id, full_name, email, username, verified_badge, star_badge, custom_badge)
         )
       `)
       .eq("hackathon_id", hackathonId)
@@ -866,7 +866,7 @@ export default function Hackathon() {
           team_members(
             member_id,
             role,
-            members(id, full_name, email, area_of_interest, verified_badge, star_badge, custom_badge)
+            members(id, full_name, email, username, area_of_interest, verified_badge, star_badge, custom_badge)
           )
         `)
         .eq("id", teamId)
@@ -878,6 +878,7 @@ export default function Hackathon() {
             member_id: tm.member_id,
             full_name: tm.members?.full_name || "",
             email: tm.members?.email || "",
+            username: tm.members?.username || null,
             role: tm.role,
             area_of_interest: tm.members?.area_of_interest || "",
             verified_badge: tm.members?.verified_badge || false,

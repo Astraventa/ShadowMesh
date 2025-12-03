@@ -22,6 +22,7 @@ interface Member {
   id: string;
   full_name: string;
   email: string;
+  username?: string | null;
   created_at: string;
   cohort?: string;
   area_of_interest?: string;
@@ -123,7 +124,7 @@ function LeaderboardSection() {
       try {
         const { data, error } = await supabase
           .from("members")
-          .select("id, full_name, email, verified_badge, star_badge, custom_badge, created_at, priority_level, member_category")
+          .select("id, full_name, email, username, verified_badge, star_badge, custom_badge, created_at, priority_level, member_category")
           .eq("status", "active")
           .eq("is_hidden", false)
           .order("priority_level", { ascending: false, nullsFirst: false })
@@ -176,10 +177,14 @@ function LeaderboardSection() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium truncate">{member.full_name}</span>
+                  <span className="font-medium truncate">
+                    {member.username ? `@${member.username}` : member.full_name}
+                  </span>
                   <PremiumBadge verified={hasVerified} star={hasStar} custom={member.custom_badge} size="sm" />
                 </div>
-                <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {member.full_name}
+                </p>
               </div>
             </div>
           );
@@ -377,6 +382,10 @@ export default function MemberPortal() {
   const [showSpecialWelcome, setShowSpecialWelcome] = useState(false);
   const [showStarBadgeAnimation, setShowStarBadgeAnimation] = useState(false);
   const [isFirstTime, setIsFirstTime] = useState(false);
+  const [showUsernameSetup, setShowUsernameSetup] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [savingUsername, setSavingUsername] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
   const [registeredEvents, setRegisteredEvents] = useState<Set<string>>(new Set());
   const [hackathons, setHackathons] = useState<Event[]>([]);
   const [hackathonRegistrations, setHackathonRegistrations] = useState<HackathonRegistration[]>([]);
@@ -758,7 +767,11 @@ useEffect(() => {
       // Track portal access - mark as accessed if not already
       const isFirstAccess = !memberData.portal_accessed;
       setIsFirstTime(isFirstAccess);
-      
+      if (!memberData.username) {
+        setShowUsernameSetup(true);
+        setNewUsername("");
+      }
+
       if (isFirstAccess) {
         const params = new URLSearchParams(window.location.search);
         const setupParam = params.get("setup");
@@ -975,7 +988,7 @@ useEffect(() => {
           allTeams.map(async (team: any) => {
             const { data: teamMembersData } = await supabase
               .from("team_members")
-              .select("member_id, role, members(full_name, email, verified_badge, star_badge, custom_badge)")
+              .select("member_id, role, members(full_name, email, username, verified_badge, star_badge, custom_badge)")
               .eq("team_id", team.id);
 
             return {
@@ -984,6 +997,7 @@ useEffect(() => {
                 member_id: tm.member_id,
                 full_name: tm.members?.full_name || "",
                 email: tm.members?.email || "",
+                username: tm.members?.username || null,
                 role: tm.role,
                 verified_badge: tm.members?.verified_badge || false,
                 star_badge: tm.members?.star_badge || false,
@@ -1448,6 +1462,53 @@ useEffect(() => {
     } catch (error: any) {
       console.error("Failed to load invite links:", error);
       toast({ title: "Error", description: "Failed to load invite links.", variant: "destructive" });
+    }
+  }
+
+  function basicUsernameValid(handle: string) {
+    return /^[A-Za-z0-9_]{3,20}$/.test(handle);
+  }
+
+  async function saveUsername() {
+    if (!member) return;
+    const normalized = newUsername.trim().toLowerCase();
+    if (!normalized) {
+      setUsernameError("Username is required.");
+      return;
+    }
+    if (!basicUsernameValid(normalized)) {
+      setUsernameError("Use 3–20 characters: letters, numbers, or underscore only.");
+      return;
+    }
+
+    setSavingUsername(true);
+    setUsernameError(null);
+    try {
+      const { data: existing } = await supabase
+        .from("members")
+        .select("id")
+        .eq("username", normalized)
+        .maybeSingle();
+      if (existing && existing.id !== member.id) {
+        setUsernameError("That username is taken. Try another one.");
+        setSavingUsername(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from("members")
+        .update({ username: normalized })
+        .eq("id", member.id);
+      if (error) throw error;
+
+      setMember({ ...member, username: normalized });
+      setShowUsernameSetup(false);
+      toast({ title: "Username saved", description: `Your handle is now @${normalized}` });
+    } catch (e: any) {
+      console.error("Failed to save username:", e);
+      setUsernameError(e.message || "Failed to save username. Please try again.");
+    } finally {
+      setSavingUsername(false);
     }
   }
 
@@ -2150,7 +2211,7 @@ useEffect(() => {
       // Get all approved registrations for this hackathon
       const { data: approvedRegs, error: regError } = await supabase
         .from("hackathon_registrations")
-        .select("member_id, members(id, full_name, email, area_of_interest)")
+        .select("member_id, members(id, full_name, email, username, area_of_interest)")
         .eq("hackathon_id", hackathonId)
         .eq("status", "approved");
 
@@ -2168,7 +2229,7 @@ useEffect(() => {
           team_members(
             member_id,
             role,
-            members(id, full_name, email, area_of_interest, verified_badge, star_badge, custom_badge)
+            members(id, full_name, email, username, area_of_interest, verified_badge, star_badge, custom_badge)
           )
         `)
         .eq("hackathon_id", hackathonId)
@@ -2271,7 +2332,7 @@ useEffect(() => {
       // Get all approved registrations for this hackathon
       const { data, error } = await supabase
         .from("hackathon_registrations")
-        .select("member_id, members(id, full_name, email, area_of_interest)")
+        .select("member_id, members(id, full_name, email, username, area_of_interest)")
         .eq("hackathon_id", hackathonId)
         .eq("status", "approved");
 
@@ -5212,6 +5273,55 @@ useEffect(() => {
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* Username setup modal for legacy members */}
+        {showUsernameSetup && member && (
+          <Dialog open={showUsernameSetup} onOpenChange={(open) => { if (!savingUsername) setShowUsernameSetup(open); }}>
+            <DialogContent className="sm:max-w-[420px]">
+              <DialogHeader>
+                <DialogTitle>Choose your ShadowMesh username</DialogTitle>
+                <DialogDescription>
+                  Pick a short handle we can show on leaderboards, teams, and chat instead of your email.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 pt-2">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Username</label>
+                  <Input
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                    placeholder="shadowhunter"
+                    autoFocus
+                  />
+                  {usernameError && (
+                    <p className="text-xs text-destructive mt-1">{usernameError}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    3–20 characters. Letters, numbers, and underscore only. This will be public.
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (member.username) {
+                      setShowUsernameSetup(false);
+                    } else {
+                      setUsernameError("Please set a username to continue.");
+                    }
+                  }}
+                  disabled={savingUsername}
+                >
+                  Maybe later
+                </Button>
+                <Button onClick={() => void saveUsername()} disabled={savingUsername}>
+                  {savingUsername ? "Saving..." : "Save username"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* Hackathon Registration Dialog */}
         {showHackathonReg && member && (

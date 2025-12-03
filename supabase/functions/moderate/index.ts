@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     const row = updated?.[0];
 
     // Fetch application to get all fields
-    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,verification_token,area_of_interest,motivation,affiliation,university_name,department,roll_number,organization,role_title,phone_e164,welcome_email_sent`, {
+    const appRes = await fetch(`${SUPABASE_URL}/rest/v1/join_applications?id=eq.${id}&select=full_name,email,username,verification_token,area_of_interest,motivation,affiliation,university_name,department,roll_number,organization,role_title,phone_e164,welcome_email_sent`, {
       headers: { 'apikey': SERVICE_KEY, 'Authorization': `Bearer ${SERVICE_KEY}` },
     });
     const appRows = appRes.ok ? await appRes.json() : [];
@@ -74,6 +74,7 @@ Deno.serve(async (req) => {
           body: JSON.stringify({ 
             full_name: app.full_name, 
             email: app.email, 
+            username: app.username || null,
             source_application: id, 
             area_of_interest: app.area_of_interest || null,
             motivation: app.motivation || null,
