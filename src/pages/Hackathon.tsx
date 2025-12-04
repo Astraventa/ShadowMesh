@@ -2024,12 +2024,21 @@ export default function Hackathon() {
                                     </Badge>
                                   )}
                                 </div>
-                                <span 
-                                  className="text-xs text-muted-foreground truncate max-w-[200px]"
-                                  title={member.email}
-                                >
-                                  {member.email}
-                                </span>
+                                {member.username ? (
+                                  <span 
+                                    className="text-xs text-muted-foreground truncate max-w-[200px]"
+                                    title={`@${member.username}`}
+                                  >
+                                    @{member.username}
+                                  </span>
+                                ) : (
+                                  <span 
+                                    className="text-xs text-muted-foreground truncate max-w-[200px]"
+                                    title={member.email}
+                                  >
+                                    {member.email}
+                                  </span>
+                                )}
                               </div>
                               <div className="flex items-center gap-2 ml-3">
                                 {team.team_leader_id === memberId && member.role !== "leader" && (

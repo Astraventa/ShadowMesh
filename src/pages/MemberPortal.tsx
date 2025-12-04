@@ -177,14 +177,16 @@ function LeaderboardSection() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium truncate">
-                    {member.username ? `@${member.username}` : member.full_name}
+                  <span className="font-semibold truncate">
+                    {member.full_name}
                   </span>
                   <PremiumBadge verified={hasVerified} star={hasStar} custom={member.custom_badge} size="sm" />
                 </div>
-                <p className="text-xs text-muted-foreground truncate">
-                  {member.full_name}
-                </p>
+                {member.username && (
+                  <p className="text-xs text-muted-foreground truncate">
+                    @{member.username}
+                  </p>
+                )}
               </div>
             </div>
           );
@@ -1203,7 +1205,7 @@ useEffect(() => {
               custom_badge
             )
           ),
-          leader:members!hackathon_teams_team_leader_id_fkey(full_name, star_badge, verified_badge)
+          leader:members!hackathon_teams_team_leader_id_fkey(full_name, username, star_badge, verified_badge)
         `)
         .or("is_practice.eq.true,hackathon_id.is.null")
         .order("priority_level", { ascending: false, nullsFirst: false })
@@ -3814,11 +3816,11 @@ useEffect(() => {
                                 ))}
                               </div>
                             )}
-                            {team.leader?.full_name && (
+                            {team.leader && (
                               <p className="text-[11px] text-muted-foreground">
                                 Leader:{" "}
                                 <span className="font-semibold">
-                                  {team.leader.full_name}
+                                  {team.leader.username ? `@${team.leader.username}` : team.leader.full_name}
                                 </span>
                               </p>
                             )}
