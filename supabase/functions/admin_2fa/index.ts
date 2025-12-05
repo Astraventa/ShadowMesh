@@ -228,6 +228,7 @@ serve(async (req) => {
           .from("admin_settings")
           .upsert({
             username: ADMIN_USERNAME,
+            email: ADMIN_EMAIL,
             two_factor_secret: newSecret,
             two_factor_enabled: false,
             updated_at: new Date().toISOString(),

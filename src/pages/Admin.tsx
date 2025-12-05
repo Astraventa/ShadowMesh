@@ -2090,6 +2090,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
                             <DialogContent>
                                 <DialogHeader>
                                     <DialogTitle>Moderator Token</DialogTitle>
+                                    <DialogDescription>Set or change the moderator token for admin access</DialogDescription>
                                 </DialogHeader>
                                 <AdminTokenForm onSave={save} onClear={clear} token={token || ""} />
                             </DialogContent>
@@ -4019,6 +4020,9 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 				<DialogContent className="max-w-2xl">
 					<DialogHeader>
 						<DialogTitle>{detail && 'feedback_type' in detail ? "Feedback Details" : "Application Details"}</DialogTitle>
+						<DialogDescription>
+							{detail && 'feedback_type' in detail ? "View detailed feedback information" : "View detailed application information"}
+						</DialogDescription>
 					</DialogHeader>
 					{detail && 'feedback_type' in detail ? (
 						<div className="space-y-4">
@@ -4075,6 +4079,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 				<DialogContent className="max-w-md">
 					<DialogHeader>
 						<DialogTitle>Reject Application</DialogTitle>
+						<DialogDescription>Provide a reason for rejecting this application</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 py-4">
 						<div>
@@ -4124,6 +4129,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 				<DialogContent className="max-w-md">
 					<DialogHeader>
 						<DialogTitle>Reject Hackathon Registration</DialogTitle>
+						<DialogDescription>Provide a reason for rejecting this hackathon registration</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 py-4">
 						<div>

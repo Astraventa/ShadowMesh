@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2, Settings, Edit, X, Target, Zap, TrendingUp, Users2, MessageCircle, Copy } from "lucide-react";
+import { Calendar, BookOpen, ExternalLink, Download, Video, Link as LinkIcon, FileText, Users, Trophy, Activity, Send, KeyRound, QrCode, Star, MessageSquare, ChevronRight, ChevronDown, Shield, Eye, EyeOff, MapPin, CheckCircle2, Bell, Check, Sparkles, Award, Megaphone, Crown, Heart, Trash2, RefreshCcw, Loader2, Settings, Edit, X, Target, Zap, TrendingUp, Users2, MessageCircle, Copy, LogOut } from "lucide-react";
 import PremiumBadge from "@/components/PremiumBadge";
 import { QRCodeSVG } from "qrcode.react";
 import HackathonRegistration from "@/components/HackathonRegistration";
@@ -470,6 +470,8 @@ const [projectSubmissionSummary, setProjectSubmissionSummary] = useState("");
 const [activeProjectRunForSubmit, setActiveProjectRunForSubmit] = useState<any | null>(null);
 const [showMoreTeamsModal, setShowMoreTeamsModal] = useState(false);
 const [selectedPracticeTeam, setSelectedPracticeTeam] = useState<any | null>(null);
+const [showLeaveTeamDialog, setShowLeaveTeamDialog] = useState<string | null>(null);
+const [leavingTeamId, setLeavingTeamId] = useState<string | null>(null);
 const [practiceTeamChat, setPracticeTeamChat] = useState<any[]>([]);
 const [practiceChatInput, setPracticeChatInput] = useState("");
 const [sendingPracticeChat, setSendingPracticeChat] = useState(false);
@@ -1588,6 +1590,39 @@ useEffect(() => {
       await loadPracticeInviteLinks(team.id);
     } catch (error: any) {
       toast({ title: "Failed to delete link", description: error.message || "Please try again.", variant: "destructive" });
+    }
+  }
+
+  async function leavePracticeTeam(teamId: string) {
+    if (!member || !teamId) return;
+    
+    setLeavingTeamId(teamId);
+    try {
+      // Remove member from team
+      const { error } = await supabase
+        .from("team_members")
+        .delete()
+        .eq("team_id", teamId)
+        .eq("member_id", member.id);
+
+      if (error) throw error;
+
+      // Log activity
+      await supabase.from("member_activity").insert({
+        member_id: member.id,
+        activity_type: "team_left",
+        activity_data: { team_id: teamId },
+        related_id: teamId,
+      });
+
+      toast({ title: "Left team", description: "You have successfully left the team." });
+      setShowLeaveTeamDialog(null);
+      await loadMemberDataByEmail(member.email);
+      await loadTeamHubData();
+    } catch (error: any) {
+      toast({ title: "Failed to leave team", description: error.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setLeavingTeamId(null);
     }
   }
 
@@ -4691,14 +4726,26 @@ useEffect(() => {
                                 </DropdownMenu>
                               )}
                               {!isLeader && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() => setSelectedPracticeTeam(team)}
-                                >
-                                  <MessageSquare className="w-4 h-4" />
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() => setSelectedPracticeTeam(team)}
+                                    title="Open Chat"
+                                  >
+                                    <MessageSquare className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                                    onClick={() => setShowLeaveTeamDialog(team.id)}
+                                    title="Leave Team"
+                                  >
+                                    <LogOut className="w-4 h-4" />
+                                  </Button>
+                                </div>
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground">
@@ -6365,6 +6412,46 @@ useEffect(() => {
             )}
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowTeamSettings(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Leave Team Warning Dialog */}
+        <Dialog open={!!showLeaveTeamDialog} onOpenChange={(open) => {
+          if (!open) setShowLeaveTeamDialog(null);
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Leave Team?</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to leave this team? You will lose access to team projects, chat, and updates. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowLeaveTeamDialog(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (showLeaveTeamDialog) {
+                    void leavePracticeTeam(showLeaveTeamDialog);
+                  }
+                }}
+                disabled={!!leavingTeamId}
+              >
+                {leavingTeamId ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Leaving...
+                  </>
+                ) : (
+                  <>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Leave Team
+                  </>
+                )}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
