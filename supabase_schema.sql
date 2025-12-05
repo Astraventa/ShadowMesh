@@ -233,6 +233,7 @@ create table if not exists public.events (
   fee_amount        numeric(10,2) default 0, -- Event fee (0 for free)
   fee_currency      text default 'PKR', -- Currency code
   payment_required  boolean default false, -- Whether payment is required
+  payment_instructions text, -- Where/how to pay (IBAN, number, etc.)
   notify_members    boolean default false, -- Whether to notify members about this event
   category          text, -- e.g., 'cyber', 'ai', 'fusion', 'general'
   tags              text[], -- Array of tags
@@ -240,6 +241,17 @@ create table if not exists public.events (
   registration_deadline timestamptz, -- Deadline for registration
   status            text default 'upcoming' check (status in ('upcoming', 'ongoing', 'completed', 'cancelled'))
 );
+
+-- Add payment_instructions to events if missing (idempotent)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'events' and column_name = 'payment_instructions'
+  ) then
+    alter table public.events add column payment_instructions text;
+  end if;
+end$$;
 
 -- Event registrations (members register for events)
 create table if not exists public.event_registrations (

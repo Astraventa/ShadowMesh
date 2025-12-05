@@ -488,6 +488,7 @@ const [eventFormData, setEventFormData] = useState({
 	fee_amount: "0",
 	fee_currency: "PKR",
 	payment_required: false,
+	payment_instructions: "",
 	notify_members: false,
 	category: "none",
 	tags: "",
@@ -1619,10 +1620,17 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 				end_date: eventFormData.end_date ? new Date(eventFormData.end_date).toISOString() : null,
 				location: eventFormData.location.trim() || null,
 				registration_link: eventFormData.registration_link.trim() || null,
-				max_participants: eventFormData.max_participants ? parseInt(eventFormData.max_participants) : null,
-				fee_amount: parseFloat(eventFormData.fee_amount) || 0,
+				max_participants:
+					eventFormData.max_participants && parseInt(eventFormData.max_participants) > 0
+						? parseInt(eventFormData.max_participants)
+						: null,
+				fee_amount:
+					eventFormData.fee_amount && parseFloat(eventFormData.fee_amount) > 0
+						? parseFloat(eventFormData.fee_amount)
+						: 0,
 				fee_currency: eventFormData.fee_currency,
 				payment_required: eventFormData.payment_required,
+				payment_instructions: eventFormData.payment_instructions?.trim() || null,
 				notify_members: eventFormData.notify_members,
 				category: eventFormData.category === "none" || !eventFormData.category.trim() ? null : eventFormData.category.trim(),
 				tags: eventFormData.tags.trim() ? eventFormData.tags.split(",").map(t => t.trim()).filter(Boolean) : null,
@@ -2733,8 +2741,9 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 											fee_amount: "0",
 											fee_currency: "PKR",
 											payment_required: false,
+											payment_instructions: "",
 											notify_members: false,
-											category: "",
+											category: "none",
 											tags: "",
 											image_url: "",
 											registration_deadline: "",
@@ -2813,6 +2822,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 																fee_amount: event.fee_amount?.toString() || "0",
 																fee_currency: event.fee_currency || "PKR",
 																payment_required: event.payment_required || false,
+																payment_instructions: event.payment_instructions || "",
 																notify_members: event.notify_members || false,
 																category: event.category || "none",
 																tags: Array.isArray(event.tags) ? event.tags.join(", ") : event.tags || "",
@@ -4502,7 +4512,7 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 									value={eventFormData.max_participants}
 									onChange={(e) => setEventFormData({ ...eventFormData, max_participants: e.target.value })}
 									placeholder="Leave empty for unlimited"
-									min="1"
+									min="0"
 								/>
 							</div>
 
@@ -4613,6 +4623,18 @@ const [projectSubmissions, setProjectSubmissions] = useState<any[]>([]);
 													<SelectItem value="EUR">EUR (Euro)</SelectItem>
 												</SelectContent>
 											</Select>
+										</div>
+										<div className="md:col-span-3">
+											<label className="block text-sm font-medium mb-2">Payment Instructions</label>
+											<Textarea
+												value={eventFormData.payment_instructions}
+												onChange={(e) => setEventFormData({ ...eventFormData, payment_instructions: e.target.value })}
+												placeholder="Where to pay: IBAN / account name / wallet number, and any notes."
+												rows={3}
+											/>
+											<p className="text-xs text-muted-foreground mt-1">
+												Shown to members in the registration dialog when payment is required.
+											</p>
 										</div>
 									</>
 								)}

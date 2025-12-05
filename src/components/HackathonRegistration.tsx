@@ -15,6 +15,7 @@ interface HackathonRegistrationProps {
   paymentRequired: boolean;
   feeAmount?: number;
   feeCurrency?: string;
+  paymentInstructions?: string | null;
   onSuccess?: () => void;
 }
 
@@ -25,6 +26,7 @@ export default function HackathonRegistration({
   paymentRequired,
   feeAmount = 0,
   feeCurrency = "PKR",
+  paymentInstructions = null,
   onSuccess,
 }: HackathonRegistrationProps) {
   const { toast } = useToast();
@@ -156,6 +158,11 @@ export default function HackathonRegistration({
                   <p className="text-sm text-yellow-400">
                     <strong>Payment Required:</strong> {feeAmount} {feeCurrency}
                   </p>
+                  {paymentInstructions && (
+                    <p className="text-xs text-yellow-200/90 mt-2 whitespace-pre-line">
+                      {paymentInstructions}
+                    </p>
+                  )}
                 </div>
               )}
 

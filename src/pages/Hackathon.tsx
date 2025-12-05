@@ -1782,7 +1782,7 @@ export default function Hackathon() {
                 </CardContent>
               </Card>
             )}
-            {hackathon.max_participants && (
+            {hackathon.max_participants && hackathon.max_participants > 0 && (
               <Card className="bg-purple-900/40 border-purple-700/60 backdrop-blur-md shadow-lg">
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 text-purple-200">
@@ -2812,6 +2812,7 @@ export default function Hackathon() {
                 paymentRequired={hackathon.payment_required || false}
                 feeAmount={hackathon.fee_amount || 0}
                 feeCurrency={hackathon.fee_currency || "PKR"}
+                paymentInstructions={hackathon.payment_instructions || null}
                 onSuccess={() => {
                   setShowRegistration(false);
                   window.location.reload();

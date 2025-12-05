@@ -3625,7 +3625,7 @@ useEffect(() => {
                                   <p>{event.location}</p>
                                 </div>
                               )}
-                              {event.max_participants && (
+                              {event.max_participants && event.max_participants > 0 && (
                                 <div>
                                   <p className="text-muted-foreground mb-1">Max Participants</p>
                                   <p>{event.max_participants}</p>
@@ -3680,7 +3680,7 @@ useEffect(() => {
                                 <span>{event.location}</span>
                               </div>
                             )}
-                            {event.max_participants && (
+                            {event.max_participants && event.max_participants > 0 && (
                               <div className="flex items-center gap-2">
                                 <span className="text-muted-foreground">👥</span>
                                 <span>Max {event.max_participants} participants</span>
@@ -4092,7 +4092,7 @@ useEffect(() => {
                                   <p>{formatDate(hackathon.end_date)}</p>
                                 </div>
                               )}
-                              {hackathon.max_participants && (
+                              {hackathon.max_participants && hackathon.max_participants > 0 && (
                                 <div>
                                   <p className="text-muted-foreground mb-1">Max Participants</p>
                                   <p>{hackathon.max_participants}</p>
@@ -4153,7 +4153,7 @@ useEffect(() => {
                                 <span>Registration deadline: {formatDate(hackathon.registration_deadline)}</span>
                               </div>
                             )}
-                            {hackathon.max_participants && (
+                            {hackathon.max_participants && hackathon.max_participants > 0 && (
                               <div className="flex items-center gap-2 text-red-100/90">
                                 <span>👥</span>
                                 <span>Max {hackathon.max_participants} participants</span>
@@ -5349,6 +5349,7 @@ useEffect(() => {
                 paymentRequired={hackathons.find((h) => h.id === showHackathonReg)?.payment_required || false}
                 feeAmount={hackathons.find((h) => h.id === showHackathonReg)?.fee_amount || 0}
                 feeCurrency={hackathons.find((h) => h.id === showHackathonReg)?.fee_currency || "PKR"}
+                paymentInstructions={hackathons.find((h) => h.id === showHackathonReg)?.payment_instructions || null}
                 onSuccess={() => {
                   setShowHackathonReg(null);
                   void loadMemberDataByEmail(localStorage.getItem("shadowmesh_member_email") || "");
