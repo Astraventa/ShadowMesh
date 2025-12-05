@@ -2248,6 +2248,7 @@ useEffect(() => {
             member_id: tm.member_id,
             full_name: tm.members?.full_name || "",
             email: tm.members?.email || "",
+            username: tm.members?.username || null,
             area_of_interest: tm.members?.area_of_interest || "",
             role: tm.role,
             verified_badge: tm.members?.verified_badge || false,
@@ -2268,6 +2269,7 @@ useEffect(() => {
           id: r.member_id,
           full_name: r.members?.full_name || "",
           email: r.members?.email || "",
+          username: r.members?.username || null,
           area_of_interest: r.members?.area_of_interest || "",
         }));
 
@@ -3414,7 +3416,7 @@ useEffect(() => {
               </DropdownMenu>
               <Badge variant="secondary" className="px-4 py-2 text-sm">
                 <KeyRound className="w-4 h-4 mr-2" />
-                {member.email}
+                {member.username ? `@${member.username}` : member.email}
               </Badge>
               <Button
                 variant="outline"
@@ -4284,9 +4286,17 @@ useEffect(() => {
                                   </div>
                                   <div className="space-y-1">
                                     {userTeam.members.map((m) => (
-                                      <p key={m.member_id} className="text-sm text-red-100/80">
-                                        {m.role === "leader" && "👑 "}{m.full_name}
-                                      </p>
+                                      <div key={m.member_id} className="flex items-center gap-2">
+                                        <p className="text-sm text-red-100/80">
+                                          {m.role === "leader" && "👑 "}{m.full_name}
+                                        </p>
+                                        <PremiumBadge 
+                                          verified={m.verified_badge} 
+                                          star={m.star_badge} 
+                                          custom={m.custom_badge} 
+                                          size="xs" 
+                                        />
+                                      </div>
                                     ))}
                                   </div>
                                   <p className="text-xs text-red-300/60 mt-2 italic">Click to view team details</p>
@@ -5864,7 +5874,11 @@ useEffect(() => {
                                           />
                                           {m.role === "leader" && <Badge variant="outline" className="text-xs">Leader</Badge>}
                                         </div>
-                                        <p className="text-xs text-muted-foreground truncate">{m.email}</p>
+                                        {m.username ? (
+                                          <p className="text-xs text-muted-foreground truncate">@{m.username}</p>
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground truncate">{m.email}</p>
+                                        )}
                                         {m.area_of_interest && (
                                           <Badge variant="outline" className="mt-1 text-xs">
                                             {m.area_of_interest}
@@ -5898,7 +5912,11 @@ useEffect(() => {
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <p className="font-medium">{player.full_name}</p>
-                                  <p className="text-xs text-muted-foreground">{player.email}</p>
+                                  {player.username ? (
+                                    <p className="text-xs text-muted-foreground">@{player.username}</p>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">{player.email}</p>
+                                  )}
                                   {player.area_of_interest && (
                                     <Badge variant="outline" className="mt-1 text-xs">
                                       {player.area_of_interest}
