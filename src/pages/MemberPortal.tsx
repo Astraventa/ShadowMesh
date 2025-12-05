@@ -5980,12 +5980,15 @@ useEffect(() => {
                 {feedbackType === "event" && (
                   <div>
                     <label className="block text-sm font-medium mb-2">Related Event (optional)</label>
-                    <Select value={feedbackEventId || ""} onValueChange={(v) => setFeedbackEventId(v || null)}>
+                  <Select
+                    value={feedbackEventId || "none"}
+                    onValueChange={(v) => setFeedbackEventId(v === "none" ? null : v)}
+                  >
                       <SelectTrigger>
                         <SelectValue placeholder="Select an event" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                         {[...events, ...hackathons].map((event) => (
                           <SelectItem key={event.id} value={event.id}>{event.title}</SelectItem>
                         ))}
