@@ -957,8 +957,11 @@ const JoinUs = () => {
                         <SelectValue placeholder="Select your interest area" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="AI">AI / Machine Learning</SelectItem>
                         <SelectItem value="Cyber">Cybersecurity</SelectItem>
+                        <SelectItem value="AI">AI / Machine Learning</SelectItem>
+                        <SelectItem value="Software">Software Engineering</SelectItem>
+                        <SelectItem value="CloudDevSecOps">Cloud &amp; DevSecOps</SelectItem>
+                        <SelectItem value="AppSec">Product Security / AppSec</SelectItem>
                         <SelectItem value="Both">Both (AI × Cyber)</SelectItem>
                       </SelectContent>
                     </Select>
