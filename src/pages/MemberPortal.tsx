@@ -258,7 +258,7 @@ function AchievementTreeComponent({ team, achievements, member }: { team: any; a
   const unlockedAchievements = new Set(achievements.map((a: any) => a.achievement_type));
   const totalPoints = achievements.reduce((sum: number, a: any) => sum + (a.points_awarded || 0), 0);
   const memberCount = team.members?.length || 0;
-  const isFullTeam = memberCount >= (team.max_members || 4);
+  const isFullTeam = memberCount >= (team.max_members || 6);
 
   // Calculate progress for each achievement
   const getAchievementProgress = (achievementId: string) => {
@@ -267,7 +267,7 @@ function AchievementTreeComponent({ team, achievements, member }: { team: any; a
       case "first_update":
         return { unlocked, progress: achievements.filter((a: any) => a.achievement_type === "first_update").length, max: 1 };
       case "full_team":
-        return { unlocked: isFullTeam, progress: memberCount, max: team.max_members || 4 };
+        return { unlocked: isFullTeam, progress: memberCount, max: team.max_members || 6 };
       case "weekly_active":
         return { unlocked, progress: achievements.filter((a: any) => a.achievement_type === "weekly_active").length, max: 4 };
       case "milestone_10":
@@ -451,7 +451,7 @@ const [teamHubTeams, setTeamHubTeams] = useState<any[]>([]);
 const [topPracticeTeams, setTopPracticeTeams] = useState<any[]>([]);
 const [teamUpdates, setTeamUpdates] = useState<any[]>([]);
 const [showCreatePracticeTeam, setShowCreatePracticeTeam] = useState(false);
-const [practiceTeamForm, setPracticeTeamForm] = useState({ team_name: "", max_members: 4 });
+const [practiceTeamForm, setPracticeTeamForm] = useState({ team_name: "", max_members: 6 });
 const [creatingPracticeTeam, setCreatingPracticeTeam] = useState(false);
 const [teamUpdateMessage, setTeamUpdateMessage] = useState("");
 const [selectedUpdateTeam, setSelectedUpdateTeam] = useState<string>("");
@@ -498,7 +498,7 @@ const practiceTeams = useMemo(() => {
 
 const openSeatTeams = useMemo(() => {
   return (teamHubTeams || [])
-    .filter(team => (team.team_members?.length || 0) < (team.max_members || 4));
+    .filter(team => (team.team_members?.length || 0) < (team.max_members || 6));
 }, [teamHubTeams]);
 
 const displayedOpenSeatTeams = useMemo(() => {
@@ -1136,7 +1136,7 @@ useEffect(() => {
           leader_name: leaderRow?.full_name || "Team Leader",
           leader_email: leaderRow?.email || "",
           leader_interest: leaderRow?.area_of_interest || "",
-          max_members: teamRow?.max_members || 4,
+          max_members: teamRow?.max_members || 6,
           is_practice: isPractice,
           from_member_id: request.from_member_id,
           from_member_name: fromMemberName,
@@ -1184,7 +1184,7 @@ useEffect(() => {
     try {
       const nowIso = new Date().toISOString();
       // Only fetch PRACTICE teams (is_practice = true OR hackathon_id IS NULL)
-      const { data: hubTeams } = await supabase
+  const { data: hubTeams } = await supabase
         .from("hackathon_teams")
         .select(`
           id,
@@ -1223,8 +1223,8 @@ useEffect(() => {
         .map((team: any) => {
           const achievementPoints = team.achievement_points || 0;
           const likes = team.likes_count || 0;
-          const memberCount = Array.isArray(team.team_members) ? team.team_members.length : 0;
-          const score = achievementPoints * 3 + likes + memberCount;
+        const memberCount = Array.isArray(team.team_members) ? team.team_members.length : 0;
+        const score = achievementPoints * 3 + likes + memberCount;
           return { ...team, score, memberCount };
         })
         .sort((a: any, b: any) => b.score - a.score)
@@ -1731,8 +1731,8 @@ useEffect(() => {
       toast({ title: "Team name required", description: "Give your practice team a name." });
       return;
     }
-    if (practiceTeamForm.max_members < 2 || practiceTeamForm.max_members > 4) {
-      toast({ title: "Invalid team size", description: "Max members must be between 2 and 4." });
+    if (practiceTeamForm.max_members < 2 || practiceTeamForm.max_members > 8) {
+      toast({ title: "Invalid team size", description: "Max members must be between 2 and 8." });
       return;
     }
     setCreatingPracticeTeam(true);
@@ -1759,7 +1759,7 @@ useEffect(() => {
         });
         toast({ title: "Practice team created" });
         setShowCreatePracticeTeam(false);
-        setPracticeTeamForm({ team_name: "", max_members: 4 });
+        setPracticeTeamForm({ team_name: "", max_members: 6 });
         await loadMemberDataByEmail(member.email);
         await loadTeamHubData();
       }
@@ -2100,7 +2100,7 @@ useEffect(() => {
           .select("member_id")
           .eq("team_id", selectedInvite.team_id);
 
-        if (members && members.length >= (teamRow.max_members || 4)) {
+        if (members && members.length >= (teamRow.max_members || 6)) {
           throw new Error("This team is already full.");
         }
 
@@ -2330,7 +2330,7 @@ useEffect(() => {
 
       if (teamData) {
         const memberCount = Array.isArray(teamData.team_members) ? teamData.team_members.length : 0;
-        if (memberCount >= (teamData.max_members || 4)) {
+        if (memberCount >= (teamData.max_members || 6)) {
           toast({ title: "Team is full", description: "This team has reached the maximum number of members.", variant: "destructive" });
           return;
         }
@@ -2429,7 +2429,7 @@ useEffect(() => {
 
       if (teamData) {
         const memberCount = Array.isArray(teamData.team_members) ? teamData.team_members.length : 0;
-        if (memberCount >= (teamData.max_members || 4)) {
+        if (memberCount >= (teamData.max_members || 6)) {
           toast({ title: "Team is full", description: "This team has reached the maximum number of members.", variant: "destructive" });
           return;
         }
@@ -4487,7 +4487,7 @@ useEffect(() => {
                         <Badge>{teamSpotlight.team.team_name}</Badge>
                         {teamSpotlight.team.is_practice && <Badge variant="outline">Practice</Badge>}
                         <span className="text-xs text-muted-foreground">
-                          {(teamSpotlight.team.team_members?.length || 0)}/{teamSpotlight.team.max_members || 4} members
+                          {(teamSpotlight.team.team_members?.length || 0)}/{teamSpotlight.team.max_members || 6} members
                         </span>
                       </div>
                       {teamSpotlight.cta_link && (
@@ -4749,7 +4749,7 @@ useEffect(() => {
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              {(team.members?.length || 0)}/{team.max_members || 4} members
+                              {(team.members?.length || 0)}/{team.max_members || 6} members
                             </p>
                           {team.members && team.members.length > 0 && (
                             <p className="text-[11px] text-muted-foreground">
@@ -4841,7 +4841,7 @@ useEffect(() => {
                       <>
                         {displayedOpenSeatTeams.map((team) => {
                       const filled = team.team_members?.length || 0;
-                      const seats = (team.max_members || 4) - filled;
+                      const seats = (team.max_members || 6) - filled;
                       return (
                         <div
                           key={team.id}
@@ -5885,7 +5885,7 @@ useEffect(() => {
                           {hackathonTeams.map((team: any) => {
                             const currentUserTeam = teams.find((t) => t.hackathon_id === selectedHackathonForTeams);
                             const isInTeam = currentUserTeam?.id === team.id;
-                            const canJoin = !isInTeam && !currentUserTeam && team.members.length < (team.max_members || 4);
+                            const canJoin = !isInTeam && !currentUserTeam && team.members.length < (team.max_members || 6);
                             
                             return (
                               <Card key={team.id} className="p-4">
@@ -5893,7 +5893,7 @@ useEffect(() => {
                                   <div className="flex-1">
                                     <p className="font-semibold text-lg">{team.team_name}</p>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                      {team.members.length}/{team.max_members || 4} members
+                                      {team.members.length}/{team.max_members || 6} members
                                     </p>
                                   </div>
                                   {isInTeam && (
@@ -6181,7 +6181,7 @@ useEffect(() => {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Max Members (2-4)</label>
+                <label className="text-sm font-medium">Max Members (2-8)</label>
                 <Select
                   value={String(practiceTeamForm.max_members)}
                   onValueChange={(value) => setPracticeTeamForm((prev) => ({ ...prev, max_members: Number(value) }))}
@@ -6190,7 +6190,7 @@ useEffect(() => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[2, 3, 4].map((size) => (
+                    {[2, 3, 4, 5, 6, 7, 8].map((size) => (
                       <SelectItem key={size} value={String(size)}>
                         {size} members
                       </SelectItem>
@@ -6299,7 +6299,7 @@ useEffect(() => {
             <div className="space-y-3">
               {openSeatTeams.map((team) => {
                 const filled = team.team_members?.length || 0;
-                const seats = (team.max_members || 4) - filled;
+                const seats = (team.max_members || 6) - filled;
                 return (
                   <div
                     key={team.id}
